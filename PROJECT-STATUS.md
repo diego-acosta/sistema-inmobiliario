@@ -143,11 +143,13 @@ actual todavía no implementa esa política: `claim` no reabre el mismo
 `(event_id, consumer)` ni existen lease, payload retenido o scheduler. #492 queda
 documentalmente listo para cierre después del merge, sin diseñar DTO, evento,
 DER, SQL, API ni runtime GOP. La autoría portable sigue el contrato #492. #493
-congela identidad portable propia conceptual del comentario y su `version_registro` CORE-EF, que nace en 1
-y normalmente permanece en 1 durante el MVP append-only. Agregarlo no incrementa
-`Tarea.version_registro` ni requiere `If-Match-Version` de Tarea; la atomicidad
-futura abarca comentario/outbox/receipt. GOP todavía no está listo para DER/SQL/API.
-#493
+congela `Comentario.uid_global` propio, único, inmutable y no reutilizable, y su
+`version_registro` CORE-EF, que nace en 1 y normalmente permanece en 1 durante el
+MVP append-only. La autorización funcional se resuelve en origen; el receptor no
+la reevalúa contra relaciones mutables posteriores y preserva contexto causal
+suficiente para RN-TEC-012. Agregarlo no incrementa `Tarea.version_registro` ni
+requiere `If-Match-Version` de Tarea; la atomicidad futura abarca
+comentario/outbox/receipt. GOP todavía no está listo para DER/SQL/API. #493
 permanece abierto durante el PR y listo para cierre después del merge; no se
 cierra #489 desde esta actualización.
 
