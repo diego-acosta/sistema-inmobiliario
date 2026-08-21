@@ -734,6 +734,16 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 - sincronizable: sí
 - genera_trazabilidad_administrativa: sí
 
+### EVT-ADM-078 — Calendario comercial creado
+- codigo: calendario_comercial_creado
+- descripcion: se creó atómicamente la primera configuración global del calendario comercial.
+- origen_principal: SRV-ADM-005
+- entidad_principal: calendario_comercial
+- tipo_evento: negocio
+- sincronizable: sí
+- genera_trazabilidad_administrativa: sí
+- observaciones: #484 implementa sólo producer y policy mínima; consumo y sync remoto pertenecen a #486.
+
 ## F. Notas de compatibilidad transversal
 
 - el dominio administrativo es compatible con op_id y trazabilidad distribuida

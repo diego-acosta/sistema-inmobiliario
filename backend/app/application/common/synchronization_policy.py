@@ -55,6 +55,7 @@ SYNC_EVENT_POLICIES: Mapping[str, SyncEventPolicy] = MappingProxyType({p.event_t
     _p("restitucion_locativa_registrada", "contrato_alquiler"),
     _p("reserva_locativa_confirmada", "reserva_locativa"),
     _p("valor_parametro_modificado", "valor_parametro"),
+    _p("calendario_comercial_creado", "calendario_comercial"),
     _p(
         "financiero.indexacion_cuotas_v2.corrida_aplicada",
         "corrida_indexacion_financiera",

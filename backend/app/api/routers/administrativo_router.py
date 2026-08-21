@@ -6,6 +6,8 @@ from app.api.authentication import get_authenticated_principal
 from app.api.core_ef_headers import (
     CoreEFHeaders,
     CoreEFHeaderValidationError,
+    TechnicalCoreEFHeaders,
+    get_core_ef_headers_technical_write,
     parse_core_ef_headers,
     parse_authenticated_core_ef_headers,
 )
@@ -29,6 +31,8 @@ from app.api.schemas.administrativo import (
     CalendarioComercialCompletoData,
     CalendarioComercialIncompletoData,
     CalendarioComercialResponse,
+    BootstrapCalendarioComercialRequest,
+    BootstrapCalendarioComercialResponse,
     ErrorResponse,
     ItemCatalogoBajaResponse,
     ItemCatalogoCreateRequest,
@@ -99,6 +103,10 @@ from app.application.administrativo.services.actualizar_valor_parametro_global_s
     ActualizarValorParametroGlobalService,
     ParametroCommandError,
 )
+from app.application.administrativo.services.bootstrap_calendario_comercial_service import (
+    BootstrapCalendarioComercialError,
+    BootstrapCalendarioComercialService,
+)
 from app.application.common.idempotency import IdempotencyRuntimeError
 from app.config.settings import get_settings
 from app.infrastructure.persistence.repositories.catalogo_maestro_repository import (
@@ -146,6 +154,18 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 router = APIRouter(tags=["Administrativo"])
+
+_CALENDARIO_BOOTSTRAP_HEADERS_OPENAPI = {
+    "parameters": [
+        {
+            "name": name,
+            "in": "header",
+            "required": True,
+            "schema": {"type": "string"},
+        }
+        for name in ("X-Op-Id", "X-Sucursal-Id", "X-Instalacion-Id")
+    ]
+}
 
 
 @router.get(
@@ -760,6 +780,64 @@ def obtener_calendario_comercial(
     return _parametro_global_response(
         JSONResponse(content=response.model_dump(mode="json"))
     )
+
+
+@router.post(
+    "/api/v1/administrativo/configuracion/calendario-comercial",
+    response_model=BootstrapCalendarioComercialResponse,
+    status_code=201,
+    openapi_extra=_CALENDARIO_BOOTSTRAP_HEADERS_OPENAPI,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse},
+               403: {"model": ErrorResponse}, 409: {"model": ErrorResponse},
+               422: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def bootstrap_calendario_comercial(
+    request: BootstrapCalendarioComercialRequest,
+    principal: Annotated[AuthenticatedPrincipal, Depends(
+        require_administrative_permission(
+            "ADMIN.CONFIG.CALENDARIO_COMERCIAL.ADMINISTRAR"))],
+    core_ef: Annotated[
+        TechnicalCoreEFHeaders | CoreEFHeaderValidationError,
+        Depends(get_core_ef_headers_technical_write),
+    ],
+    db: Session = Depends(get_db),
+) -> BootstrapCalendarioComercialResponse | JSONResponse:
+    # COMMAND_WRITE_NEGOCIO: creación sin If-Match; identidad sólo desde Bearer.
+    if isinstance(core_ef, CoreEFHeaderValidationError):
+        return _parametro_global_error(
+            400,
+            "VALIDATION_ERROR",
+            core_ef.message,
+            {"header": core_ef.header_name, "reason": core_ef.reason},
+        )
+    try:
+        snapshot = BootstrapCalendarioComercialService(db).execute(
+            dia_cierre_comercial=request.dia_cierre_comercial,
+            dia_vencimiento_predeterminado_cuotas=(
+                request.dia_vencimiento_predeterminado_cuotas),
+            vigente_desde=request.vigente_desde, headers=core_ef,
+            id_usuario=principal.id_usuario)
+        db.commit()
+    except BootstrapCalendarioComercialError as exc:
+        db.rollback()
+        messages = {
+            "inconsistencia_contexto_tecnico": "El contexto técnico declarado es inconsistente.",
+            "CONFIGURACION_CALENDARIO_COMERCIAL_CONFLICTO": (
+                "El calendario comercial no se encuentra vacío y consistente."),
+        }
+        return _parametro_global_error(
+            exc.status, exc.code,
+            messages.get(exc.code, "No fue posible completar la operación."), {})
+    except IdempotencyRuntimeError:
+        db.rollback()
+        return _parametro_global_error(500, "IDEMPOTENCY_TECHNICAL_ERROR",
+                                       "No fue posible resolver la idempotencia de la operación.", {})
+    except Exception:
+        db.rollback()
+        return _parametro_global_error(500, "TECHNICAL_INCONSISTENCY",
+                                       "No fue posible completar la operación.", {})
+    return _parametro_global_response(JSONResponse(
+        status_code=201, content=snapshot))
 
 
 ASCII_LEDGER_WHITESPACE = " \t\n\r\f\v"
