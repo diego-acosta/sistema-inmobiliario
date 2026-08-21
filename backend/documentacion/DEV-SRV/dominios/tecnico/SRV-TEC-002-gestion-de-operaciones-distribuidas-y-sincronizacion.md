@@ -78,19 +78,19 @@ instantes de intento y próximo instante elegible. No se crea otro `op_id` ni se
 reingesta como un evento nuevo. La unicidad de `(event_id, consumer)` continúa
 deduplicando la entrega: `event_id` es identidad de transporte y correlación, no
 identidad operacional. `op_id` es la clave primaria de idempotencia de la
-operación distribuida y debe gobernar la exclusión atómica antes de cualquier
-efecto funcional dentro del scope del consumidor/aplicador capaz de producir ese
-mismo efecto. Por ello, el claim de una fila por `(event_id, consumer)` no es una
-garantía suficiente de idempotencia por `op_id`.
+operación distribuida. La idempotencia de cada efecto debe gobernarse dentro del
+scope del consumidor/aplicador que lo produce: conceptualmente
+`(consumer, op_id)` o mecanismo equivalente. Por ello, el claim de una fila por
+`(event_id, consumer)` no es una garantía suficiente de idempotencia funcional.
 
-Dos entregas con distinto `event_id`, el mismo `op_id` y envelope/fingerprint
-compatible representan la misma operación: sólo una puede obtener derecho de
-aplicación y las demás observan o reutilizan el resultado durable equivalente
-como replay/duplicado, sin nuevo efecto. El mismo `op_id` con command, target,
-payload o fingerprint incompatible se persiste como `CONFLICTO`, sin segunda
-aplicación y no como retry. No se exige que consumidores que producen efectos
-funcionalmente distintos compartan un lock; cada contrato debe declarar el scope
-técnico del aplicador sin sustituir `op_id` por `event_id`.
+Para el mismo consumer, dos entregas con distinto `event_id`, el mismo `op_id` y
+envelope/fingerprint compatible representan un único efecto: sólo una puede
+obtener derecho de aplicación y las demás observan o reutilizan el resultado
+durable equivalente como replay/duplicado. En ese scope, el mismo `op_id` con
+command, target, payload o fingerprint incompatible se persiste como
+`CONFLICTO`, sin segunda aplicación y no como retry. Consumers que producen
+efectos funcionalmente distintos no comparten necesariamente el receipt; cada
+contrato debe declarar el scope técnico sin sustituir `op_id` por `event_id`.
 
 ### Claim y transiciones
 
@@ -101,7 +101,8 @@ recepción válida + referencia requerida ausente
 PENDING_DEPENDENCY elegible
   -> claim atómico por un único worker técnico
   -> EN_PROCESO / PROCESSING
-  -> exclusión/idempotencia atómica por op_id antes del efecto funcional
+  -> exclusión/idempotencia atómica por (consumer, op_id) o equivalente
+     antes del efecto funcional
      -> referencias completas + aplicación atómica -> APLICADO / PROCESSED
      -> dependencia aún ausente -> PENDING_DEPENDENCY
      -> payload inválido o imposibilidad permanente -> RECHAZADO / REJECTED
@@ -115,15 +116,20 @@ condicional y atómico. Un worker caído no debe dejar ejecución eterna: la fut
 materialización debe usar lease/reclaim de `EN_PROCESO` vencido, conservando
 contador y trazabilidad. Dos workers, un retry duplicado o una nueva entrega del
 mismo evento no pueden obtener simultáneamente el claim de esa fila. Lease y
-reclaim controlan ownership temporal del procesamiento; la exclusión por `op_id`
-controla la unicidad del efecto aun cuando la misma operación llegue en filas con
-`event_id` diferentes. Son garantías complementarias.
+reclaim controlan ownership temporal del procesamiento; la exclusión
+consumer-scoped por `op_id` controla la unicidad del efecto de ese consumer aun
+cuando la misma operación llegue en filas con `event_id` diferentes. Son
+garantías complementarias.
 
-La exclusión por `op_id` puede reutilizar el ledger durable y el runtime
-transversal #469/#470 —lock transaccional, comparación `COMMAND → TARGET →
-PAYLOAD` y replay durable— o materializarse mediante claim, constraint o
-mecanismo formalmente equivalente. Se congela la garantía, no una nueva
-`UNIQUE(op_id)` de inbox ni un ledger paralelo de consumidor/GOP.
+Cuando un único aplicador es dueño del efecto completo del `op_id`, puede
+reutilizar directamente el ledger durable y el runtime transversal #469/#470:
+lock global por `op_id`, comparación `COMMAND → TARGET → PAYLOAD` y replay
+durable. Si el mismo `op_id` alimenta varios consumers con efectos legítimos e
+independientes, ese ledger global no sirve directamente como receipt de cada
+consumer: el segundo podría diferir válidamente en command, target o payload.
+Cada efecto requiere entonces exclusión/receipt consumer-scoped por
+`(consumer, op_id)` o mecanismo formalmente equivalente. Se congela la garantía,
+no una nueva `UNIQUE(consumer, op_id)` ni un ledger paralelo de dominio/GOP.
 
 Cada nueva espera aplica backoff creciente con cota y registra el intento. No se
 congela cron, duración ni máximo numérico sin evidencia operativa. Alcanzar el

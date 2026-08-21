@@ -426,20 +426,24 @@ loop inmediato; una política operativa puede pausar el retry automático, pero 
 descartar el registro ni alterar su identidad. No se congela un cron concreto.
 
 `event_id` identifica y deduplica una entrega de transporte; `op_id` identifica
-la operación distribuida y es la clave primaria de idempotencia de aplicación.
-Por tanto, un claim exclusivo de `(event_id, consumer)` controla una fila, pero
-no basta para autorizar el efecto: antes de aplicarlo, el consumidor/aplicador
-DEBE obtener exclusión idempotente atómica por `op_id` en el scope capaz de
-producir el mismo efecto. Dos `event_id` distintos con igual `op_id` y envelope
+la operación distribuida y sigue siendo su clave primaria. Por tanto, un claim
+exclusivo de `(event_id, consumer)` controla una fila, pero no basta para
+autorizar el efecto: antes de aplicarlo, el consumidor/aplicador DEBE obtener
+exclusión idempotente atómica en el scope lógico `(consumer, op_id)` o equivalente.
+Dos `event_id` distintos con igual `op_id` y envelope
 compatible producen una única ejecución y replay/duplicado durable para las
-demás entregas; un envelope incompatible produce `CONFLICTO` sin segunda
-aplicación. No se obliga a serializar conjuntamente consumidores con efectos
-distintos ni se prescribe aquí una constraint física.
+demás entregas del mismo consumer; un envelope incompatible produce `CONFLICTO`
+en ese scope sin segunda aplicación. Consumers distintos pueden producir efectos
+independientes definidos por sus contratos sin colisionar sólo por compartir
+`op_id`; `event_id` no reemplaza ninguna de estas garantías.
 
 Lease/reclaim de inbox gobierna ownership temporal de una fila; la exclusión por
-`op_id` gobierna unicidad del efecto distribuido. La garantía puede reutilizar
-#469/#470 o un mecanismo formalmente equivalente, sin crear un ledger de dominio
-paralelo ni imponer un nuevo `UNIQUE(op_id)` de inbox sin diseño físico.
+`(consumer, op_id)` gobierna unicidad del efecto de ese consumer. Un único
+aplicador funcional puede reutilizar directamente #469/#470. Cuando existen
+múltiples consumers con efectos distintos, el receipt global de #469/#470 —sin
+dimensión consumer— no es suficiente por consumer y se requiere un mecanismo
+consumer-scoped equivalente. No se prescribe `UNIQUE(consumer, op_id)` ni SQL
+nuevo y ningún dominio crea un ledger paralelo.
 
 La aparición de la dependencia permite volver a resolver todas las referencias y
 aplicar atómicamente. Payload inválido o imposibilidad permanente termina en

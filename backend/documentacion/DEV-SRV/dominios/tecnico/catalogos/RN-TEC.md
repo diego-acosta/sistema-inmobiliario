@@ -199,7 +199,7 @@ Incluye operaciones distribuidas, sincronización, inbox y outbox, idempotencia,
 - origen_principal: SRV-TEC-002
 
 ### RN-TEC-036 — Serialización de aplicación por op_id
-- descripcion: dentro del scope del consumidor o aplicador que puede producir el mismo efecto, toda aplicación distribuida debe obtener exclusión idempotente atómica por op_id antes del efecto; event_id sólo identifica y deduplica la entrega, por lo que entregas compatibles con distinto event_id reutilizan un único resultado y las incompatibles terminan en conflicto sin segunda aplicación.
+- descripcion: op_id conserva la identidad primaria de la operación; cada consumer debe obtener exclusión idempotente atómica para su efecto en el scope lógico (consumer, op_id) o equivalente antes de aplicarlo. Un único aplicador puede reutilizar directamente el receipt global #469/#470; múltiples consumers con efectos independientes requieren receipts consumer-scoped y no colisionan sólo por compartir op_id. event_id sólo identifica y deduplica la entrega.
 - aplica_a: inbox, op_id, operacion_distribuida, sincronizacion
 - origen_principal: CORE-EF
 
