@@ -1349,7 +1349,7 @@ Para un `op_id` distinto y el mismo `uid_global`, rige como mínimo esta matriz:
 
 | Caso | Tratamiento congelado |
 | --- | --- |
-| Versión entrante mayor que la local | Candidata a aplicación controlada; validar continuidad, payload y referencias portables antes de persistir. Un salto o referencia requerida no resoluble impide aplicar; su retención/reproceso técnico queda pendiente de diseño y no se fuerza a rechazo o conflicto. |
+| Versión entrante mayor que la local | Candidata a aplicación controlada; validar continuidad, payload y referencias portables antes de persistir. Si la continuidad es válida pero una referencia portable requerida todavía no se resuelve, no aplicar parcialmente: conservar `op_id`, `event_id`, `consumer`, `uid_global`, `version_registro`, payload/fingerprint y trazabilidad, y retener la operación en `PENDING_DEPENDENCY` para el retry Técnico congelado; la mera ausencia temporal no es `REJECTED` ni `CONFLICTO`. Un gap o discontinuidad de `version_registro` impide la aplicación inmediata, pero es un problema transversal de continuidad distinto de una dependencia portable: su política técnica específica permanece pendiente fuera del alcance de #492, sin clasificarlo aquí como rechazo, conflicto, `PENDING_DEPENDENCY`, fetch, replay ni salto aceptado. |
 | Misma versión y payload material igual | Operación distinta pero materialmente convergente; no se clasifica automáticamente como duplicado ni replay y se conserva la trazabilidad de ambas operaciones. |
 | Misma versión y payload material distinto | Inconsistencia/conflicto material persistido; no sobrescribir. |
 | Versión entrante menor que la local | Cambio atrasado u obsoleto; no retroceder ni sobrescribir el snapshot local y conservar trazabilidad. |
@@ -1500,8 +1500,10 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 
 ### 30.1 Alcance, clasificación y regla canónica
 
-Este incremento avanza parcialmente el blocker interno **#10**, que permanece
-abierto por la política retryable pendiente. `Tarea` sigue siendo núcleo de
+Este incremento completa documentalmente el blocker interno **#10**. La política
+retryable transversal queda congelada por Técnico en `SRV-TEC-002`; su
+materialización runtime permanece pendiente y no pertenece a GOP. `Tarea` sigue
+siendo núcleo de
 `gestion_operativa`; las identidades de usuario provistas
 por Administrativo y la resolución distribuida provista por Técnico son soporte
 transversal. `sucursal` e `instalacion` siguen bajo ownership de `operativo`:
@@ -1651,48 +1653,65 @@ del emisor como si fuera propia ni crear tablas de mapeo manual ad hoc en GOP.
 
 ### 30.6 Referencias todavía no resolubles y dependencias de sync
 
-CORE-EF/SRV-TEC exigen registrar todo cambio recibido mediante inbox, conservar
-los rechazados, persistir los conflictos y evitar efectos duplicados, pero no
-congelan una política completa de retención/reproceso para una dependencia aún
-no resoluble. Por ello se congela únicamente la regla mínima segura:
+GOP sólo declara la necesidad funcional: si una referencia portable válida y
+requerida todavía no se resuelve localmente, no se aplica la Tarea parcial ni se
+crean placeholders o mappings. Técnico/sync es dueño de retención, estado, retry
+y reproceso. `SRV-TEC-002` congela transversalmente el estado lógico
+`PENDING_DEPENDENCY`, no terminal y retryable:
 
 ```text
-referencia requerida no resoluble localmente
--> no aplicar ni materializar una relación inválida
--> no aplicar parcialmente la Tarea
--> no copiar PK remota
--> no crear placeholder ni usuario/sucursal/instalación ficticia
--> preservar evento, payload, motivo y trazabilidad técnica
-
-política técnica de retención/reproceso para esa dependencia
--> NO CONGELADA / PENDIENTE DE DISEÑO TÉCNICO
+referencia requerida temporalmente no resoluble
+-> rollback de todo efecto funcional
+-> mismo registro/evento queda PENDING_DEPENDENCY
+-> conserva op_id, event_id, consumer, uid_global, version_registro,
+   payload/huella, procedencia, motivo e historial de intentos
+-> worker/job técnico lo reclama atómicamente al vencer su elegibilidad
+   o por habilitación manual
+-> PROCESSING
+   -> PROCESSED si todas las referencias se resuelven y aplica atómicamente
+   -> PENDING_DEPENDENCY si la ausencia continúa
+   -> REJECTED sólo ante invalidez o imposibilidad permanente
+   -> CONFLICTO sólo ante divergencia material
 ```
 
-Una referencia opcional explícitamente ausente no es una referencia
-irresoluble. En cambio, si creador humano, sucursal funcional presente,
-instalación técnica requerida o responsable presente no se resuelven, el
-snapshot no se aplica parcialmente. La decisión protege integridad sin inventar
-filas placeholder ni afirmar que existe hoy un estado `PENDIENTE_REFERENCIA`,
-`WAITING_DEPENDENCY`, `RETRYABLE`, `DEFERRED` o equivalente.
+Una referencia opcional explícitamente ausente no es una dependencia. Para
+creador humano, sucursal presente, instalación requerida o responsable presente,
+la identidad portable debe resolverse antes de persistir. El retry reutiliza el
+mismo registro y no genera otro `op_id`; `(event_id, consumer)` deduplica la
+recepción y `op_id` más huella preservan identidad/contenido. Claim atómico,
+lease/reclaim de ejecución vencida y una única transacción controlan cada fila.
+Antes del efecto, el aplicador debe además serializar atómicamente en el scope
+lógico `(consumer, op_id)` o equivalente: `op_id` conserva la identidad primaria
+de la operación, mientras `event_id` sólo identifica la entrega y dos entregas con
+distinto `event_id` pueden representar la misma operación. Con envelope
+compatible, sólo una aplica y las demás reutilizan el resultado durable; con
+envelope incompatible, se persiste `CONFLICTO` sin segunda aplicación. Esta
+garantía puede reutilizar directamente #469/#470 sólo si un único aplicador es
+dueño del efecto completo del `op_id`. Si el flujo futuro define múltiples
+consumers con efectos independientes, Técnico debe proveer idempotencia
+consumer-scoped: el receipt global #469/#470 no basta para cada consumer y el
+primero no debe bloquear ilegítimamente al segundo. Este freeze no decide esa
+topología ni crea `UNIQUE(consumer, op_id)` o ledger GOP paralelo. Lease de fila
+e idempotencia del efecto del consumer son controles complementarios.
 
-El runtime vigente de `InboxRepository` no ofrece un camino estándar retryable
-para este caso: `mark_as_rejected(...)` lleva a `REJECTED`, documentado por la
-implementación como error de negocio que no debe reintentarse, y `claim(...)`
-usa `ON CONFLICT (event_id, consumer) DO NOTHING`, por lo que no vuelve a
-reclamar normalmente el mismo par. En consecuencia, **REJECTED es terminal/no
-retryable en el runtime actual** y este freeze no lo presenta como mecanismo de
-espera. Tampoco fuerza `CONFLICTO`: la ausencia temporal de una dependencia con
-identidad válida no prueba por sí sola divergencia material ni colisión
-semántica. `SRV-TEC-002` no congela una transición completa para retener y
-reprocesar este caso; #492 deja esa mecánica expresamente pendiente en vez de
-inventar estado, enum, tabla, transición o scheduler.
+La agenda puede ser automática y manual. Backoff creciente acotado y contador de
+intentos evitan loops; agotar el límite operativo pausa sólo el retry automático
+y deja revisión manual sin perder payload ni convertir la espera en terminal. No
+se congela cron, intervalo ni máximo numérico. El runtime auditado **todavía no
+implementa** esta política: `InboxRepository.claim()` sólo inserta `PROCESSING`
+con `ON CONFLICT (event_id, consumer) DO NOTHING`, no reclama filas existentes,
+y `mark_as_rejected()` conserva `REJECTED` terminal/no retryable. La tabla actual
+tampoco materializa payload, `op_id`, huella, intentos, lease o elegibilidad. Por
+ello la política queda documentalmente resuelta, pero requiere un incremento
+Técnico transversal de SQL/repository/worker/tests antes de ser capacidad runtime.
+No se crea infraestructura GOP ni se afirma soporte actual.
 
-Tarea depende de que las referencias requeridas existan localmente antes de su
-aplicación. Usuario requiere primero la futura materialización y sincronización
-administrativa de identidad; sucursal e instalación ya tienen UID físico, pero
-su distribución/resolución runtime aplicable debe existir. No se congela un
-orden global de paquetes ni una política retryable porque no hay evidencia de un
-scheduler o transición de dependencias maestras; tampoco se crea un mapping GOP.
+Las alternativas se evaluaron contra ese runtime: conservar `PROCESSING` se
+descarta porque confunde ejecución activa con espera y carece de lease; reingestar
+se descarta porque colisiona con `(event_id, consumer)` y fragmenta identidad;
+una cola separada se descarta porque duplica lifecycle e idempotencia sin patrón
+existente. El estado explícito es la extensión mínima, transversal e incremental
+que no cambia `REJECTED` ni rompe consumidores actuales mientras no opten por él.
 
 ### 30.7 Origen SISTEMA y conflictos de identidad
 
@@ -1738,38 +1757,34 @@ resolver de forma segura. Nunca se crea una segunda Tarea con el mismo
 - **Decisión nueva #492:** Tarea viaja por su `uid_global`; sucursal e instalación
   por sus UID físicos; referencias humanas por un contrato global Administrativo
   requerido y aún no materializado; las dependencias irresolubles no se aplican
-  silenciosa ni parcialmente y quedan trazadas. Su política retryable permanece
-  **NO CONGELADA / PENDIENTE DE DISEÑO TÉCNICO**.
+  silenciosa ni parcialmente y quedan trazadas mediante la política transversal
+  `PENDING_DEPENDENCY` congelada por Técnico.
 - **Alternativas descartadas:** PK remota, `login`, email, código de usuario,
   `codigo_sucursal`, `codigo_instalacion`, headers CORE-EF, placeholders y mappings
   GOP se descartan como identidad autoritativa. También se descarta resolver
   identidad como si concediera autorización.
 - **Impacto posterior:** antes de DER/SQL/API GOP, Administrativo debe cerrar la
   identidad global de usuario y Técnico/Operativo deben exponer resolución
-  verificable de referencias. Técnico debe congelar además una política de
-  retención/reproceso para dependencias no resolubles sin reutilizar `REJECTED`
-  como retryable ni forzar `CONFLICTO` sin divergencia. DEV-ARCH/DER/DEV-SRV/
-  DEV-API GOP definirán física, DTO y transacción sin alterar este contrato. No
-  se crean esos artefactos aquí.
+  verificable de referencias. Técnico debe materializar la política ya congelada
+  de retención/reproceso sin reutilizar `REJECTED` ni forzar `CONFLICTO` sin
+  divergencia. DEV-ARCH/DER/DEV-SRV/DEV-API GOP definirán física, DTO y
+  transacción sin alterar este contrato. No se crean esos artefactos aquí.
 
 ## 31. Estado de blockers y criterio de #492
 
-De la numeración original, están cerrados documentalmente **#1, #2, #3, #4,
-#5, #6, #8, #9 y #11**. #491 ya resolvió la estrategia de sync. Permanecen
-abiertos, sin resolución incidental:
+De la numeración original, quedan cerrados documentalmente **#1, #2, #3, #4,
+#5, #6, #8, #9, #10 y #11**. #491 resolvió la estrategia de sync y la política
+Técnica de la sección 30.6 resuelve el último subpendiente de identidad canónica
+interinstalación. Permanece abierto, sin resolución incidental:
 
 7. comentario / efecto sobre `Tarea.version_registro` → issue #493.
-10. identidad canónica interinstalación → issue #492, **ABIERTO / PARCIALMENTE
-    RESUELTO**: están congeladas la identidad canónica de Tarea, las referencias
-    portables, la separación PK local / `uid_global`, la separación procedencia
-    técnica / scope y la interacción general con sync; queda pendiente la
-    política técnica retryable para referencias requeridas no resolubles.
 
 La dependencia de #493 impide cerrar el target/versionado exacto del comentario.
-La materialización administrativa de identidad humana y los resolvers técnicos
-de referencias también son prerequisitos del diseño físico GOP. La autenticación
-técnica para commands `origen = SISTEMA` también sigue **NO CONGELADA** y deberá resolverse
-antes de exponer runtime automático.
+La materialización administrativa de identidad humana, los resolvers de
+referencias y el runtime de `PENDING_DEPENDENCY` siguen como prerequisitos
+técnicos del diseño físico GOP; no reabren el blocker documental #10. La
+autenticación técnica para commands `origen = SISTEMA` continúa **NO CONGELADA**
+y deberá resolverse antes de exponer runtime automático.
 
 Criterio documental de #492:
 
@@ -1778,15 +1793,13 @@ Criterio documental de #492:
 - [x] PK local y `uid_global` diferenciados.
 - [x] Procedencia técnica y scope funcional diferenciados.
 - [x] Interacción general con sync definida.
-- [ ] Política retryable para referencias no resolubles definida.
+- [x] Política retryable para referencias no resolubles definida.
 - [x] GOP-FREEZE-001 y PROJECT-STATUS alineados.
 - [x] Sin DER, SQL, API, runtime ni tests GOP prematuros.
 
-Por lo tanto, el blocker #10 / #492 tiene congeladas la identidad canónica y las
-referencias portables, pero **permanece abierto y todavía no está listo para
-cierre**: queda pendiente únicamente la política técnica retryable de
-retención/reproceso para referencias requeridas aún no resolubles. Este documento
-no cierra #492, #493 ni la épica #489.
+Por lo tanto, el blocker interno #10 queda **documentalmente resuelto** y #492
+queda **documentalmente listo para cierre después del merge**. Este incremento no
+cierra #492, #493 ni la épica #489 y no declara implementado el runtime Técnico.
 
 ## 32. Matriz final por operación
 

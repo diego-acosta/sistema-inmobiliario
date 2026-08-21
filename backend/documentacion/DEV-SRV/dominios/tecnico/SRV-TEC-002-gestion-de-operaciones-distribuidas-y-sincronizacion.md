@@ -39,6 +39,127 @@ Permite procesar una operación remota y clasificar su resultado técnico.
 ### Consulta técnica
 Permite visualizar estado de operaciones distribuidas y su trazabilidad.
 
+## Política transversal de dependencia portable pendiente (#492)
+
+### Decisión y estado contractual
+
+Se congela `PENDING_DEPENDENCY` como nombre lógico del estado retryable de
+inbox para una operación remota estructuralmente válida que todavía no puede
+aplicarse porque al menos una referencia portable requerida no se resuelve en la
+instalación receptora. El nombre distingue espera de ejecución (`PROCESSING` en
+el runtime actual), rechazo terminal (`REJECTED`) y divergencia material
+(`CONFLICTO`). Es soporte transversal de Técnico/sync y puede ser usado por
+cualquier consumidor; no pertenece a Gestión Operativa ni agrega semántica de
+Tarea.
+
+Esta es una **política contractual documentada, no implementada**. El SQL real de
+`inbox_event` sólo conserva identidad básica y estados libres; no conserva
+payload, `op_id`, huella, intentos ni elegibilidad. `InboxRepository.claim()`
+inserta `PROCESSING` con `ON CONFLICT (event_id, consumer) DO NOTHING`, no posee
+reclaim, y `mark_as_rejected()` documenta `REJECTED` como no retryable. Ningún
+worker auditado agenda pendientes de dependencia. Por ello ningún consumidor
+puede declarar esta capacidad hasta materializar transversalmente persistencia,
+repository, worker y tests; el contrato permite hacerlo incrementalmente sin
+cambiar la conducta de consumidores existentes.
+
+### Entrada, retención e idempotencia
+
+El consumidor clasifica como `PENDING_DEPENDENCY` únicamente la ausencia
+temporal de una referencia portable válida y requerida. La aplicación funcional
+y el cambio de estado técnico deben compartir una frontera transaccional: si no
+se resuelven **todas** las referencias, se revierte cualquier efecto funcional y
+sólo queda persistida la espera técnica. Quedan prohibidos aplicación parcial,
+placeholder, mapping específico del consumidor y copia de PK remota.
+
+El registro retenido conserva el evento original: `op_id`, `event_id`,
+`consumer`, `uid_global`/identidad portable, `version_registro`, payload íntegro,
+huella estable y procedencia, además de motivo sanitizado, cantidad de intentos,
+instantes de intento y próximo instante elegible. No se crea otro `op_id` ni se
+reingesta como un evento nuevo. La unicidad de `(event_id, consumer)` continúa
+deduplicando la entrega: `event_id` es identidad de transporte y correlación, no
+identidad operacional. `op_id` es la clave primaria de idempotencia de la
+operación distribuida. La idempotencia de cada efecto debe gobernarse dentro del
+scope del consumidor/aplicador que lo produce: conceptualmente
+`(consumer, op_id)` o mecanismo equivalente. Por ello, el claim de una fila por
+`(event_id, consumer)` no es una garantía suficiente de idempotencia funcional.
+
+Para el mismo consumer, dos entregas con distinto `event_id`, el mismo `op_id` y
+envelope/fingerprint compatible representan un único efecto: sólo una puede
+obtener derecho de aplicación y las demás observan o reutilizan el resultado
+durable equivalente como replay/duplicado. En ese scope, el mismo `op_id` con
+command, target, payload o fingerprint incompatible se persiste como
+`CONFLICTO`, sin segunda aplicación y no como retry. Consumers que producen
+efectos funcionalmente distintos no comparten necesariamente el receipt; cada
+contrato debe declarar el scope técnico sin sustituir `op_id` por `event_id`.
+
+### Claim y transiciones
+
+```text
+recepción válida + referencia requerida ausente
+  -> PENDING_DEPENDENCY (no terminal)
+
+PENDING_DEPENDENCY elegible
+  -> claim atómico por un único worker técnico
+  -> EN_PROCESO / PROCESSING
+  -> exclusión/idempotencia atómica por (consumer, op_id) o equivalente
+     antes del efecto funcional
+     -> referencias completas + aplicación atómica -> APLICADO / PROCESSED
+     -> dependencia aún ausente -> PENDING_DEPENDENCY
+     -> payload inválido o imposibilidad permanente -> RECHAZADO / REJECTED
+     -> divergencia material demostrada -> CONFLICTO
+```
+
+El worker técnico transversal puede retomar automáticamente registros cuyo
+`next_attempt_at` venció; un operador/job técnico puede habilitar reproceso
+manual cuando verificó que la dependencia existe. Ambos usan el mismo claim
+condicional y atómico. Un worker caído no debe dejar ejecución eterna: la futura
+materialización debe usar lease/reclaim de `EN_PROCESO` vencido, conservando
+contador y trazabilidad. Dos workers, un retry duplicado o una nueva entrega del
+mismo evento no pueden obtener simultáneamente el claim de esa fila. Lease y
+reclaim controlan ownership temporal del procesamiento; la exclusión
+consumer-scoped por `op_id` controla la unicidad del efecto de ese consumer aun
+cuando la misma operación llegue en filas con `event_id` diferentes. Son
+garantías complementarias.
+
+Cuando un único aplicador es dueño del efecto completo del `op_id`, puede
+reutilizar directamente el ledger durable y el runtime transversal #469/#470:
+lock global por `op_id`, comparación `COMMAND → TARGET → PAYLOAD` y replay
+durable. Si el mismo `op_id` alimenta varios consumers con efectos legítimos e
+independientes, ese ledger global no sirve directamente como receipt de cada
+consumer: el segundo podría diferir válidamente en command, target o payload.
+Cada efecto requiere entonces exclusión/receipt consumer-scoped por
+`(consumer, op_id)` o mecanismo formalmente equivalente. Se congela la garantía,
+no una nueva `UNIQUE(consumer, op_id)` ni un ledger paralelo de dominio/GOP.
+
+Cada nueva espera aplica backoff creciente con cota y registra el intento. No se
+congela cron, duración ni máximo numérico sin evidencia operativa. Alcanzar el
+límite configurado pausa el retry automático y exige revisión/reanudación
+técnica manual, pero conserva el estado retryable y el payload: no transforma
+una ausencia temporal en `REJECTED` o `CONFLICTO`. Así se evitan loops sin perder
+la operación.
+
+### Clasificación de resultados
+
+- `REJECTED` continúa terminal y no retryable: corresponde a payload inválido,
+  referencia portable inválida o inexistencia/imposibilidad comprobada como
+  permanente según el contrato dueño de esa referencia.
+- `CONFLICTO` requiere divergencia material, colisión incompatible de identidad,
+  versión o `op_id`; una dependencia temporal, por sí sola, no lo genera.
+- `PENDING_DEPENDENCY` es espera temporal no terminal y conserva la
+  trazabilidad completa hasta aplicación o clasificación terminal.
+- `PROCESSED`/`APLICADO` sólo se alcanza después del efecto funcional atómico.
+
+### Alternativas auditadas
+
+- Se elige el estado explícito de inbox porque separa espera de ejecución y
+  extiende la infraestructura transversal mínima.
+- Se descarta mantener `PROCESSING`: sin lease actual confunde trabajo activo con
+  dependencia pendiente y puede quedar eterno.
+- Se descarta reingesta: choca con `(event_id, consumer)`, arriesga cambiar la
+  identidad de la misma operación y fragmenta trazabilidad.
+- Se descarta una cola separada: no existe patrón transversal que justifique
+  duplicar payload, idempotencia y lifecycle; queda prohibida una cola GOP.
+
 ## Entradas conceptuales
 
 ### Contexto técnico (write)
@@ -168,7 +289,9 @@ Permite visualizar estado de operaciones distribuidas y su trazabilidad.
 - definición exacta de estados técnicos de operación distribuida
 - criterio final de segmentación por destino o alcance
 - relación formal entre paquete técnico y operación individual
-- política de reintentos de emisión y reprocesamiento
+- materialización SQL/runtime/tests de `PENDING_DEPENDENCY`, claim/reclaim y
+  reprocesamiento conforme a la política contractual congelada
+- política de reintentos de emisión de outbox (separada del reproceso de inbox)
 - estrategia exacta de payload técnico portable
 
 ## Guardrail #455

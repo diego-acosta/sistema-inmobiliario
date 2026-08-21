@@ -319,6 +319,15 @@ Incluye operaciones distribuidas, sincronización, inbox y outbox, idempotencia,
 - estado_inicial: no
 - estado_final: no
 
+### EST-TEC-038 — Pendiente de dependencia
+- codigo: pending_dependency
+- tipo: entidad
+- aplica_a: inbox
+- descripcion: la operación remota es válida pero espera que una referencia portable requerida pueda resolverse localmente; conserva identidad, payload y trazabilidad para reproceso controlado.
+- estado_inicial: no
+- estado_final: no
+- observaciones: estado contractual no implementado todavía; no equivale a PROCESSING, REJECTED ni CONFLICTO.
+
 ## Notas
 - Este catálogo deriva del DEV-SRV del dominio Técnico.
 - No reemplaza al CAT-CU maestro.

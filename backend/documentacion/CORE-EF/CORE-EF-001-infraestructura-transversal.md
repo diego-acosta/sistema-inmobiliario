@@ -403,13 +403,61 @@ El inbox DEBE soportar estados equivalentes a:
 
 - RECIBIDO
 - EN_PROCESO
+- PENDING_DEPENDENCY
 - APLICADO
 - DUPLICADO
 - RECHAZADO
 - CONFLICTO
 
+`PENDING_DEPENDENCY` es un estado técnico no terminal y retryable para una
+operación válida cuya referencia portable requerida todavía no puede resolverse
+localmente. No equivale a ejecución activa, rechazo ni conflicto. La transición
+debe conservar sin cambios `op_id`, identidad del evento y consumidor, identidad
+portable de entidad, versión, payload y su huella; no puede aplicar parcialmente,
+copiar una PK remota ni crear placeholders.
+
+El reproceso de ese estado debe realizar un claim atómico del mismo registro de
+inbox. Sólo son elegibles los registros cuyo próximo intento ya venció o que un
+operador técnico habilitó explícitamente después de verificar la dependencia.
+Un único worker pasa el registro a `EN_PROCESO`; los claims concurrentes o
+duplicados no generan efectos. Cada espera registra motivo sanitizado, cantidad
+de intentos y próximo instante elegible. El backoff acotado y creciente evita un
+loop inmediato; una política operativa puede pausar el retry automático, pero no
+descartar el registro ni alterar su identidad. No se congela un cron concreto.
+
+`event_id` identifica y deduplica una entrega de transporte; `op_id` identifica
+la operación distribuida y sigue siendo su clave primaria. Por tanto, un claim
+exclusivo de `(event_id, consumer)` controla una fila, pero no basta para
+autorizar el efecto: antes de aplicarlo, el consumidor/aplicador DEBE obtener
+exclusión idempotente atómica en el scope lógico `(consumer, op_id)` o equivalente.
+Dos `event_id` distintos con igual `op_id` y envelope
+compatible producen una única ejecución y replay/duplicado durable para las
+demás entregas del mismo consumer; un envelope incompatible produce `CONFLICTO`
+en ese scope sin segunda aplicación. Consumers distintos pueden producir efectos
+independientes definidos por sus contratos sin colisionar sólo por compartir
+`op_id`; `event_id` no reemplaza ninguna de estas garantías.
+
+Lease/reclaim de inbox gobierna ownership temporal de una fila; la exclusión por
+`(consumer, op_id)` gobierna unicidad del efecto de ese consumer. Un único
+aplicador funcional puede reutilizar directamente #469/#470. Cuando existen
+múltiples consumers con efectos distintos, el receipt global de #469/#470 —sin
+dimensión consumer— no es suficiente por consumer y se requiere un mecanismo
+consumer-scoped equivalente. No se prescribe `UNIQUE(consumer, op_id)` ni SQL
+nuevo y ningún dominio crea un ledger paralelo.
+
+La aparición de la dependencia permite volver a resolver todas las referencias y
+aplicar atómicamente. Payload inválido o imposibilidad permanente termina en
+`RECHAZADO`; una divergencia material termina en `CONFLICTO`; la mera ausencia
+temporal no pertenece a ninguno de esos resultados. Un límite operativo de
+intentos agota sólo el retry automático y deja la operación pendiente para
+revisión/reproceso técnico manual: no la convierte por sí mismo en rechazo.
+
 **REQ-SYNC-070**  
-Un cambio con `op_id` ya aplicado NO DEBE volver a producir efectos de negocio.
+Dentro del mismo scope idempotente de aplicación, un cambio con `op_id` ya
+aplicado NO DEBE volver a producir el mismo efecto de negocio. En un flujo con
+único aplicador, el scope coincide con la operación global por `op_id`; en un
+flujo multi-consumer, cada consumer con efecto independiente conserva su propio
+scope idempotente para ese `op_id`.
 
 **REQ-SYNC-071**  
 Un cambio rechazado DEBE quedar trazado.
@@ -424,8 +472,18 @@ La sincronización DEBE ser segura ante duplicados, reintentos, reprocesamientos
 **REQ-SYNC-074**  
 La clave primaria de idempotencia DEBE ser `op_id`.
 
+`op_id` conserva la identidad primaria de la operación distribuida. El scope de
+aplicación determina qué efecto se protege contra duplicación cuando existen
+múltiples consumers independientes; no reemplaza `op_id` por `event_id` ni
+convierte al segundo consumer en duplicado o conflicto por compartir la operación.
+
 **REQ-SYNC-075**  
-Si un `op_id` ya fue aplicado, el reprocesamiento DEBE clasificarse como duplicado seguro o equivalente, sin generar nuevo efecto de negocio.
+Si un `op_id` ya fue aplicado dentro del mismo scope idempotente, el
+reprocesamiento en ese scope DEBE clasificarse como duplicado seguro, replay o
+equivalente, sin generar nuevamente ese efecto de negocio. Un envelope
+incompatible dentro del mismo scope permanece `CONFLICTO`; un consumer distinto
+con un efecto contractualmente independiente no colisiona sólo por compartir
+`op_id`.
 
 **REQ-SYNC-076**  
 El sistema DEBE distinguir entre:
