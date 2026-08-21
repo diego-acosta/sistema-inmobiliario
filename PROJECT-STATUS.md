@@ -376,9 +376,9 @@ Sub-issues con estado verificable:
 - #409 incorpora sólo el tipo estructural `ENTERO` y el alcance estructural
   `GLOBAL`, con descripciones contractuales, reset DEV/TEST y tests PostgreSQL.
   No crea claves ni valores funcionales de #425.
-- Estado histórico al cierre de #410: quedó preparada exclusivamente la infraestructura SQL CORE-EF. Estado posterior a PR #478 y previo a #482: #411 y #412 estaban implementados y #425 conservaba pendientes sus claves y valores funcionales. Estado vigente: #482/PR #487 dejó materializadas las dos definiciones y la raíz física; #483 agrega el GET autenticado y la resolución temporal reusable; #484 implementa el bootstrap y su producer local transaccional `calendario_comercial_creado`. #485 y el consumo/sync remoto de #486 permanecen pendientes.
+- Estado histórico al cierre de #410: quedó preparada exclusivamente la infraestructura SQL CORE-EF. Estado posterior a PR #478 y previo a #482: #411 y #412 estaban implementados y #425 conservaba pendientes sus claves y valores funcionales. Estado vigente: #482/PR #487 dejó materializadas las dos definiciones y la raíz física; #483 agrega el GET autenticado y la resolución temporal reusable; #484/PR #504 implementa el bootstrap y su producer local transaccional `calendario_comercial_creado`; #485 implementa en revisión la programación append-only y su producer `calendario_comercial_programado`. El consumo/sync remoto de #486 permanece pendiente.
 - #469 y #470 completaron el ledger y runtime transversal de idempotencia durable; #412 es su primer consumidor productivo. PR #478 implementó endpoint, permiso, vínculo, seed técnico controlado y EVT-ADM-060. #402 está cerrado/completado.
-- #438 agrega a `parametro_sistema` la metadata física `exponible_api_administrativa` y `es_sensible`, con política default-deny (`false`/`true`) y constraint que impide exposición en claro de definiciones sensibles. #411 implementa únicamente el GET individual del valor GLOBAL marcado vigente para definiciones exponibles y no sensibles, con 404 indistinguible para inexistente/no exponible/sensible, 409 para no GLOBAL, estado `SIN_VALOR` y tipado estricto `ENTERO`. #441 agrega `editable_administrativamente` como metadata física independiente, default-deny (`false`), no editable por API y habilitable sólo por migración versionada. Estado vigente: #412 está implementado y #482 habilita explícitamente la metadata de sus dos definiciones calendario; sus valores funcionales continúan pendientes; la resolución agregada temporal queda implementada por #483, sin resolver #435.
+- #438 agrega a `parametro_sistema` la metadata física `exponible_api_administrativa` y `es_sensible`, con política default-deny (`false`/`true`) y constraint que impide exposición en claro de definiciones sensibles. #411 implementa únicamente el GET individual del valor GLOBAL marcado vigente para definiciones exponibles y no sensibles, con 404 indistinguible para inexistente/no exponible/sensible, 409 para no GLOBAL, estado `SIN_VALOR` y tipado estricto `ENTERO`. #441 agrega `editable_administrativamente` como metadata física independiente, default-deny (`false`), no editable por API y habilitable sólo por migración versionada. Estado vigente: #412 está implementado; #482 habilita explícitamente la metadata de sus dos definiciones calendario; #483 implementa la resolución agregada temporal; #484 materializa los valores funcionales iniciales; y #485 implementa en revisión sus nuevas vigencias append-only, sin resolver #435.
 - #264 `Administrativo: catálogos maestros e ítems configurables` abierto.
 - #265 `Administrativo: auditoría administrativa básica` abierto.
 - #368 `CRUD write de catálogos maestros` cerrado/completado.
@@ -429,13 +429,13 @@ Dentro de #264, el CRUD write de ítems quedó implementado por #399. En configu
 - `parametro_sistema` es la definición canónica y `valor_parametro` la fuente canónica de valores; `configuracion_general` es compatibilidad heredada y `configuracion_local` pertenece a Operativo.
 - `ENTERO` y `GLOBAL` son datos estructurales contractuales no editables por API;
   sus consumidores resuelven IDs por código.
-- #410 deja preparado el CORE-EF SQL reusable de `valor_parametro` para valores GLOBAL (`id_sucursal` e `id_instalacion` nulos). #482 materializa claves, metadata, rango, permiso y raíz física; #483 implementa la lectura agregada temporal; #484 materializa raíz/pareja iniciales y un único outbox `calendario_comercial_creado`. #485 deberá producir su evento programado; consumer e integración remota siguen en #486.
+- #410 deja preparado el CORE-EF SQL reusable de `valor_parametro` para valores GLOBAL (`id_sucursal` e `id_instalacion` nulos). #482 materializa claves, metadata, rango, permiso y raíz física; #483 implementa la lectura agregada temporal; #484 materializa raíz/pareja iniciales y un único outbox `calendario_comercial_creado`; #485 implementa en revisión la programación append-only y el outbox agregado `calendario_comercial_programado`. Consumer e integración remota siguen en #486.
 - Exposición, sensibilidad y editabilidad son metadata separada de `parametro_sistema`: una lectura de valores sólo puede devolver definiciones explícitamente exponibles y no sensibles; la editabilidad administrativa es independiente, default-deny y no expuesta por #407/#411. #438/#441 no implementaron por sí solos autorización ni writes; #412 los implementa posteriormente y #482 excluye de ese command las dos claves calendario.
 
 ### 6.5 Próximo foco recomendado
 
 El CRUD write de `item_catalogo` quedó implementado por #399. Para configuración,
-#409 deja disponibles `ENTERO` y `GLOBAL`, #410 prepara el CORE-EF físico de `valor_parametro`, #438/#441 agregan metadata default-deny y #411 expone el read individual GLOBAL marcado vigente. #469/#470 proveen idempotencia durable y #412, implementado por PR #478, es su primer consumidor productivo. #413 cierra únicamente la alineación documental. #482/PR #487 prepara definiciones y raíz física; #483 implementa GET/resolución; #484 implementa bootstrap y producer local `calendario_comercial_creado`; #425 permanece coordinador abierto. #485 conserva programación append-only y su futuro producer; #486 conserva consumer, inbox, reentrega, aplicación remota y validación E2E. No se mezclan `configuracion_general`, `configuracion_local` ni catálogos.
+#409 deja disponibles `ENTERO` y `GLOBAL`, #410 prepara el CORE-EF físico de `valor_parametro`, #438/#441 agregan metadata default-deny y #411 expone el read individual GLOBAL marcado vigente. #469/#470 proveen idempotencia durable y #412, implementado por PR #478, es su primer consumidor productivo. #413 cierra únicamente la alineación documental. #482/PR #487 prepara definiciones y raíz física; #483 implementa GET/resolución; #484 implementa bootstrap y producer local `calendario_comercial_creado`; #485 implementa en revisión la programación append-only y el producer `calendario_comercial_programado`; #425 permanece coordinador abierto. #486 conserva consumer, inbox, reentrega, aplicación remota y validación E2E. No se mezclan `configuracion_general`, `configuracion_local` ni catálogos.
 
 ### 6.6 Fuera de alcance
 
@@ -473,14 +473,14 @@ El CRUD write de `item_catalogo` quedó implementado por #399. Para configuraci�
 
 ### 6.9 Regla de continuidad
 
-Para continuar #425 después del incremento read-only #483:
+Para continuar #425 después de #485, actualmente en revisión:
 
 1. revisar #263, #407, #408, #425, PR #414 y el estado materializado por #482;
 2. releer el freeze Administrativo, DEV-API y SRV-ADM-005;
 3. validar nuevamente SQL, implementación y tests reales;
 4. mantener `configuracion_local` en Operativo y no usar catálogos como parámetros;
 5. no declarar resuelta la semántica contextual futura;
-6. preservar #484 como bootstrap con producer local transaccional, y mantener pendientes #485 y el consumo/sync remoto de #486, sin revertir #482 ni la lectura agregada temporal de #483;
+6. preservar #484 como bootstrap con producer local transaccional y #485, actualmente en revisión, como programación append-only con producer `calendario_comercial_programado`; mantener pendiente sólo el consumo/sync remoto de #486, sin revertir #482 ni la lectura agregada temporal de #483;
 7. marcar `NO CONFIRMADO` todo lo no respaldado.
 
 ## 7. Dependencias entre frentes

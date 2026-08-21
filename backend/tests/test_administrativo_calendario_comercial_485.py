@@ -242,6 +242,49 @@ def _assert_structural_rejection_without_effects(
     assert after[3] == 0
 
 
+@pytest.mark.parametrize(
+    ("invalid_payload", "expected_field"),
+    [
+        (
+            {key: value for key, value in PROGRAM.items() if key != "vigente_desde"},
+            "vigente_desde",
+        ),
+        ({**PROGRAM, "dia_cierre_comercial": 32}, "dia_cierre_comercial"),
+        ({**PROGRAM, "dia_cierre_comercial": "20"}, "dia_cierre_comercial"),
+        ({**PROGRAM, "vigente_desde": 20261001}, "vigente_desde"),
+        ({**PROGRAM, "vigente_desde": "2026-10-01T00:00:00"}, "vigente_desde"),
+        ({**PROGRAM, "vigente_desde": "2026/10/01"}, "vigente_desde"),
+        ({**PROGRAM, "campo_extra_privado": "NO_EXPONER_485"}, "campo_extra_privado"),
+    ],
+)
+def test_body_invalido_put_usa_error_response_sanitizado_sin_efectos(
+    client, db_session, invalid_payload, expected_field
+):
+    _bootstrap(client)
+    op_id = uuid4()
+    before = _calendar_effects(db_session, op_id)
+
+    response = _request(client, "PUT", invalid_payload, _headers(op_id, 1))
+
+    assert response.status_code == 422
+    body = response.json()
+    assert set(body) == {"ok", "error_code", "error_message", "details"}
+    assert body["ok"] is False
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["error_message"] == (
+        "La solicitud de programación contiene datos inválidos."
+    )
+    assert expected_field in body["details"]["fields"]
+    serialized = str(body)
+    assert "detail" not in body
+    assert "input" not in serialized
+    assert "fecha_efectiva" not in serialized
+    assert "bootstrap" not in serialized.casefold()
+    assert "NO_EXPONER_485" not in serialized
+    after = _calendar_effects(db_session, op_id)
+    assert after == before
+
+
 def test_rechaza_ultima_pareja_abierta_marcada_no_vigente(client, db_session):
     _bootstrap(client)
     db_session.execute(
