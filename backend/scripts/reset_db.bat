@@ -37,6 +37,7 @@ set PATCH_OPERACION_IDEMPOTENTE_FILE=%BACKEND_DIR%\database\patch_operacion_idem
 set PATCH_ROL_ADMINISTRADOR_SISTEMA_FILE=%BACKEND_DIR%\database\patch_rol_administrador_sistema_20260813.sql
 set PATCH_ADMIN_VALOR_GLOBAL_412_FILE=%BACKEND_DIR%\database\patch_admin_valor_global_412_20260813.sql
 set PATCH_CALENDARIO_COMERCIAL_482_FILE=%BACKEND_DIR%\database\patch_calendario_comercial_482_20260814.sql
+set PATCH_USUARIO_UID_GLOBAL_FILE=%BACKEND_DIR%\database\patch_usuario_uid_global_20260821.sql
 set SEED_INDICES_FINANCIEROS_DEMO_FILE=%BACKEND_DIR%\database\seed_indices_financieros_demo.sql
 
 echo ============================
@@ -414,6 +415,11 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
+%PGBIN%\psql -v ON_ERROR_STOP=1 -d %DEV_DB% -f "%PATCH_USUARIO_UID_GLOBAL_FILE%"
+if errorlevel 1 (
+  echo ERROR aplicando identidad portable de usuario #508 en DEV.
+  exit /b 1
+)
 
 echo.
 echo Aplicando seed minimo en %DEV_DB%...
@@ -648,6 +654,11 @@ echo Aplicando patch calendario comercial #482 en %TEST_DB%...
 if errorlevel 1 (
   echo ERROR aplicando patch calendario comercial #482 en %TEST_DB%
   pause
+  exit /b 1
+)
+%PGBIN%\psql -v ON_ERROR_STOP=1 -d %TEST_DB% -f "%PATCH_USUARIO_UID_GLOBAL_FILE%"
+if errorlevel 1 (
+  echo ERROR aplicando identidad portable de usuario #508 en TEST.
   exit /b 1
 )
 

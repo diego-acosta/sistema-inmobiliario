@@ -38,6 +38,7 @@ SQL_FILES=(
   "patch_rol_administrador_sistema_20260813.sql"
   "patch_admin_valor_global_412_20260813.sql"
   "patch_calendario_comercial_482_20260814.sql"
+  "patch_usuario_uid_global_20260821.sql"
 )
 
 DEV_SEEDS=(
@@ -160,6 +161,7 @@ apply_common_files() {
   run_sql "${db}" "bootstrap rol administrador del sistema #249/#260" "patch_rol_administrador_sistema_20260813.sql"
   run_sql "${db}" "patch administrativo valor global #412" "patch_admin_valor_global_412_20260813.sql"
   run_sql "${db}" "patch calendario comercial #482" "patch_calendario_comercial_482_20260814.sql"
+  run_sql "${db}" "identidad portable de usuario #508" "patch_usuario_uid_global_20260821.sql"
 }
 
 log "============================"
