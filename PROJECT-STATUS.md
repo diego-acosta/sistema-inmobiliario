@@ -147,9 +147,12 @@ congela `Comentario.uid_global` propio, único, inmutable y no reutilizable, y s
 `version_registro` CORE-EF, que nace en 1 y normalmente permanece en 1 durante el
 MVP append-only. La autorización funcional se resuelve en origen; el receptor no
 la reevalúa contra relaciones mutables posteriores y preserva contexto causal
-suficiente para RN-TEC-012. Agregarlo no incrementa `Tarea.version_registro` ni
-requiere `If-Match-Version` de Tarea; la atomicidad futura abarca
-comentario/outbox/receipt. GOP todavía no está listo para DER/SQL/API. #493
+suficiente para RN-TEC-012. Un comentario confirmado antes de una baja lógica
+converge aunque la baja llegue primero al receptor, sin restaurar la Tarea ni
+limpiar `deleted_at`; un intento posterior a la baja no queda habilitado por esa
+regla. Agregarlo no incrementa `Tarea.version_registro` ni requiere
+`If-Match-Version` de Tarea; la atomicidad futura abarca comentario/outbox/receipt.
+GOP todavía no está listo para DER/SQL/API. #493
 permanece abierto durante el PR y listo para cierre después del merge; no se
 cierra #489 desde esta actualización.
 

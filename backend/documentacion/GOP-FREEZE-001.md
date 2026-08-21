@@ -1867,11 +1867,21 @@ payload ni exposición física del comentario.
   `fecha_finalizacion`. En `CANCELADA` también nace con su versión propia, no
   reabre ni cambia estado. Sólo la operación explícita ya congelada puede
   reabrir `COMPLETADA`; `CANCELADA` continúa sin reapertura.
-- **Baja lógica:** `CANCELADA != deleted_at`. Esta decisión no habilita comentar
-  una Tarea con `deleted_at != NULL`: al no existir contrato de mutación de bajas
-  lógicas GOP, una dependencia que impida materializar el comentario se trata
-  según las reglas técnicas aplicables o permanece **PENDIENTE** si no existe
-  contrato; no se inventa una excepción.
+- **Baja lógica:** `CANCELADA != deleted_at`. Un comentario válido, autorizado y
+  confirmado en origen **causalmente antes** de la baja lógica sigue siendo un
+  hecho válido y debe converger aunque el receptor reciba primero la baja. Puede
+  materializarse sobre la Tarea ya dada de baja, pero sólo conserva el append: no
+  restaura la Tarea, no limpia `deleted_at`, no reabre ni cambia estado,
+  responsable, prioridad, `fecha_objetivo`, `fecha_finalizacion`, scope o
+  `Tarea.version_registro`.
+- Una Tarea con `deleted_at != NULL` conserva un `uid_global` resoluble; por ese
+  solo hecho no falta una referencia portable y `PENDING_DEPENDENCY` **NO
+  APLICA** automáticamente. En cambio, un intento originado **causalmente
+  después** de una baja ya efectiva no queda validado por la regla anterior y no
+  es una mutación GOP ordinaria válida. La auditoría de CORE-EF/Técnico no halló
+  clasificación terminal específica para ese caso; queda para el contrato
+  transversal posterior, sin inventar `PENDIENTE`, `PENDING_DEPENDENCY`,
+  `CONFLICTO` ni `REJECTED` en #493.
 
 ### 32.3 Sync, idempotencia, autoría y transacción
 
@@ -1932,7 +1942,16 @@ El comentario conserva relación causal con el snapshot/contexto de Tarea sobre
 el cual fue autorizado en origen. Su futura representación sincronizada debe
 conservar contexto causal suficiente para que Técnico respete RN-TEC-012:
 ordenar, diferir o aplicar correctamente mensajes dependientes y evitar rechazos
-debidos sólo a entrega fuera de orden.
+debidos sólo a entrega fuera de orden. Como mínimo debe permitir distinguir un
+comentario confirmado antes de la baja lógica de un intento originado después de
+que la baja ya era efectiva.
+
+Para el primer caso, el receptor valida `Comentario.uid_global`,
+`Comentario.version_registro`, `Tarea.uid_global`, integridad del payload,
+`op_id`, envelope/fingerprint, idempotencia, causalidad y conflictos materiales
+reales, pero no rechaza el hecho sólo porque encuentra `Tarea.deleted_at !=
+NULL`. La baja lógica no invalida retroactivamente un comentario confirmado con
+anterioridad ni convierte otra operación en duplicado.
 
 Esta garantía no es CAS de `Tarea.version_registro` ni vuelve a exigir
 `If-Match-Version` de Tarea. Tampoco congela una columna o marcador físico como
@@ -1966,6 +1985,8 @@ Criterio documental de #493:
 - [x] Concurrencia comentario/comentario y comentario/mutación definida.
 - [x] Autorización en origen y no reevaluación remota posterior definidas.
 - [x] Causalidad y orden lógico alineados con RN-TEC-012 sin marcador físico.
+- [x] Comentario anterior a baja lógica converge sin restaurar Tarea; caso
+  posterior diferenciado sin inventar clasificación técnica.
 - [x] Sync e idempotencia identificados sin confundir `op_id` y `event_id`.
 - [x] Comportamiento en estados terminales preservado.
 - [x] `deleted_at` no confundido con `CANCELADA` ni habilitado incidentalmente.
