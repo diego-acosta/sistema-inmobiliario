@@ -543,9 +543,7 @@ JSON, evento, `command_code` ni payload de outbox. La estrategia sincronizable
 ya congelada para Tarea deberá preservar también este dato cuando corresponda a
 la operación distribuible; esta regla no convierte el historial funcional en
 outbox o inbox ni define el evento o payload físico. Las referencias portables
-siguen sujetas a la materialización posterior del contrato #492 y la granularidad
-de comentario/versionado, a #493.
-cuando corresponda.
+siguen sujetas a la materialización posterior del contrato #492; la granularidad de comentario/versionado queda congelada por #493.
 
 ```text
 REABIERTA → historial_funcional
@@ -1036,7 +1034,7 @@ del estado.
 Las únicas excepciones funcionales terminales son:
 
 - `COMPLETADA` y `CANCELADA` pueden recibir comentarios conforme a las relaciones
-  de la matriz. Esto no decide si comentar incrementa `version_registro`.
+  de la matriz. Por #493, comentar no incrementa `Tarea.version_registro`.
 - Sólo `COMPLETADA` puede reabrirse explícitamente a `PENDIENTE`, con motivo,
   historial `REABIERTA` y `fecha_finalizacion` corriente en `NULL`, según las
   reglas ya congeladas. Reabrir exige la habilitación administrativa aplicable
@@ -1109,8 +1107,8 @@ DEV-ARCH-GOP, DEV-SRV y DEV-API deberán materializar estas relaciones junto con
 Administrativo sin cambiar su ownership ni inventar equivalencias con roles o
 permisos técnicos. Permanecen pendientes los mecanismos de autorización,
 contratos HTTP, SQL y tests. Esta decisión funcional no modifica la estrategia
-sync ya congelada por #491; #492 congela la identidad interinstalación y sigue
-pendiente el efecto de comentar sobre `version_registro` de #493.
+sync ya congelada por #491; #492 congela la identidad interinstalación y #493
+congela el append independiente sin efecto sobre `Tarea.version_registro`.
 
 ## 21. Decisión CORE-EF y estrategia de sincronización (#491)
 
@@ -1145,9 +1143,8 @@ key, service account, technical bearer, M2M auth, rol ni permiso nuevo.
 
 Agregar comentario es `COMMAND_WRITE_NEGOCIO + SINCRONIZABLE`: el comentario es
 seguimiento funcional compartido y omitirlo divergiría la información de Tarea.
-Esto no decide si el comentario integra el mismo aggregate/versionado del
-snapshot ni si incrementa `Tarea.version_registro`; esa granularidad permanece
-reservada a #493.
+Por #493, el append es una operación independiente: no integra el snapshot
+funcional mutable ni incrementa `Tarea.version_registro`.
 
 Una eventual baja lógica es `COMMAND_WRITE_TECNICO + SINCRONIZABLE` porque cambia
 la disponibilidad distribuida del concepto, pero **no implementa ni habilita**
@@ -1182,7 +1179,7 @@ matriz; las consultas no pertenecen a esa categoría, sino a `QUERY_READLIKE`.
   local una creación `SISTEMA`.
 - **Impacto posterior:** DEV-ARCH/DER/SQL/DEV-SRV/DEV-API GOP deberán materializar
   esta clasificación, pero dependen de materializar el contrato portable #492 y
-  de #493 para granularidad de comentario/versionado. Este freeze no define nombres
+  la identidad portable propia del comentario congelada por #493. Este freeze no define nombres
   de endpoint, payload físico, evento concreto ni allowlist concreta.
 
 ### 21.3 Headers técnicos y actor
@@ -1219,9 +1216,10 @@ previa. Es obligatorio en toda mutación ordinaria de una Tarea existente y
 versionada: título, descripción, asignación/reasignación/desasignación,
 prioridad, fecha objetivo, cambios de estado, completar, cancelar, reabrir y una
 eventual baja lógica. Debe expresar la versión esperada y un mismatch real debe
-fallar explícitamente sin sobrescritura silenciosa. Para agregar comentario, la
-obligatoriedad y el target exacto quedan **pendientes de #493**, porque decidirlos
-resolvería incidentalmente si el append modifica la versión de Tarea.
+fallar explícitamente sin sobrescritura silenciosa. La frase «toda mutación de
+Tarea existente requiere `If-Match-Version`» se refiere a mutaciones de ese
+snapshot. Agregar comentario es la excepción específica: no modifica el
+snapshot, no usa CAS contra Tarea y no requiere `If-Match-Version` de Tarea.
 
 ### 21.4 Versionado e identidad distribuida
 
@@ -1238,11 +1236,11 @@ pendiente. GOP consumirá la identidad canónica que materialicen
 Administrativo/Técnico; no agrega UID a `usuario`, no crea mapping propio y no
 usa IDs locales como identidad remota.
 
-#493 permanece abierto para decidir si agregar comentario incrementa
-`Tarea.version_registro`, si el comentario posee identidad/versionado propio y
-qué versión controla su append. #491 sólo congela que el comentario debe
-converger y usar idempotencia; no afirma «siempre incrementa» ni «nunca
-incrementa» la versión de Tarea.
+#493 congela que agregar comentario no incrementa `Tarea.version_registro`, no
+requiere versión esperada de Tarea y no posee `version_registro` propio en el MVP
+append-only. El comentario necesita identidad portable propia para que una pieza
+replicada pueda reconocerse sin usar la PK local, `op_id`, `event_id` ni el
+`uid_global` de Tarea; su forma física queda pendiente.
 
 ## 22. Idempotencia durable, replay y transacción
 
@@ -1283,8 +1281,10 @@ sincronizable; no es historial, outbox, inbox ni auditoría.
 Cada creación o modificación sincronizable del snapshot —contenido, asignación,
 prioridad, fecha objetivo, estado, completar, cancelar y reabrir— debe registrar
 su cambio distribuible en outbox en la misma transacción local. También debe
-hacerlo la creación automática, el comentario según la granularidad que cierre
-#493 y una eventual baja lógica. No se congela schema ni payload de evento.
+hacerlo la creación automática y una eventual baja lógica. Agregar comentario
+registra su propio cambio distribuible en outbox en la misma transacción futura
+que persista el comentario y complete el receipt idempotente, sin modificar el
+snapshot de Tarea. No se congela schema ni payload de evento.
 
 `REABIERTA` sigue siendo una marca del historial funcional conceptual, no un
 estado y no un evento/outbox por sí misma. La reapertura cambia el snapshot a
@@ -1364,7 +1364,7 @@ no resoluble, pero no aporta una regla GOP segura de auto-merge; por ello no se
 inventa resolución automática. Una resolución con impacto en datos requiere
 trazabilidad y nuevo `op_id`. La validación concreta de referencias portables y
 del payload deberá materializar el contrato de #492; la granularidad de
-comentarios queda condicionada por #493.
+comentarios queda congelada por #493 y su forma física sigue pendiente.
 
 ## 25. Baja lógica y locks
 
@@ -1472,11 +1472,12 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 39. La habilitación administrativa aplicable es local para una sucursal vigente y global para una tarea global o una sucursal no vigente; todas requieren autorización efectiva y el fallback no es un bypass.
 40. Toda consulta humana protegida de Tareas requiere Bearer y deriva su identidad exclusivamente de `AuthenticatedPrincipal.id_usuario`, nunca de `X-Usuario-Id` ni de contexto técnico.
 41. Tarea es un concepto funcional sincronizable: toda mutación funcional compartida de la matriz es `COMMAND_WRITE_NEGOCIO + SINCRONIZABLE`, con independencia de actor humano u `origen = SISTEMA`; las consultas son `QUERY_READLIKE`.
-42. Todo command sincronizable reutiliza `X-Op-Id`, contexto `X-Sucursal-Id`/`X-Instalacion-Id`, ledger durable transversal y outbox atómico; `If-Match-Version` aplica a mutaciones de Tarea existente salvo la decisión específica de comentarios reservada a #493.
+42. Todo command sincronizable reutiliza `X-Op-Id`, contexto `X-Sucursal-Id`/`X-Instalacion-Id`, ledger durable transversal y outbox atómico; `If-Match-Version` aplica a mutaciones del snapshot de Tarea existente, no al append independiente de comentarios.
 43. La aplicación remota usa inbox, `uid_global`, `version_registro` y `op_id`, persiste divergencias materiales y no adopta LWW por timestamps.
 44. Un `op_id` ya aplicado sólo es duplicado seguro o replay si su envelope/fingerprint es materialmente compatible; una reutilización incompatible siempre es conflicto persistido y trazado, no genera efecto de negocio y queda sujeta al workflow transversal de resolución.
 45. La generación automática combina obligatoriamente idempotencia técnica por `op_id` e idempotencia funcional por el mismo hecho fuente, cuya clave y materialización concretas permanecen pendientes.
 46. `Tarea` tiene criticidad de sincronización MEDIA: sus conflictos se rigen por reglas explícitas, sin auto-merge genérico, y toda divergencia material no resoluble de forma segura se persiste como conflicto.
+47. Agregar comentario es un append sincronizable independiente: no altera el snapshot ni `Tarea.version_registro`, no requiere `If-Match-Version` de Tarea, admite concurrencia entre comentarios y conserva terminalidad; usa `op_id`, outbox atómico, identidad propia y autoría portables conceptuales.
 
 ## 29.1 Coherencia conjunta del primer cierre
 
@@ -1490,8 +1491,8 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 - Ninguna de estas decisiones traslada tareas a `operativo` ni materializa una
   entidad técnica. La sincronización general está resuelta documentalmente por
   #491; la identidad portable queda congelada conceptualmente por #492 y siguen
-  pendientes su materialización técnica, los permisos y el versionado de
-  comentarios de #493.
+  pendientes su materialización técnica y los permisos; #493 congela el
+  versionado y la concurrencia conceptual de comentarios sin crear runtime.
 - El scope de sucursal/global limita consultas y gestión por alcance sin usar
   `id_instalacion_origen`; creador y responsable siguen siendo relaciones
   distintas.
@@ -1552,7 +1553,7 @@ estas dimensiones sustituye ni se deriva de otra.
 | Instalación de origen | `id_instalacion_origen` local | `instalacion.uid_global`, existente en SQL real | procedencia técnica del alta | no usar PK remota, código de deployment ni instalación como scope |
 | Instalación de última modificación | `id_instalacion_ultima_modificacion` local | `instalacion.uid_global`, existente en SQL real | procedencia técnica del último cambio | no reemplaza `op_id`, versión ni scope |
 | Actor humano de historial | futuro ID local de usuario, si el diseño lo materializa | misma identidad global administrativa requerida para usuario | atribución funcional portable | historial no es outbox ni inbox; no diseñar columna aquí |
-| Autor humano de comentario | futuro ID local de usuario, si el diseño lo materializa | misma identidad global administrativa requerida para usuario | autoría portable, únicamente | no decidir versión, target ni transacción de comentario (#493) |
+| Autor humano de comentario | futuro ID local de usuario, si el diseño lo materializa | misma identidad global administrativa requerida para usuario | autoría portable, únicamente | no confundir autor con identidad portable propia del comentario |
 | Generador de sistema | sin usuario creador; código funcional estable | el mismo código funcional estable que defina el futuro catálogo/contrato — **PENDIENTE DE MATERIALIZACIÓN** | identificar el proceso funcional generador | no es usuario, `op_id`, hecho fuente ni UID de Tarea |
 
 La evidencia física distingue los casos: `sucursal` e `instalacion` ya poseen
@@ -1586,9 +1587,10 @@ vigentes y no se reinterpretan en #492.
 El actor humano de historial y el autor humano de comentario, si esos hechos
 viajan, usan conceptualmente la misma identidad portable administrativa. Esto
 sólo congela autoría portable. `historial != outbox`, `historial != inbox` y
-ninguno reemplaza el snapshot. #493 permanece abierto para decidir si comentar
-incrementa `Tarea.version_registro`, cuál es el target de `If-Match`, si existe
-versionado propio y cuál es su frontera transaccional física.
+ninguno reemplaza el snapshot. #493 congela que comentar no incrementa
+`Tarea.version_registro`, no usa `If-Match-Version` de Tarea, requiere identidad
+portable propia conceptual y comparte transacción con outbox/receipt; la forma
+física permanece pendiente.
 
 Resolver una identidad portable **no autoriza** al usuario. En destino, la
 autorización efectiva y la vigencia de sus habilitaciones siguen perteneciendo
@@ -1773,13 +1775,10 @@ resolver de forma segura. Nunca se crea una segunda Tarea con el mismo
 ## 31. Estado de blockers y criterio de #492
 
 De la numeración original, quedan cerrados documentalmente **#1, #2, #3, #4,
-#5, #6, #8, #9, #10 y #11**. #491 resolvió la estrategia de sync y la política
+#5, #6, #7, #8, #9, #10 y #11**. #491 resolvió la estrategia de sync y la política
 Técnica de la sección 30.6 resuelve el último subpendiente de identidad canónica
-interinstalación. Permanece abierto, sin resolución incidental:
-
-7. comentario / efecto sobre `Tarea.version_registro` → issue #493.
-
-La dependencia de #493 impide cerrar el target/versionado exacto del comentario.
+interinstalación. El blocker #7 queda resuelto por la sección 32 / #493:
+comentario append-only independiente, sin CAS ni incremento de versión de Tarea.
 La materialización administrativa de identidad humana, los resolvers de
 referencias y el runtime de `PENDING_DEPENDENCY` siguen como prerequisitos
 técnicos del diseño físico GOP; no reabren el blocker documental #10. La
@@ -1801,7 +1800,106 @@ Por lo tanto, el blocker interno #10 queda **documentalmente resuelto** y #492
 queda **documentalmente listo para cierre después del merge**. Este incremento no
 cierra #492, #493 ni la épica #489 y no declara implementado el runtime Técnico.
 
-## 32. Matriz final por operación
+## 32. Versionado y concurrencia de comentarios (#493)
+
+### 32.1 Decisión sobre snapshot, versión e identidad
+
+Este incremento resuelve documentalmente el blocker interno **#7** sin crear
+entidad técnica, tabla, endpoint, DTO ni evento. Se congela:
+
+```text
+agregar comentario
+-> append funcional independiente
+-> NO modifica el snapshot funcional mutable de Tarea
+-> NO incrementa Tarea.version_registro
+-> NO requiere If-Match-Version de Tarea
+```
+
+`Tarea.version_registro` versiona exclusivamente su snapshot funcional mutable:
+estado, responsable, prioridad, fechas, título, descripción, scope y baja lógica
+cuando ésta exista. No versiona la colección append-only de comentarios. Agregar
+un comentario tampoco cambia por sí mismo `estado`, responsable, prioridad,
+`fecha_objetivo`, `fecha_finalizacion`, scope ni `deleted_at`.
+
+El comentario no recibe un `version_registro` propio: en el MVP no se edita ni se
+borra funcionalmente, y una corrección se expresa con otro append. Como pieza
+append-only replicada sí requiere **identidad portable propia conceptual** para
+reconocer el mismo comentario entre instalaciones. Esa identidad no es la PK
+local, el `uid_global` de Tarea, `op_id` ni `event_id`; nombre, tipo, generación,
+columna, constraint y exposición quedan pendientes del diseño físico.
+
+### 32.2 Concurrencia y estados
+
+- **Comentario/comentario:** dos comentarios concurrentes válidos pueden
+  coexistir y no se rechazan sólo por simultaneidad. No compiten por
+  `Tarea.version_registro`. El orden físico o total definitivo no se congela.
+- **Comentario/mutación del snapshot:** la edición conserva su CAS y debe usar la
+  versión esperada de Tarea. El comentario es otra operación; un cambio
+  concurrente de `Tarea.version_registro` no lo vuelve conflicto optimista. Al
+  aplicarlo se validan autorización, vigencia y reglas funcionales actuales.
+- **Comentario/transición terminal:** `PENDIENTE`, `EN_CURSO`, `COMPLETADA` y
+  `CANCELADA` admiten comentarios con autorización válida. En `COMPLETADA` el
+  comentario no reabre, no cambia estado ni `fecha_finalizacion`. En `CANCELADA`
+  no reabre ni cambia estado. Sólo la operación explícita ya congelada puede
+  reabrir `COMPLETADA`; `CANCELADA` continúa sin reapertura.
+- **Baja lógica:** `CANCELADA != deleted_at`. Esta decisión no habilita comentar
+  una Tarea con `deleted_at != NULL`: al no existir contrato de mutación de bajas
+  lógicas GOP, el caso permanece **NO HABILITADO / PENDIENTE** de diseño futuro.
+
+### 32.3 Sync, idempotencia, autoría y transacción
+
+Agregar comentario permanece `COMMAND_WRITE_NEGOCIO + SINCRONIZABLE`. Exige el
+helper y los headers CORE-EF sync, incluido `X-Op-Id`, pero no
+`If-Match-Version`. La futura persistencia del comentario, su outbox distribuible
+y el receipt durable comparten una única transacción local y commit exterior.
+Un error previo al commit revierte todos esos efectos y permite retry según el
+contrato transversal.
+
+La idempotencia se aplica a la operación independiente, nunca a la versión de
+Tarea:
+
+- mismo `op_id` + envelope materialmente compatible: replay/duplicado seguro,
+  sin crear un segundo comentario ni un segundo outbox;
+- mismo `op_id` + envelope incompatible: `CONFLICTO`, sin segundo comentario;
+- `event_id` identifica la entrega y no sustituye `op_id`, que identifica la
+  operación distribuida.
+
+El autor humano procede de Bearer → `AuthenticatedPrincipal` y viaja mediante el
+contrato portable Administrativo requerido por #492. No se usa login, email,
+PK remota, `X-Usuario-Id` ni un usuario `SYSTEM` ficticio. Resolver autoría no
+omite la autorización vigente al aplicar.
+
+Comentario, historial funcional y auditoría administrativa permanecen conceptos
+distintos. El comentario es texto funcional append-only; el historial es el
+registro estructurado de cambios funcionales; la auditoría pertenece a
+Administrativo. Ninguno sustituye al otro, a outbox, inbox o ledger.
+
+### 32.4 Pendientes físicos y criterio de cierre
+
+Quedan para DEV-ARCH-GOP y artefactos posteriores —después de satisfacer las
+dependencias administrativas/técnicas— la entidad/agregado físico, PK e identidad
+portable concreta del comentario, persistencia, constraints, relación, orden,
+payload/evento, endpoint, DTO, autorización materializada, transacción y tests.
+No se inventan aquí SQL, IDs de CU, API ni runtime.
+
+Criterio documental de #493:
+
+- [x] Efecto sobre `Tarea.version_registro` congelado.
+- [x] No requerimiento de `If-Match-Version` de Tarea definido.
+- [x] Concurrencia comentario/comentario y comentario/mutación definida.
+- [x] Sync e idempotencia identificados sin confundir `op_id` y `event_id`.
+- [x] Comportamiento en estados terminales preservado.
+- [x] `deleted_at` no confundido con `CANCELADA` ni habilitado incidentalmente.
+- [x] `GOP-FREEZE-001` y `PROJECT-STATUS.md` alineados.
+- [x] Sin SQL/API/runtime GOP prematuros.
+
+Por lo tanto, el blocker interno #7 queda **documentalmente resuelto** y #493
+permanece abierto durante el PR, **listo para cierre después del merge**. La
+épica #489 no se cierra: después del merge/cierre de #493 queda lista para
+evaluar la siguiente etapa, condicionada aún por los pendientes físicos y las
+dependencias administrativas/técnicas expresas.
+
+## 33. Matriz final por operación
 
 Los headers abreviados como **CORE-EF sync** significan `X-Op-Id +
 X-Sucursal-Id + X-Instalacion-Id`; son contexto técnico y nunca identidad humana
@@ -1823,6 +1921,6 @@ ni scope funcional. No se definen nombres de endpoint.
 | Completar | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | Materializar referencias #492 |
 | Cancelar | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | Materializar referencias #492 |
 | Reabrir `COMPLETADA -> PENDIENTE` | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | Materializar responsable portable #492 |
-| Agregar comentario | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Pendiente de #493 para target/versión | Autor portable congelado en #492; #493 para granularidad/versionado |
+| Agregar comentario | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | No: append independiente del snapshot | Identidad/autor portable conceptual; física pendiente |
 | Eventual baja lógica técnica | `COMMAND_WRITE_TECNICO` | `SINCRONIZABLE` | CORE-EF sync | Sí, sobre Tarea existente | No crea operación; materializar payload #492 |
 | Consultas humanas de Tarea | `QUERY_READLIKE` | `NO APLICA` | Headers write: `NO APLICA`; Bearer humano separado | No | Auth técnica de una eventual lectura sync queda separada |
