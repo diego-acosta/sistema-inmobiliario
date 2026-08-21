@@ -1349,7 +1349,7 @@ Para un `op_id` distinto y el mismo `uid_global`, rige como mínimo esta matriz:
 
 | Caso | Tratamiento congelado |
 | --- | --- |
-| Versión entrante mayor que la local | Candidata a aplicación controlada; validar continuidad, payload y referencias portables antes de persistir. Un salto o referencia requerida no resoluble impide aplicar; su retención/reproceso técnico queda pendiente de diseño y no se fuerza a rechazo o conflicto. |
+| Versión entrante mayor que la local | Candidata a aplicación controlada; validar continuidad, payload y referencias portables antes de persistir. Si la continuidad es válida pero una referencia portable requerida todavía no se resuelve, no aplicar parcialmente: conservar `op_id`, `event_id`, `consumer`, `uid_global`, `version_registro`, payload/fingerprint y trazabilidad, y retener la operación en `PENDING_DEPENDENCY` para el retry Técnico congelado; la mera ausencia temporal no es `REJECTED` ni `CONFLICTO`. Un gap o discontinuidad de `version_registro` impide la aplicación inmediata, pero es un problema transversal de continuidad distinto de una dependencia portable: su política técnica específica permanece pendiente fuera del alcance de #492, sin clasificarlo aquí como rechazo, conflicto, `PENDING_DEPENDENCY`, fetch, replay ni salto aceptado. |
 | Misma versión y payload material igual | Operación distinta pero materialmente convergente; no se clasifica automáticamente como duplicado ni replay y se conserva la trazabilidad de ambas operaciones. |
 | Misma versión y payload material distinto | Inconsistencia/conflicto material persistido; no sobrescribir. |
 | Versión entrante menor que la local | Cambio atrasado u obsoleto; no retroceder ni sobrescribir el snapshot local y conservar trazabilidad. |
