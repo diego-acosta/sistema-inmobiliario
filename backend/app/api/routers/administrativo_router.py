@@ -154,6 +154,18 @@ from sqlalchemy.orm import Session
 
 router = APIRouter(tags=["Administrativo"])
 
+_CALENDARIO_BOOTSTRAP_HEADERS_OPENAPI = {
+    "parameters": [
+        {
+            "name": name,
+            "in": "header",
+            "required": True,
+            "schema": {"type": "string"},
+        }
+        for name in ("X-Op-Id", "X-Sucursal-Id", "X-Instalacion-Id")
+    ]
+}
+
 
 @router.get(
     "/api/v1/administrativo/seguridad/me",
@@ -773,6 +785,7 @@ def obtener_calendario_comercial(
     "/api/v1/administrativo/configuracion/calendario-comercial",
     response_model=BootstrapCalendarioComercialResponse,
     status_code=201,
+    openapi_extra=_CALENDARIO_BOOTSTRAP_HEADERS_OPENAPI,
     responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse},
                403: {"model": ErrorResponse}, 409: {"model": ErrorResponse},
                422: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
@@ -783,9 +796,9 @@ def bootstrap_calendario_comercial(
         require_administrative_permission(
             "ADMIN.CONFIG.CALENDARIO_COMERCIAL.ADMINISTRAR"))],
     db: Session = Depends(get_db),
-    x_op_id: str = Header(alias="X-Op-Id"),
-    x_sucursal_id: str = Header(alias="X-Sucursal-Id"),
-    x_instalacion_id: str = Header(alias="X-Instalacion-Id"),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> BootstrapCalendarioComercialResponse | JSONResponse:
     # COMMAND_WRITE_NEGOCIO: creación sin If-Match; identidad sólo desde Bearer.
     try:

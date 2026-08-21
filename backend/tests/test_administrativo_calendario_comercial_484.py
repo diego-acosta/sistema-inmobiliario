@@ -132,6 +132,13 @@ def _assert_not_fecha_efectiva(response):
     assert "input" not in body["details"]
 
 
+def _assert_header_error(response, header, reason):
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": header, "reason": reason}
+
+
 def test_bootstrap_y_replay_durable_sin_efectos_adicionales(client, db_session):
     op_id = uuid4()
     first = _post(client, headers=_headers(op_id))
@@ -252,7 +259,7 @@ def test_estados_previos_no_se_reparan(client, db_session, state):
 
 def test_headers_y_openapi(client):
     response = _post(client)
-    assert response.status_code == 422
+    _assert_header_error(response, "X-Op-Id", "requerido faltante")
     operation = client.get("/openapi.json").json()["paths"][ENDPOINT]["post"]
     parameters = {item["name"]: item for item in operation["parameters"]}
     assert all(parameters[name]["required"] for name in
@@ -265,7 +272,25 @@ def test_headers_y_openapi(client):
 def test_post_header_faltante_sanitizado(client, missing):
     headers = _headers()
     headers.pop(missing)
-    _assert_not_fecha_efectiva(_post(client, headers=headers))
+    _assert_header_error(
+        _post(client, headers=headers), missing, "requerido faltante"
+    )
+
+
+@pytest.mark.parametrize(
+    ("header", "value"),
+    [
+        ("X-Op-Id", "no-es-uuid"),
+        ("X-Sucursal-Id", "abc"),
+        ("X-Sucursal-Id", "0"),
+        ("X-Instalacion-Id", "abc"),
+        ("X-Instalacion-Id", "0"),
+    ],
+)
+def test_post_header_invalido_pasa_por_parser_core_ef(client, header, value):
+    headers = _headers()
+    headers[header] = value
+    _assert_header_error(_post(client, headers=headers), header, "inválido")
 
 
 def test_dias_son_enteros_estrictos_y_fecha_explicita(client):
