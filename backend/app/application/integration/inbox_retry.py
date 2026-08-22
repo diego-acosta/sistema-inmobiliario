@@ -52,7 +52,7 @@ class InboxRetryProcessor:
                  event_id: str | None = None, manual: bool = False,
                  now: datetime | None = None) -> InboxOutcome | None:
         current = now or datetime.now(UTC)
-        self.repository.reclaim_expired(now=current)
+        self.repository.reclaim_expired(consumer=self.consumer, now=current)
         event = self.repository.claim_pending(
             consumer=self.consumer, lease_owner=worker_id,
             lease_duration=self.lease_duration,
