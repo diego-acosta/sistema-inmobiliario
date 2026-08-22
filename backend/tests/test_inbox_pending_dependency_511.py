@@ -229,6 +229,95 @@ def test_reclaim_esta_aislado_por_consumer(db_session):
     assert repo.get(event_id=event_b, consumer="consumer_b")["status"] == "PROCESSING"
 
 
+def test_pending_incompatible_bloquea_applicator(db_session):
+    op_id = str(uuid4())
+    aggregate_uid = str(uuid4())
+    _pending(db_session, op_id=op_id, aggregate_uid=aggregate_uid)
+    current = _pending(
+        db_session, op_id=op_id, aggregate_uid=aggregate_uid,
+        payload={"uid_global": "incompatible"},
+    )
+    calls = []
+    outcome = InboxRetryProcessor(db_session, consumer="fixture_511").run_once(
+        lambda event: calls.append(event) or InboxOutcome(InboxOutcomeKind.PROCESSED),
+        worker_id="worker", event_id=current, manual=True,
+    )
+    assert outcome.kind is InboxOutcomeKind.CONFLICTO
+    assert calls == []
+
+
+def test_processing_incompatible_bloquea_applicator(db_session):
+    op_id = str(uuid4())
+    aggregate_uid = str(uuid4())
+    prior = _pending(db_session, op_id=op_id, aggregate_uid=aggregate_uid)
+    repo = InboxRepository(db_session)
+    assert repo.claim_pending(
+        consumer="fixture_511", lease_owner="other-worker",
+        lease_duration=timedelta(minutes=5), automatic_attempt_limit=8,
+        event_id=prior, manual=True,
+    )
+    current = _pending(
+        db_session, op_id=op_id, aggregate_uid=aggregate_uid,
+        version_registro=2,
+    )
+    calls = []
+    outcome = InboxRetryProcessor(db_session, consumer="fixture_511").run_once(
+        lambda event: calls.append(event) or InboxOutcome(InboxOutcomeKind.PROCESSED),
+        worker_id="worker", event_id=current, manual=True,
+    )
+    assert outcome.kind is InboxOutcomeKind.CONFLICTO
+    assert calls == []
+
+
+def test_pending_compatible_elige_una_sola_entrega_para_el_efecto(db_session):
+    op_id = str(uuid4())
+    aggregate_uid = str(uuid4())
+    leader = _pending(db_session, op_id=op_id, aggregate_uid=aggregate_uid)
+    follower = _pending(db_session, op_id=op_id, aggregate_uid=aggregate_uid)
+    calls = []
+
+    def apply(event):
+        calls.append(event["event_id"])
+        return InboxOutcome(InboxOutcomeKind.PROCESSED)
+
+    processor = InboxRetryProcessor(db_session, consumer="fixture_511")
+    deferred = processor.run_once(
+        apply, worker_id="follower", event_id=follower, manual=True,
+    )
+    assert deferred.kind is InboxOutcomeKind.PENDING_DEPENDENCY
+    assert calls == []
+    assert processor.run_once(
+        apply, worker_id="leader", event_id=leader, manual=True,
+    ).kind is InboxOutcomeKind.PROCESSED
+    assert processor.run_once(
+        apply, worker_id="follower-retry", event_id=follower, manual=True,
+    ).kind is InboxOutcomeKind.PROCESSED
+    assert calls == [leader]
+
+
+def test_processed_compatible_no_oculta_pending_incompatible(db_session):
+    op_id = str(uuid4())
+    aggregate_uid = str(uuid4())
+    processed = _pending(db_session, op_id=op_id, aggregate_uid=aggregate_uid)
+    processor = InboxRetryProcessor(db_session, consumer="fixture_511")
+    assert processor.run_once(
+        lambda _: InboxOutcome(InboxOutcomeKind.PROCESSED),
+        worker_id="first", event_id=processed, manual=True,
+    ).kind is InboxOutcomeKind.PROCESSED
+    _pending(
+        db_session, op_id=op_id, aggregate_uid=aggregate_uid,
+        provenance={"installation_uid": "incompatible-origin"},
+    )
+    current = _pending(db_session, op_id=op_id, aggregate_uid=aggregate_uid)
+    calls = []
+    outcome = processor.run_once(
+        lambda event: calls.append(event) or InboxOutcome(InboxOutcomeKind.PROCESSED),
+        worker_id="current", event_id=current, manual=True,
+    )
+    assert outcome.kind is InboxOutcomeKind.CONFLICTO
+    assert calls == []
+
+
 def test_reason_no_allowlisted_se_sanitiza_y_rejected_es_terminal(db_session):
     event_id = _pending(db_session)
     processor = InboxRetryProcessor(db_session, consumer="fixture_511")

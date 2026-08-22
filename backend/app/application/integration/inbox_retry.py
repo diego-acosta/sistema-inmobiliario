@@ -66,20 +66,37 @@ class InboxRetryProcessor:
         if event.get("op_id"):
             self.session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:scope), hashtext(:op))"),
                                  {"scope": self.consumer, "op": event["op_id"]})
-            prior = self.session.execute(text("""
-                SELECT payload_fingerprint, status FROM inbox_event
-                 WHERE consumer=:consumer AND op_id=CAST(:op_id AS uuid) AND id<>:id
-                   AND status IN ('PROCESSED','CONFLICTO')
-                 ORDER BY id LIMIT 1
-            """), {"consumer": self.consumer, "op_id": event["op_id"],
-                     "id": event["id"]}).mappings().one_or_none()
-            if prior and prior["payload_fingerprint"] != event["payload_fingerprint"]:
+            deliveries = self.repository.get_operation_scope_deliveries(
+                consumer=self.consumer, op_id=event["op_id"], exclude_id=event["id"]
+            )
+            if any(
+                delivery["payload_fingerprint"] != event["payload_fingerprint"]
+                for delivery in deliveries
+            ):
                 outcome = InboxOutcome(InboxOutcomeKind.CONFLICTO, "SYNC_OPERATION_CONFLICT")
                 self.repository.mark_conflict(event_id=event["event_id"], consumer=self.consumer)
                 return outcome
-            if prior and prior["status"] == "PROCESSED":
+            if any(delivery["status"] == "PROCESSED" for delivery in deliveries):
                 outcome = InboxOutcome(InboxOutcomeKind.PROCESSED)
                 self.repository.mark_as_processed(event_id=event["event_id"], consumer=self.consumer)
+                return outcome
+            compatible_in_flight = [
+                delivery for delivery in deliveries
+                if delivery["status"] in {"PENDING_DEPENDENCY", "PROCESSING"}
+            ]
+            if any(delivery["status"] == "PROCESSING" for delivery in compatible_in_flight) or (
+                compatible_in_flight
+                and min(delivery["id"] for delivery in compatible_in_flight) < event["id"]
+            ):
+                outcome = InboxOutcome(
+                    InboxOutcomeKind.PENDING_DEPENDENCY,
+                    "SYNC_DEPENDENCY_UNAVAILABLE",
+                )
+                self.repository.mark_pending_dependency(
+                    event_id=event["event_id"], consumer=self.consumer,
+                    reason_code=outcome.reason_code,
+                    next_attempt_at=current + retry_backoff(event["attempt_count"]),
+                )
                 return outcome
 
         nested = self.session.begin_nested()

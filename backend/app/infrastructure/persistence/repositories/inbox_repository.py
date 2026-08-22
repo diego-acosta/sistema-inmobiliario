@@ -134,6 +134,20 @@ class InboxRepository:
         """), {"consumer": consumer, "now": now or datetime.now(UTC)})
         return result.rowcount
 
+    def get_operation_scope_deliveries(
+        self, *, consumer: str, op_id: str, exclude_id: int
+    ) -> list[dict[str, Any]]:
+        """Entrega todo el scope relevante; REJECTED no es un receipt aplicable."""
+        rows = self.db.execute(text("""
+            SELECT * FROM inbox_event
+             WHERE consumer=:consumer AND op_id=CAST(:op_id AS uuid) AND id<>:id
+               AND status IN (
+                   'PENDING_DEPENDENCY', 'PROCESSING', 'PROCESSED', 'CONFLICTO'
+               )
+             ORDER BY id
+        """), {"consumer": consumer, "op_id": op_id, "id": exclude_id}).mappings().all()
+        return [self._map_row(row) for row in rows]
+
     def mark_pending_dependency(self, *, event_id: str, consumer: str,
                                 reason_code: str, next_attempt_at: datetime) -> None:
         self._transition(event_id, consumer, "PENDING_DEPENDENCY", reason_code,
