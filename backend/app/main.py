@@ -106,6 +106,25 @@ async def request_validation_handler(
             ).model_dump(),
             headers={"Cache-Control": "no-store"},
         )
+    if request.method == "PUT" and request.url.path == calendario_path:
+        fields = []
+        for error in exc.errors():
+            location = error.get("loc", ())
+            if len(location) >= 2 and location[0] in {"body", "header"}:
+                field = str(location[-1])
+                if field not in fields:
+                    fields.append(field)
+        return JSONResponse(
+            status_code=422,
+            content=ErrorResponse(
+                error_code="VALIDATION_ERROR",
+                error_message=(
+                    "La solicitud de programación contiene datos inválidos."
+                ),
+                details={"fields": fields},
+            ).model_dump(),
+            headers={"Cache-Control": "no-store"},
+        )
     return await request_validation_exception_handler(request, exc)
 
 

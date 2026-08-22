@@ -180,3 +180,18 @@ def get_core_ef_headers_technical_write(
         )
     except CoreEFHeaderValidationError as exc:
         return exc
+
+
+def get_authenticated_core_ef_headers_write(
+    request: Request,
+) -> AuthenticatedCoreEFHeaders | CoreEFHeaderValidationError:
+    """Dependency Bearer-write con CAS que preserva el ErrorResponse del router."""
+    try:
+        return parse_authenticated_core_ef_headers(
+            x_op_id=request.headers.get("X-Op-Id"),
+            x_sucursal_id=request.headers.get("X-Sucursal-Id"),
+            x_instalacion_id=request.headers.get("X-Instalacion-Id"),
+            if_match_version=request.headers.get("If-Match-Version"),
+        )
+    except CoreEFHeaderValidationError as exc:
+        return exc

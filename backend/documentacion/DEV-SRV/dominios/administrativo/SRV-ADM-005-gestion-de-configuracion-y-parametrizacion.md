@@ -784,3 +784,14 @@ snapshot durable. Todo error previo al commit exterior revierte negocio, outbox 
 receipt. La policy del producer es mínima y específica. #485 deberá emitir
 `calendario_comercial_programado` en su propia transacción. Consumer, inbox,
 reentrega, aplicación remota y sync continúan pendientes en #486.
+
+## Incremento #485 — ProgramarCalendarioComercialService
+
+El servicio ejecuta `claim → contexto → lock raíz → CAS → lock/validación de
+historia → cierre e inserción de pareja → incremento raíz → outbox → completion`.
+El target idempotente singleton es `CALENDARIO_COMERCIAL / NULL / GLOBAL` y el
+fingerprint incluye ambos días, `vigente_desde` e `if_match_version`. La fecha
+debe ser estrictamente posterior al inicio de la última vigencia, sin consultar
+el reloj. Los locks de valores usan orden estable por código. El replay no
+consulta contexto ni agregado y el rollback revierte todas las etapas. El único
+evento material es `calendario_comercial_programado`; #486 no se implementa aquí.

@@ -145,7 +145,11 @@ def test_calendario_comercial_creado_policy_contract() -> None:
             "calendario_comercial",
             {**payload, "token": "secret"},
         )
-    with pytest.raises(UnknownSyncEvent):
+    programmed = validate_sync_event(
+        "calendario_comercial_programado", "calendario_comercial", payload
+    )
+    assert programmed.required_positive_int_fields == ()
+    with pytest.raises(InvalidSyncAggregate):
         validate_sync_event(
-            "calendario_comercial_programado", "calendario_comercial", payload
+            "calendario_comercial_programado", "valor_parametro", payload
         )

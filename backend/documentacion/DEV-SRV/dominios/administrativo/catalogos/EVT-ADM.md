@@ -744,6 +744,16 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 - genera_trazabilidad_administrativa: sí
 - observaciones: #484 implementa sólo producer y policy mínima; consumo y sync remoto pertenecen a #486.
 
+### EVT-ADM-079 — Calendario comercial programado
+- codigo: calendario_comercial_programado
+- descripcion: se cerró la última pareja y se programó atómicamente una nueva vigencia completa.
+- origen_principal: SRV-ADM-005
+- entidad_principal: calendario_comercial
+- tipo_evento: negocio
+- sincronizable: sí
+- genera_trazabilidad_administrativa: sí
+- observaciones: #485 implementa producer y policy default-deny; consumer y sync remoto pertenecen a #486.
+
 ## F. Notas de compatibilidad transversal
 
 - el dominio administrativo es compatible con op_id y trazabilidad distribuida
