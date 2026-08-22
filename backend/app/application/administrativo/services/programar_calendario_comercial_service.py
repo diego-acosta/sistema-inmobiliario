@@ -7,6 +7,7 @@ from typing import Any, Callable
 from sqlalchemy.orm import Session
 
 from app.api.core_ef_headers import AuthenticatedCoreEFHeaders
+from app.application.administrativo.parametro_entero import parse_parametro_entero
 from app.application.common.idempotency import (
     CANONICALIZATION_VERSION,
     ClaimDecision,
@@ -170,12 +171,12 @@ class ProgramarCalendarioComercialService:
         intervals: dict[tuple[Any, Any], dict[str, dict[str, Any]]] = {}
         for row in history:
             try:
-                value = int(row["valor_parametro"])
-            except (TypeError, ValueError) as exc:
+                value = parse_parametro_entero(row["valor_parametro"])
+            except ValueError as exc:
                 raise ProgramarCalendarioComercialError(
                     409, "CONFIGURACION_CALENDARIO_COMERCIAL_INCONSISTENTE"
                 ) from exc
-            if str(value) != row["valor_parametro"] or not 1 <= value <= 31:
+            if not 1 <= value <= 31:
                 raise ProgramarCalendarioComercialError(
                     409, "CONFIGURACION_CALENDARIO_COMERCIAL_INCONSISTENTE"
                 )

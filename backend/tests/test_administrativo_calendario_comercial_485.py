@@ -22,6 +22,12 @@ from app.application.administrativo.services.programar_calendario_comercial_serv
     ProgramarCalendarioComercialService,
 )
 from app.config.database import engine
+from app.application.administrativo.services.obtener_configuracion_calendario_comercial_query_service import (
+    ObtenerConfiguracionCalendarioComercialQueryService,
+)
+from app.infrastructure.persistence.repositories.calendario_comercial_query_repository import (
+    CalendarioComercialQueryRepository,
+)
 
 ENDPOINT = "/api/v1/administrativo/configuracion/calendario-comercial"
 INITIAL = {
@@ -283,6 +289,93 @@ def test_body_invalido_put_usa_error_response_sanitizado_sin_efectos(
     assert "NO_EXPONER_485" not in serialized
     after = _calendar_effects(db_session, op_id)
     assert after == before
+
+
+def test_historia_zero_padded_es_compatible_con_get_y_programacion(client, db_session):
+    _bootstrap(client)
+    db_session.execute(
+        text("""
+            UPDATE valor_parametro v
+               SET valor_parametro = CASE p.codigo_parametro
+                   WHEN 'DIA_CIERRE_COMERCIAL' THEN '020'
+                   ELSE '010' END
+              FROM parametro_sistema p
+             WHERE v.id_parametro_sistema=p.id_parametro_sistema
+               AND p.codigo_parametro IN
+                 ('DIA_CIERRE_COMERCIAL',
+                  'DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS')
+               AND v.fecha_hasta IS NULL
+        """)
+    )
+    db_session.commit()
+
+    snapshot = ObtenerConfiguracionCalendarioComercialQueryService(
+        CalendarioComercialQueryRepository(db_session)
+    ).obtener(date(2026, 9, 15))
+    assert snapshot.dia_cierre_comercial == 20
+    assert snapshot.dia_vencimiento_predeterminado_cuotas == 10
+
+    op_id = uuid4()
+    response = _request(client, "PUT", PROGRAM, _headers(op_id, 1))
+    assert response.status_code == 200
+    assert _calendar_effects(db_session, op_id) == (2, 4, 1, 1)
+    historical = dict(
+        db_session.execute(
+            text("""
+                SELECT p.codigo_parametro, v.valor_parametro
+                  FROM valor_parametro v
+                  JOIN parametro_sistema p USING(id_parametro_sistema)
+                 WHERE p.codigo_parametro IN
+                   ('DIA_CIERRE_COMERCIAL',
+                    'DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS')
+                   AND v.fecha_desde=TIMESTAMP '2026-09-01 00:00:00'
+            """)
+        ).all()
+    )
+    assert historical == {
+        "DIA_CIERRE_COMERCIAL": "020",
+        "DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS": "010",
+    }
+
+
+def _set_calendar_raw_unchecked(db_session, raw_value):
+    trigger = "trg_biu_valor_parametro_calendario_comercial"
+    db_session.execute(text(f"ALTER TABLE valor_parametro DISABLE TRIGGER {trigger}"))
+    try:
+        db_session.execute(
+            text("""
+                UPDATE valor_parametro v SET valor_parametro=:raw
+                  FROM parametro_sistema p
+                 WHERE v.id_parametro_sistema=p.id_parametro_sistema
+                   AND p.codigo_parametro='DIA_CIERRE_COMERCIAL'
+                   AND v.fecha_hasta IS NULL
+            """),
+            {"raw": raw_value},
+        )
+    finally:
+        db_session.execute(
+            text(f"ALTER TABLE valor_parametro ENABLE TRIGGER {trigger}")
+        )
+    db_session.commit()
+
+
+@pytest.mark.parametrize("raw_value", ["15.0", "+15", " 15", "32", "0"])
+def test_historia_entero_incompatible_se_rechaza_sin_efectos(
+    client, db_session, raw_value
+):
+    _bootstrap(client)
+    _set_calendar_raw_unchecked(db_session, raw_value)
+    op_id = uuid4()
+    before = _calendar_effects(db_session, op_id)
+
+    response = _request(client, "PUT", PROGRAM, _headers(op_id, 1))
+
+    assert response.status_code == 409
+    assert (
+        response.json()["error_code"]
+        == "CONFIGURACION_CALENDARIO_COMERCIAL_INCONSISTENTE"
+    )
+    assert _calendar_effects(db_session, op_id) == before
 
 
 def test_rechaza_ultima_pareja_abierta_marcada_no_vigente(client, db_session):
