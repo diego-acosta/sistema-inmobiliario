@@ -28,7 +28,7 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 | A — Comercial / Financiero | Activo. PR #432 está mergeado y #424 cerrado como completado: `INT-FIN-005` es la fuente contractual vigente para la indexación PPV2 mensual; la implementación runtime permanece pendiente. PR #422 conserva la materialización como fuente de `EMITIDA`/`PROYECTADA`. Baseline anterior verificable: `1763 passed`; no hubo nueva ejecución de la suite backend por el PR documental #432. | #425–#431 y #423 conforman el roadmap de implementación; #423 sigue bloqueado por los incrementos de soporte. #345 y #365 conservan alcance relacionado. | #432 mergeado (cierra #424); #422 permanece como fuente vigente para `EMITIDA`/`PROYECTADA`. | #425; luego #426 → #427 → #428/#429 → #423 → #430/#431. |
 | B — Administrativo | #407–#412, #482 y #483 implementados. #484 implementa el bootstrap inicial atómico del calendario, en revisión. #508 materializa la identidad portable propia de `usuario` y su resolver local; la replicación del lifecycle permanece pendiente. | #425 permanece coordinador abierto y dividido; #426 continúa bloqueado. #507/#489 no se cierran desde #508. | PR #503 mergeado (#483); #484 y #508 en revisión. | #485 siguiente incremento de calendario; separar follow-up de replicación de usuarios antes de declarar resuelto el criterio interinstalación de #507. |
 | Operativo | #456 incorpora la identidad canónica local read-only para futuros commands técnicos, sin consumidor productivo ni cambios SQL. | #248 abierto; #454 permanece fuera de alcance. | #456 implementado en este incremento, pendiente de merge. | `LOCAL_INSTALLATION_CODE` es soporte transversal default-deny; Operativo conserva ownership de `instalacion`. |
-| Transversal — CORE-EF / Técnico | #469 y #470 están completados; #412 es el primer consumidor productivo validado. `PENDING_DEPENDENCY` queda congelado como política retryable transversal, todavía no implementada. | #402 está cerrado/completado; #461 permanece abierto y separado. La materialización SQL/repository/worker/tests de retry de inbox requiere incremento Técnico posterior. | PR #478 mergeado; política documental de #492 sobre baseline `1e994ba`. | Materializar incrementalmente el estado y claim/reclaim Técnico sin cambiar `REJECTED` terminal ni romper consumidores existentes. |
+| Transversal — CORE-EF / Técnico | #469 y #470 están completados; #412 es el primer consumidor productivo validado. #511 materializa `PENDING_DEPENDENCY` como lifecycle retryable transversal con envelope retenido, claim/reclaim, lease y reproceso reusable; no incorpora scheduler productivo definitivo. | #402 está cerrado/completado; #461 permanece abierto y separado. #507 sigue abierto por sus otros frentes, incluido #510. | PR #512 en revisión; #511 materializa el Frente B sin implementar GOP/Tarea. | Integrar consumers futuros sólo mediante incrementos dueños; resolver #510 por separado y no ampliar compatibilidad heredada. |
 | Gestión Operativa — Tareas | Freeze funcional pre-DER: #490 y #491 están completados; #492 y #493 quedan documentalmente resueltos. | Épica #489 abierta; #492 conserva su estado previo y #493 queda listo para cierre después del merge. | Baseline verificado: merge de PR #495 (`1e994ba`), cierre documental del blocker interno #10. | Evaluar la siguiente etapa de #489 tras merge/cierre de #493 y resolver dependencias administrativas/técnicas antes de DER/SQL/API; no implementar Tarea desde este incremento. |
 
 ## 4. Reglas para trabajo paralelo
@@ -121,8 +121,8 @@ Blockers internos de `GOP-FREEZE-001`:
 - #6 — estrategia de sync: resuelto documentalmente por #491 / PR #494.
 - #7 — comentario / `version_registro`: documentalmente resuelto por #493; listo para cierre después del merge.
 - #10 — identidad canónica interinstalación: documentalmente resuelto por #492;
-  la política retryable transversal está congelada y su runtime Técnico queda
-  pendiente. #492 sigue abierto y queda listo para cierre después del merge.
+  #511 materializa el runtime Técnico de la política retryable transversal.
+  #492 conserva su estado documental y #507 sigue abierto por los otros frentes.
 
 #492 congela `uid_global` de Tarea como identidad distribuida y reserva el futuro
 ID local sólo para joins/FKs. Creador, responsable y actores de
@@ -138,9 +138,11 @@ resuelve a PK locales antes de persistir. Una referencia requerida temporalmente
 no resoluble no genera placeholders ni copia PK remota: Técnico congela
 `PENDING_DEPENDENCY` como espera retryable del mismo registro, con claim
 atómico, backoff controlado y trazabilidad, sin aplicación parcial. `REJECTED`
-permanece terminal y la mera ausencia temporal no es `CONFLICTO`. El runtime
-actual todavía no implementa esa política: `claim` no reabre el mismo
-`(event_id, consumer)` ni existen lease, payload retenido o scheduler. #492 queda
+permanece terminal y la mera ausencia temporal no es `CONFLICTO`. **Estado
+histórico previo a #511:** el runtime entonces auditado no reabría el mismo
+`(event_id, consumer)` ni tenía lease o payload retenido. Desde #511 existen el
+lifecycle, claim/reclaim y entry point reusable, pero no un scheduler productivo
+definitivo ni integración automática de consumers GOP futuros. #492 queda
 documentalmente listo para cierre después del merge, sin diseñar DTO, evento,
 DER, SQL, API ni runtime GOP. La autoría portable sigue el contrato #492. #493
 congela `Comentario.uid_global` propio, único, inmutable y no reutilizable, y su
