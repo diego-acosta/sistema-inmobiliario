@@ -14,6 +14,10 @@ INBOX_STATUSES = frozenset(
 )
 
 
+class InboxOwnershipLost(RuntimeError):
+    code = "SYNC_INBOX_OWNERSHIP_LOST"
+
+
 class InboxRepository:
     """Lifecycle técnico del inbox; nunca decide semántica del consumer."""
 
@@ -116,6 +120,7 @@ class InboxRepository:
             )
             UPDATE inbox_event i SET status='PROCESSING', lease_owner=:owner,
                 lease_expires_at=:expires, attempt_count=i.attempt_count + 1,
+                lease_generation=i.lease_generation + 1,
                 last_attempt_at=:now, processed_at=NULL
               FROM candidate WHERE i.id=candidate.id RETURNING i.*
         """), {"consumer": consumer, "event_id": event_id, "manual": manual,
@@ -149,35 +154,58 @@ class InboxRepository:
         return [self._map_row(row) for row in rows]
 
     def mark_pending_dependency(self, *, event_id: str, consumer: str,
-                                reason_code: str, next_attempt_at: datetime) -> None:
+                                reason_code: str, next_attempt_at: datetime,
+                                lease_owner: str | None = None,
+                                lease_generation: int | None = None) -> None:
         self._transition(event_id, consumer, "PENDING_DEPENDENCY", reason_code,
-                         next_attempt_at=next_attempt_at)
+                         next_attempt_at=next_attempt_at, lease_owner=lease_owner,
+                         lease_generation=lease_generation)
 
-    def mark_as_processed(self, *, event_id: str, consumer: str) -> None:
+    def mark_as_processed(self, *, event_id: str, consumer: str,
+                          lease_owner: str | None = None,
+                          lease_generation: int | None = None) -> None:
         self._transition(event_id, consumer, "PROCESSED", None,
-                         processed_at=datetime.now(UTC))
+                         processed_at=datetime.now(UTC), lease_owner=lease_owner,
+                         lease_generation=lease_generation)
 
-    def mark_as_rejected(self, *, event_id: str, consumer: str, error_detail: str) -> None:
+    def mark_as_rejected(self, *, event_id: str, consumer: str, error_detail: str,
+                         lease_owner: str | None = None,
+                         lease_generation: int | None = None) -> None:
         self._transition(event_id, consumer, "REJECTED", error_detail,
-                         processed_at=datetime.now(UTC))
+                         processed_at=datetime.now(UTC), lease_owner=lease_owner,
+                         lease_generation=lease_generation)
 
     def mark_conflict(self, *, event_id: str, consumer: str,
-                      reason_code: str = "SYNC_OPERATION_CONFLICT") -> None:
+                      reason_code: str = "SYNC_OPERATION_CONFLICT",
+                      lease_owner: str | None = None,
+                      lease_generation: int | None = None) -> None:
         self._transition(event_id, consumer, "CONFLICTO", reason_code,
-                         processed_at=datetime.now(UTC))
+                         processed_at=datetime.now(UTC), lease_owner=lease_owner,
+                         lease_generation=lease_generation)
 
     def _transition(self, event_id: str, consumer: str, status: str,
                     reason: str | None, **timestamps: Any) -> None:
         assert status in INBOX_STATUSES
-        self.db.execute(text("""
+        fenced = timestamps.get("lease_generation") is not None
+        result = self.db.execute(text("""
             UPDATE inbox_event SET status=:status, processed_at=:processed_at,
                 error_detail=:reason, next_attempt_at=:next_attempt_at,
                 lease_owner=NULL, lease_expires_at=NULL
              WHERE event_id=CAST(:event_id AS uuid) AND consumer=:consumer
                AND status='PROCESSING'
+               AND (NOT CAST(:fenced AS boolean) OR (
+                    lease_owner=:lease_owner
+                    AND lease_generation=:lease_generation
+                    AND lease_expires_at > :ownership_now
+               ))
         """), {"status": status, "processed_at": timestamps.get("processed_at"),
                  "next_attempt_at": timestamps.get("next_attempt_at"),
-                 "reason": reason, "event_id": event_id, "consumer": consumer})
+                 "reason": reason, "event_id": event_id, "consumer": consumer,
+                 "fenced": fenced, "lease_owner": timestamps.get("lease_owner"),
+                 "lease_generation": timestamps.get("lease_generation"),
+                 "ownership_now": datetime.now(UTC)})
+        if fenced and result.rowcount != 1:
+            raise InboxOwnershipLost(InboxOwnershipLost.code)
 
     def is_processed(self, *, event_id: str, consumer: str) -> bool:
         return self.db.execute(text("""SELECT 1 FROM inbox_event WHERE

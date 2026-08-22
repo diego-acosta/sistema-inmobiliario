@@ -4,10 +4,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import Callable
+from typing import Callable, ContextManager
 
 from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.infrastructure.persistence.repositories.inbox_repository import InboxRepository
 
@@ -41,26 +41,47 @@ def retry_backoff(attempt_count: int) -> timedelta:
 class InboxRetryProcessor:
     def __init__(self, session: Session, *, consumer: str,
                  lease_duration: timedelta = DEFAULT_LEASE,
-                 automatic_attempt_limit: int = DEFAULT_AUTOMATIC_ATTEMPT_LIMIT) -> None:
+                 automatic_attempt_limit: int = DEFAULT_AUTOMATIC_ATTEMPT_LIMIT,
+                 lifecycle_session_factory: Callable[[], ContextManager[Session]] | None = None) -> None:
         self.session = session
         self.consumer = consumer
         self.repository = InboxRepository(session)
         self.lease_duration = lease_duration
         self.automatic_attempt_limit = automatic_attempt_limit
+        if lifecycle_session_factory is None:
+            bind = session.get_bind()
+            engine = getattr(bind, "engine", bind)
+            lifecycle_session_factory = sessionmaker(
+                bind=engine, expire_on_commit=False, class_=Session
+            )
+        self.lifecycle_session_factory = lifecycle_session_factory
+
+    @staticmethod
+    def _ownership(event: dict, worker_id: str) -> dict[str, object]:
+        return {
+            "lease_owner": worker_id,
+            "lease_generation": event["lease_generation"],
+        }
 
     def run_once(self, applicator: Callable[[dict], InboxOutcome], *, worker_id: str,
                  event_id: str | None = None, manual: bool = False,
                  now: datetime | None = None) -> InboxOutcome | None:
         current = now or datetime.now(UTC)
-        self.repository.reclaim_expired(consumer=self.consumer, now=current)
-        event = self.repository.claim_pending(
-            consumer=self.consumer, lease_owner=worker_id,
-            lease_duration=self.lease_duration,
-            automatic_attempt_limit=self.automatic_attempt_limit,
-            event_id=event_id, manual=manual, now=current,
-        )
+        # Fase técnica corta: reclaim + claim se confirman antes del applicator.
+        with self.lifecycle_session_factory() as lifecycle_session:
+            lifecycle_repository = InboxRepository(lifecycle_session)
+            lifecycle_repository.reclaim_expired(consumer=self.consumer, now=current)
+            lifecycle_session.commit()
+            event = lifecycle_repository.claim_pending(
+                consumer=self.consumer, lease_owner=worker_id,
+                lease_duration=self.lease_duration,
+                automatic_attempt_limit=self.automatic_attempt_limit,
+                event_id=event_id, manual=manual, now=current,
+            )
+            lifecycle_session.commit()
         if event is None:
             return None
+        ownership = self._ownership(event, worker_id)
 
         # Scope técnico consumer/op_id: serializa entregas distintas de una operación.
         if event.get("op_id"):
@@ -74,11 +95,15 @@ class InboxRetryProcessor:
                 for delivery in deliveries
             ):
                 outcome = InboxOutcome(InboxOutcomeKind.CONFLICTO, "SYNC_OPERATION_CONFLICT")
-                self.repository.mark_conflict(event_id=event["event_id"], consumer=self.consumer)
+                self.repository.mark_conflict(
+                    event_id=event["event_id"], consumer=self.consumer, **ownership
+                )
                 return outcome
             if any(delivery["status"] == "PROCESSED" for delivery in deliveries):
                 outcome = InboxOutcome(InboxOutcomeKind.PROCESSED)
-                self.repository.mark_as_processed(event_id=event["event_id"], consumer=self.consumer)
+                self.repository.mark_as_processed(
+                    event_id=event["event_id"], consumer=self.consumer, **ownership
+                )
                 return outcome
             compatible_in_flight = [
                 delivery for delivery in deliveries
@@ -96,6 +121,7 @@ class InboxRetryProcessor:
                     event_id=event["event_id"], consumer=self.consumer,
                     reason_code=outcome.reason_code,
                     next_attempt_at=current + retry_backoff(event["attempt_count"]),
+                    **ownership,
                 )
                 return outcome
 
@@ -105,8 +131,10 @@ class InboxRetryProcessor:
             if not isinstance(outcome, InboxOutcome):
                 raise TypeError("consumer must return InboxOutcome")
             if outcome.kind is InboxOutcomeKind.PROCESSED:
+                self.repository.mark_as_processed(
+                    event_id=event["event_id"], consumer=self.consumer, **ownership
+                )
                 nested.commit()
-                self.repository.mark_as_processed(event_id=event["event_id"], consumer=self.consumer)
                 return outcome
             nested.rollback()  # descarta cualquier efecto funcional parcial
         except Exception:
@@ -120,11 +148,14 @@ class InboxRetryProcessor:
             self.repository.mark_pending_dependency(
                 event_id=event["event_id"], consumer=self.consumer, reason_code=reason,
                 next_attempt_at=current + retry_backoff(event["attempt_count"]),
+                **ownership,
             )
         elif outcome.kind is InboxOutcomeKind.REJECTED:
             self.repository.mark_as_rejected(event_id=event["event_id"],
-                                             consumer=self.consumer, error_detail=reason)
+                                             consumer=self.consumer, error_detail=reason,
+                                             **ownership)
         else:
             self.repository.mark_conflict(event_id=event["event_id"],
-                                          consumer=self.consumer, reason_code=reason)
+                                          consumer=self.consumer, reason_code=reason,
+                                          **ownership)
         return InboxOutcome(outcome.kind, reason)

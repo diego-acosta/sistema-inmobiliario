@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -5,12 +6,14 @@ from uuid import uuid4
 import psycopg
 import pytest
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.application.integration.inbox_retry import (
     InboxOutcome, InboxOutcomeKind, InboxRetryProcessor, retry_backoff,
 )
 from app.application.common.idempotency import NonCanonicalizablePayload
 from app.infrastructure.persistence.repositories.inbox_repository import InboxRepository
+from app.infrastructure.persistence.repositories.inbox_repository import InboxOwnershipLost
 from app.config.database import engine
 
 
@@ -35,11 +38,38 @@ def _pending(db, *, consumer="fixture_511", attempts=0, when=None, op_id=None,
     return event_id
 
 
+def _committed_pending(*, consumer: str) -> tuple[str, str]:
+    event_id = str(uuid4())
+    op_id = str(uuid4())
+    with Session(engine) as session:
+        repo = InboxRepository(session)
+        assert repo.claim(
+            event_id=event_id, event_type="sucursal_creada", aggregate_type="sucursal",
+            aggregate_id=1, consumer=consumer, op_id=op_id,
+            payload={"uid_global": "target-visible"}, aggregate_uid=str(uuid4()),
+            provenance={"installation_uid": "origin-visible"}, version_registro=1,
+        )
+        repo.mark_pending_dependency(
+            event_id=event_id, consumer=consumer,
+            reason_code="SYNC_DEPENDENCY_UNAVAILABLE",
+            next_attempt_at=datetime.now(UTC),
+        )
+        session.commit()
+    return event_id, op_id
+
+
+def _processor(db_session, **kwargs):
+    return InboxRetryProcessor(
+        db_session, lifecycle_session_factory=lambda: nullcontext(db_session), **kwargs
+    )
+
+
 def test_patch_materializa_contrato(db_session):
     columns = set(db_session.execute(text("""SELECT column_name FROM information_schema.columns
         WHERE table_schema='public' AND table_name='inbox_event'""")).scalars())
     assert {"op_id", "payload", "payload_fingerprint", "provenance", "attempt_count",
-            "last_attempt_at", "next_attempt_at", "lease_owner", "lease_expires_at"} <= columns
+            "last_attempt_at", "next_attempt_at", "lease_owner", "lease_expires_at",
+            "lease_generation"} <= columns
 
 
 def test_patch_falla_ante_columna_existente_incompatible():
@@ -81,7 +111,7 @@ def test_dependencia_ausente_preserva_envelope_y_retry_aplica_una_vez(db_session
         return InboxOutcome(InboxOutcomeKind.PROCESSED) if available else InboxOutcome(
             InboxOutcomeKind.PENDING_DEPENDENCY, "SYNC_DEPENDENCY_UNAVAILABLE")
 
-    processor = InboxRetryProcessor(db_session, consumer="fixture_511")
+    processor = _processor(db_session, consumer="fixture_511")
     first = processor.run_once(consumer, worker_id="w1", event_id=event_id, manual=True)
     row = InboxRepository(db_session).get(event_id=event_id, consumer="fixture_511")
     assert first.kind is InboxOutcomeKind.PENDING_DEPENDENCY
@@ -99,7 +129,7 @@ def test_dependencia_ausente_preserva_envelope_y_retry_aplica_una_vez(db_session
 def test_elegibilidad_limite_y_reanudacion_manual(db_session):
     future = datetime.now(UTC) + timedelta(hours=1)
     event_id = _pending(db_session, attempts=8, when=future)
-    processor = InboxRetryProcessor(db_session, consumer="fixture_511", automatic_attempt_limit=8)
+    processor = _processor(db_session, consumer="fixture_511", automatic_attempt_limit=8)
     assert processor.run_once(lambda _: InboxOutcome(InboxOutcomeKind.PROCESSED), worker_id="auto") is None
     assert InboxRepository(db_session).get(event_id=event_id, consumer="fixture_511")["status"] == "PENDING_DEPENDENCY"
     assert processor.run_once(lambda _: InboxOutcome(InboxOutcomeKind.PROCESSED),
@@ -128,7 +158,7 @@ def test_mismo_op_id_scope_consumer_replay_y_conflicto(db_session):
     op_id = str(uuid4())
     aggregate_uid = str(uuid4())
     first = _pending(db_session, op_id=op_id, aggregate_uid=aggregate_uid)
-    processor = InboxRetryProcessor(db_session, consumer="fixture_511")
+    processor = _processor(db_session, consumer="fixture_511")
     calls = []
 
     def apply(event):
@@ -164,7 +194,7 @@ def test_fingerprint_canonico_ignora_orden_json_y_metadata_material_conflicta(db
     assert repo.get(event_id=first, consumer="fixture_511")["payload_fingerprint"] == (
         repo.get(event_id=second, consumer="fixture_511")["payload_fingerprint"]
     )
-    processor = InboxRetryProcessor(db_session, consumer="fixture_511")
+    processor = _processor(db_session, consumer="fixture_511")
     calls = []
 
     def apply(event):
@@ -220,7 +250,7 @@ def test_reclaim_esta_aislado_por_consumer(db_session):
             consumer=consumer, lease_owner="dead", lease_duration=timedelta(minutes=1),
             automatic_attempt_limit=8, now=now, manual=True,
         )
-    processor = InboxRetryProcessor(db_session, consumer="consumer_a")
+    processor = _processor(db_session, consumer="consumer_a")
     processor.run_once(
         lambda _: InboxOutcome(InboxOutcomeKind.PENDING_DEPENDENCY),
         worker_id="worker-a", now=now + timedelta(minutes=2),
@@ -238,7 +268,7 @@ def test_pending_incompatible_bloquea_applicator(db_session):
         payload={"uid_global": "incompatible"},
     )
     calls = []
-    outcome = InboxRetryProcessor(db_session, consumer="fixture_511").run_once(
+    outcome = _processor(db_session, consumer="fixture_511").run_once(
         lambda event: calls.append(event) or InboxOutcome(InboxOutcomeKind.PROCESSED),
         worker_id="worker", event_id=current, manual=True,
     )
@@ -261,7 +291,7 @@ def test_processing_incompatible_bloquea_applicator(db_session):
         version_registro=2,
     )
     calls = []
-    outcome = InboxRetryProcessor(db_session, consumer="fixture_511").run_once(
+    outcome = _processor(db_session, consumer="fixture_511").run_once(
         lambda event: calls.append(event) or InboxOutcome(InboxOutcomeKind.PROCESSED),
         worker_id="worker", event_id=current, manual=True,
     )
@@ -280,7 +310,7 @@ def test_pending_compatible_elige_una_sola_entrega_para_el_efecto(db_session):
         calls.append(event["event_id"])
         return InboxOutcome(InboxOutcomeKind.PROCESSED)
 
-    processor = InboxRetryProcessor(db_session, consumer="fixture_511")
+    processor = _processor(db_session, consumer="fixture_511")
     deferred = processor.run_once(
         apply, worker_id="follower", event_id=follower, manual=True,
     )
@@ -299,7 +329,7 @@ def test_processed_compatible_no_oculta_pending_incompatible(db_session):
     op_id = str(uuid4())
     aggregate_uid = str(uuid4())
     processed = _pending(db_session, op_id=op_id, aggregate_uid=aggregate_uid)
-    processor = InboxRetryProcessor(db_session, consumer="fixture_511")
+    processor = _processor(db_session, consumer="fixture_511")
     assert processor.run_once(
         lambda _: InboxOutcome(InboxOutcomeKind.PROCESSED),
         worker_id="first", event_id=processed, manual=True,
@@ -320,10 +350,178 @@ def test_processed_compatible_no_oculta_pending_incompatible(db_session):
 
 def test_reason_no_allowlisted_se_sanitiza_y_rejected_es_terminal(db_session):
     event_id = _pending(db_session)
-    processor = InboxRetryProcessor(db_session, consumer="fixture_511")
+    processor = _processor(db_session, consumer="fixture_511")
     processor.run_once(lambda _: InboxOutcome(InboxOutcomeKind.REJECTED, "password=secret"),
                        worker_id="worker", event_id=event_id, manual=True)
     row = InboxRepository(db_session).get(event_id=event_id, consumer="fixture_511")
     assert row["status"] == "REJECTED" and row["error_detail"] == "SYNC_FUNCTIONAL_FAILURE"
     assert processor.run_once(lambda _: InboxOutcome(InboxOutcomeKind.PROCESSED),
                               worker_id="worker", event_id=event_id, manual=True) is None
+
+
+def test_claim_es_visible_desde_otra_conexion_antes_del_applicator():
+    consumer = f"visibility-{uuid4()}"
+    event_id, _ = _committed_pending(consumer=consumer)
+    observed = {}
+    with Session(engine) as functional:
+        processor = InboxRetryProcessor(functional, consumer=consumer)
+
+        def applicator(_):
+            with Session(engine) as observer:
+                observed.update(InboxRepository(observer).get(
+                    event_id=event_id, consumer=consumer
+                ))
+            return InboxOutcome(
+                InboxOutcomeKind.PENDING_DEPENDENCY,
+                "SYNC_DEPENDENCY_UNAVAILABLE",
+            )
+
+        processor.run_once(
+            applicator, worker_id="visible-owner", event_id=event_id, manual=True
+        )
+        functional.commit()
+    assert observed["status"] == "PROCESSING"
+    assert observed["lease_owner"] == "visible-owner"
+    assert observed["lease_expires_at"] is not None
+    assert observed["lease_generation"] == 1
+
+
+def test_lease_visible_vigente_no_reclaim_y_vencido_genera_nuevo_fence():
+    consumer = f"reclaim-{uuid4()}"
+    event_id, _ = _committed_pending(consumer=consumer)
+    now = datetime.now(UTC)
+    with Session(engine) as first:
+        claimed_a = InboxRepository(first).claim_pending(
+            consumer=consumer, lease_owner="worker-a", lease_duration=timedelta(minutes=5),
+            automatic_attempt_limit=8, event_id=event_id, manual=True, now=now,
+        )
+        first.commit()
+    with Session(engine) as second:
+        repo = InboxRepository(second)
+        assert repo.reclaim_expired(consumer=consumer, now=now + timedelta(minutes=4)) == 0
+        assert repo.reclaim_expired(consumer=consumer, now=now + timedelta(minutes=6)) == 1
+        second.commit()
+    with Session(engine) as third:
+        claimed_b = InboxRepository(third).claim_pending(
+            consumer=consumer, lease_owner="worker-b", lease_duration=timedelta(minutes=5),
+            automatic_attempt_limit=8, event_id=event_id, manual=True,
+            now=now + timedelta(minutes=6),
+        )
+        third.commit()
+    assert claimed_a["lease_generation"] == 1
+    assert claimed_b["lease_generation"] == 2
+
+
+def test_worker_stale_revierte_efecto_y_nuevo_owner_completa_una_vez():
+    consumer = f"stale-{uuid4()}"
+    event_id, op_id = _committed_pending(consumer=consumer)
+    now = datetime.now(UTC)
+    claimed_b = {}
+    effect_table = f"inbox_effect_{uuid4().hex}"
+    with Session(engine) as setup:
+        setup.execute(text(f"CREATE TABLE {effect_table} (op_id uuid PRIMARY KEY)"))
+        setup.commit()
+    try:
+        with Session(engine) as stale_functional:
+            processor = InboxRetryProcessor(
+                stale_functional, consumer=consumer, lease_duration=timedelta(minutes=1)
+            )
+
+            def stale_applicator(_):
+                stale_functional.execute(text(
+                    f"INSERT INTO {effect_table} (op_id) VALUES (CAST(:op AS uuid))"
+                ), {"op": op_id})
+                with Session(engine) as takeover:
+                    repo = InboxRepository(takeover)
+                    assert repo.reclaim_expired(
+                        consumer=consumer, now=now + timedelta(minutes=2)
+                    ) == 1
+                    takeover.commit()
+                with Session(engine) as takeover:
+                    row = InboxRepository(takeover).claim_pending(
+                        consumer=consumer, lease_owner="worker-b",
+                        lease_duration=timedelta(minutes=5), automatic_attempt_limit=8,
+                        event_id=event_id, manual=True, now=now + timedelta(minutes=2),
+                    )
+                    claimed_b.update(row)
+                    takeover.commit()
+                return InboxOutcome(InboxOutcomeKind.PROCESSED)
+
+            with pytest.raises(InboxOwnershipLost):
+                processor.run_once(
+                    stale_applicator, worker_id="worker-a", event_id=event_id,
+                    manual=True, now=now,
+                )
+            stale_functional.rollback()
+
+        with Session(engine) as new_functional:
+            new_functional.execute(text(
+                "SELECT pg_advisory_xact_lock(hashtext(:scope), hashtext(:op))"
+            ), {"scope": consumer, "op": op_id})
+            new_functional.execute(text(
+                f"INSERT INTO {effect_table} (op_id) VALUES (CAST(:op AS uuid))"
+            ), {"op": op_id})
+            InboxRepository(new_functional).mark_as_processed(
+                event_id=event_id, consumer=consumer, lease_owner="worker-b",
+                lease_generation=claimed_b["lease_generation"],
+            )
+            new_functional.commit()
+        with Session(engine) as verify:
+            assert verify.execute(text(
+                f"SELECT count(*) FROM {effect_table} WHERE op_id=CAST(:op AS uuid)"
+            ), {"op": op_id}).scalar_one() == 1
+            assert InboxRepository(verify).get(
+                event_id=event_id, consumer=consumer
+            )["status"] == "PROCESSED"
+    finally:
+        with Session(engine) as cleanup:
+            cleanup.execute(text(f"DROP TABLE IF EXISTS {effect_table}"))
+            cleanup.commit()
+
+
+@pytest.mark.parametrize("transition", ["processed", "pending", "rejected", "conflict"])
+def test_todas_las_transiciones_rechazan_generation_stale(transition):
+    consumer = f"stale-transition-{uuid4()}"
+    event_id, _ = _committed_pending(consumer=consumer)
+    now = datetime.now(UTC)
+    with Session(engine) as session:
+        first = InboxRepository(session).claim_pending(
+            consumer=consumer, lease_owner="owner-a", lease_duration=timedelta(minutes=1),
+            automatic_attempt_limit=8, event_id=event_id, manual=True, now=now,
+        )
+        session.commit()
+    with Session(engine) as session:
+        repo = InboxRepository(session)
+        assert repo.reclaim_expired(consumer=consumer, now=now + timedelta(minutes=2)) == 1
+        session.commit()
+    with Session(engine) as session:
+        second = InboxRepository(session).claim_pending(
+            consumer=consumer, lease_owner="owner-b", lease_duration=timedelta(minutes=5),
+            automatic_attempt_limit=8, event_id=event_id, manual=True,
+            now=now + timedelta(minutes=2),
+        )
+        session.commit()
+    assert second["lease_generation"] > first["lease_generation"]
+    with Session(engine) as stale:
+        repo = InboxRepository(stale)
+        common = {
+            "event_id": event_id, "consumer": consumer, "lease_owner": "owner-a",
+            "lease_generation": first["lease_generation"],
+        }
+        with pytest.raises(InboxOwnershipLost):
+            if transition == "processed":
+                repo.mark_as_processed(**common)
+            elif transition == "pending":
+                repo.mark_pending_dependency(
+                    **common, reason_code="SYNC_DEPENDENCY_UNAVAILABLE",
+                    next_attempt_at=now + timedelta(minutes=3),
+                )
+            elif transition == "rejected":
+                repo.mark_as_rejected(**common, error_detail="SYNC_PAYLOAD_INVALID")
+            else:
+                repo.mark_conflict(**common)
+        stale.rollback()
+    with Session(engine) as verify:
+        row = InboxRepository(verify).get(event_id=event_id, consumer=consumer)
+        assert row["status"] == "PROCESSING"
+        assert row["lease_owner"] == "owner-b"

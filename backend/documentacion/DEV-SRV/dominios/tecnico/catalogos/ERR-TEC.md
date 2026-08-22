@@ -391,3 +391,4 @@ Incluye operaciones distribuidas, sincronización, inbox y outbox, idempotencia,
 - `SYNC_PAYLOAD_INVALID`: imposibilidad permanente por payload.
 - `SYNC_FUNCTIONAL_FAILURE`: código cerrado para fallas no clasificadas; nunca persiste excepción cruda.
 - `SYNC_WORKER_LEASE_EXPIRED`: reclaim técnico de un lease vencido.
+- `SYNC_INBOX_OWNERSHIP_LOST`: owner/generación de lease obsoletos; la transición fenced no se aplica y el efecto funcional local se revierte sin persistir token, payload ni excepción cruda.

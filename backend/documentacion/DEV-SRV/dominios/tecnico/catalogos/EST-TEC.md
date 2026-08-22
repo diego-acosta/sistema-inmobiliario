@@ -326,7 +326,7 @@ Incluye operaciones distribuidas, sincronización, inbox y outbox, idempotencia,
 - descripcion: la operación remota es válida pero espera que una referencia portable requerida pueda resolverse localmente; conserva identidad, payload y trazabilidad para reproceso controlado.
 - estado_inicial: no
 - estado_final: no
-- observaciones: estado contractual no implementado todavía; no equivale a PROCESSING, REJECTED ni CONFLICTO.
+- observaciones: desde #511 es un estado runtime materializado por Técnico/Sync; no equivale a PROCESSING, REJECTED ni CONFLICTO. El scheduler/daemon productivo definitivo permanece fuera de alcance.
 
 ## Notas
 - Este catálogo deriva del DEV-SRV del dominio Técnico.
