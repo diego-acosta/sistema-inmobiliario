@@ -383,3 +383,11 @@ Incluye operaciones distribuidas, sincronización, inbox y outbox, idempotencia,
 - No reemplaza al CAT-CU maestro.
 - Los errores aquí listados se usan como apoyo a implementación, validación y manejo consistente de respuestas backend.
 - Debe mantenerse alineado con CU-TEC, RN-TEC, CORE-EF-001 y CORE-EF-VALIDACION.
+
+## Errores sanitizados #511
+
+- `SYNC_DEPENDENCY_UNAVAILABLE`: dependencia portable temporalmente ausente.
+- `SYNC_OPERATION_CONFLICT`: mismo scope de operación con envelope incompatible.
+- `SYNC_PAYLOAD_INVALID`: imposibilidad permanente por payload.
+- `SYNC_FUNCTIONAL_FAILURE`: código cerrado para fallas no clasificadas; nunca persiste excepción cruda.
+- `SYNC_WORKER_LEASE_EXPIRED`: reclaim técnico de un lease vencido.

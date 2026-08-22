@@ -289,11 +289,17 @@ la operación.
 - definición exacta de estados técnicos de operación distribuida
 - criterio final de segmentación por destino o alcance
 - relación formal entre paquete técnico y operación individual
-- materialización SQL/runtime/tests de `PENDING_DEPENDENCY`, claim/reclaim y
-  reprocesamiento conforme a la política contractual congelada
 - política de reintentos de emisión de outbox (separada del reproceso de inbox)
 - estrategia exacta de payload técnico portable
 
 ## Guardrail #455
 
 El ingreso a sincronización usa la allowlist única de aplicación y default-deny en repository, worker y dispatcher. Eventos/aggregates desconocidos y payloads sensibles fallan cerrados; credenciales y sesiones jamás son contratos permitidos. Los errores persistibles son códigos sanitizados, no `str(exc)` ni payloads.
+
+## Materialización runtime de dependencias temporales (#511)
+
+`PENDING_DEPENDENCY` es soporte transversal Técnico/Sync. `inbox_event` retiene el envelope portable, `event_id`, `consumer`, `op_id`, payload permitido, fingerprint, procedencia, intentos, elegibilidad y lease. El consumer dueño decide mediante un resultado tipado si una referencia ausente es temporal, permanente o una divergencia material; Técnico no interpreta excepciones genéricas como dependencia.
+
+El claim usa `FOR UPDATE SKIP LOCKED` y `UPDATE ... RETURNING`. Cada intento pasa a `PROCESSING` con lease temporal; un lease vencido vuelve a `PENDING_DEPENDENCY` conservando la traza. El backoff exponencial está acotado, el límite pausa únicamente la selección automática y el entry point manual reutiliza el mismo claim. `REJECTED` continúa terminal.
+
+La aplicación funcional ocurre dentro de un savepoint de la `Session` compartida. Un resultado pendiente revierte primero el efecto funcional y luego persiste solamente el estado técnico. La exclusión de entregas distintas de un mismo efecto se serializa por `(consumer, op_id)`; envelope compatible ya procesado es replay sin segundo efecto y fingerprint incompatible termina en `CONFLICTO`. `(event_id, consumer)` permanece como deduplicación de entrega y no sustituye `op_id`.

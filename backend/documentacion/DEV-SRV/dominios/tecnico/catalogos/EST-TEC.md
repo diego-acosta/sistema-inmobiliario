@@ -333,3 +333,7 @@ Incluye operaciones distribuidas, sincronización, inbox y outbox, idempotencia,
 - No reemplaza al CAT-CU maestro.
 - Los estados aquí listados se usan como apoyo a implementación, validación y consistencia del dominio backend.
 - Debe mantenerse alineado con CU-TEC, RN-TEC, ERR-TEC, EVT-TEC, CORE-EF-001 y CORE-EF-VALIDACION.
+
+## EST-TEC-511 — Estados runtime de inbox
+
+`PENDING_DEPENDENCY -> PROCESSING -> PROCESSED | PENDING_DEPENDENCY | REJECTED | CONFLICTO`. `REJECTED` es terminal. El agotamiento del límite automático conserva `PENDING_DEPENDENCY`; `PROCESSING` sólo se reclama cuando su lease venció.

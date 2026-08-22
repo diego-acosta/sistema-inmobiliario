@@ -1,131 +1,142 @@
-from datetime import UTC, datetime
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 
+INBOX_STATUSES = frozenset(
+    {"PENDING_DEPENDENCY", "PROCESSING", "PROCESSED", "REJECTED", "CONFLICTO"}
+)
+
+
 class InboxRepository:
-    """Garantiza idempotencia de consumidores registrando qué eventos ya fueron procesados."""
+    """Lifecycle técnico del inbox; nunca decide semántica del consumer."""
 
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    def _map_row(self, row: Any) -> dict[str, Any]:
-        return {
-            "id": row["id"],
-            "event_id": str(row["event_id"]),
-            "event_type": row["event_type"],
-            "aggregate_type": row["aggregate_type"],
-            "aggregate_id": row["aggregate_id"],
-            "consumer": row["consumer"],
-            "status": row["status"],
-            "processed_at": row["processed_at"],
-            "error_detail": row["error_detail"],
-            "created_at": row["created_at"],
-        }
+    @staticmethod
+    def _map_row(row: Any) -> dict[str, Any]:
+        value = dict(row)
+        value["event_id"] = str(value["event_id"])
+        if value.get("op_id") is not None:
+            value["op_id"] = str(value["op_id"])
+        return value
 
     def claim(
-        self,
-        *,
-        event_id: str,
-        event_type: str,
-        aggregate_type: str,
-        aggregate_id: int,
-        consumer: str,
+        self, *, event_id: str, event_type: str, aggregate_type: str,
+        aggregate_id: int, consumer: str, op_id: str | None = None,
+        payload: dict[str, Any] | None = None, payload_fingerprint: str | None = None,
+        provenance: dict[str, Any] | None = None,
     ) -> bool:
-        """Intenta reservar el evento para este consumer.
-        Retorna True si fue reclamado ahora (primera vez).
-        Retorna False si ya existía (el consumer ya lo vio antes).
-        """
-        stmt = text(
-            """
+        result = self.db.execute(text("""
             INSERT INTO inbox_event (
-                event_id, event_type, aggregate_type, aggregate_id,
-                consumer, status, created_at
-            )
-            VALUES (
+                event_id, event_type, aggregate_type, aggregate_id, consumer,
+                status, created_at, op_id, payload, payload_fingerprint, provenance
+            ) VALUES (
                 CAST(:event_id AS uuid), :event_type, :aggregate_type, :aggregate_id,
-                :consumer, 'PROCESSING', now()
-            )
-            ON CONFLICT (event_id, consumer) DO NOTHING
-            """
-        )
-        result = self.db.execute(
-            stmt,
-            {
-                "event_id": event_id,
-                "event_type": event_type,
-                "aggregate_type": aggregate_type,
-                "aggregate_id": aggregate_id,
-                "consumer": consumer,
-            },
-        )
+                :consumer, 'PROCESSING', now(), CAST(:op_id AS uuid),
+                CAST(:payload AS jsonb), :fingerprint, CAST(:provenance AS jsonb)
+            ) ON CONFLICT (event_id, consumer) DO NOTHING
+        """), {
+            "event_id": event_id, "event_type": event_type,
+            "aggregate_type": aggregate_type, "aggregate_id": aggregate_id,
+            "consumer": consumer, "op_id": op_id,
+            "payload": json.dumps(payload) if payload is not None else None,
+            "fingerprint": payload_fingerprint,
+            "provenance": json.dumps(provenance) if provenance is not None else None,
+        })
         return result.rowcount == 1
 
-    def is_processed(self, *, event_id: str, consumer: str) -> bool:
-        """True si el consumer ya completó el procesamiento de este evento."""
-        stmt = text(
-            """
-            SELECT 1 FROM inbox_event
-            WHERE event_id = CAST(:event_id AS uuid)
-              AND consumer = :consumer
-              AND status = 'PROCESSED'
-            """
-        )
-        return (
-            self.db.execute(stmt, {"event_id": event_id, "consumer": consumer})
-            .scalar_one_or_none()
-            is not None
-        )
+    def list_eligible(self, *, limit: int, automatic_attempt_limit: int,
+                      now: datetime | None = None) -> list[dict[str, Any]]:
+        rows = self.db.execute(text("""
+            SELECT * FROM inbox_event
+             WHERE status = 'PENDING_DEPENDENCY'
+               AND attempt_count < :attempt_limit
+               AND (next_attempt_at IS NULL OR next_attempt_at <= :now)
+             ORDER BY next_attempt_at NULLS FIRST, created_at, id LIMIT :limit
+        """), {"attempt_limit": automatic_attempt_limit,
+                 "now": now or datetime.now(UTC), "limit": limit}).mappings().all()
+        return [self._map_row(row) for row in rows]
+
+    def claim_pending(self, *, consumer: str, lease_owner: str,
+                      lease_duration: timedelta, automatic_attempt_limit: int,
+                      now: datetime | None = None, event_id: str | None = None,
+                      manual: bool = False) -> dict[str, Any] | None:
+        current = now or datetime.now(UTC)
+        row = self.db.execute(text("""
+            WITH candidate AS (
+                SELECT id FROM inbox_event
+                 WHERE consumer = :consumer AND status = 'PENDING_DEPENDENCY'
+                   AND (CAST(:event_id AS uuid) IS NULL OR event_id = CAST(:event_id AS uuid))
+                   AND (CAST(:manual AS boolean) OR attempt_count < :attempt_limit)
+                   AND (CAST(:manual AS boolean) OR next_attempt_at IS NULL OR next_attempt_at <= :now)
+                 ORDER BY next_attempt_at NULLS FIRST, created_at, id
+                 FOR UPDATE SKIP LOCKED LIMIT 1
+            )
+            UPDATE inbox_event i SET status='PROCESSING', lease_owner=:owner,
+                lease_expires_at=:expires, attempt_count=i.attempt_count + 1,
+                last_attempt_at=:now, processed_at=NULL
+              FROM candidate WHERE i.id=candidate.id RETURNING i.*
+        """), {"consumer": consumer, "event_id": event_id, "manual": manual,
+                 "attempt_limit": automatic_attempt_limit, "now": current,
+                 "owner": lease_owner, "expires": current + lease_duration}).mappings().one_or_none()
+        return self._map_row(row) if row else None
+
+    def reclaim_expired(self, *, now: datetime | None = None) -> int:
+        result = self.db.execute(text("""
+            UPDATE inbox_event SET status='PENDING_DEPENDENCY', lease_owner=NULL,
+                lease_expires_at=NULL, next_attempt_at=:now,
+                error_detail='SYNC_WORKER_LEASE_EXPIRED'
+             WHERE status='PROCESSING' AND lease_expires_at IS NOT NULL
+               AND lease_expires_at <= :now
+        """), {"now": now or datetime.now(UTC)})
+        return result.rowcount
+
+    def mark_pending_dependency(self, *, event_id: str, consumer: str,
+                                reason_code: str, next_attempt_at: datetime) -> None:
+        self._transition(event_id, consumer, "PENDING_DEPENDENCY", reason_code,
+                         next_attempt_at=next_attempt_at)
 
     def mark_as_processed(self, *, event_id: str, consumer: str) -> None:
-        stmt = text(
-            """
-            UPDATE inbox_event
-            SET status = 'PROCESSED', processed_at = :now
-            WHERE event_id = CAST(:event_id AS uuid)
-              AND consumer = :consumer
-              AND status = 'PROCESSING'
-            """
-        )
-        self.db.execute(
-            stmt,
-            {"event_id": event_id, "consumer": consumer, "now": datetime.now(UTC)},
-        )
+        self._transition(event_id, consumer, "PROCESSED", None,
+                         processed_at=datetime.now(UTC))
 
     def mark_as_rejected(self, *, event_id: str, consumer: str, error_detail: str) -> None:
-        """Error de negocio: el evento no puede procesarse y no debe reintentarse."""
-        stmt = text(
-            """
-            UPDATE inbox_event
-            SET status = 'REJECTED',
-                processed_at = :now,
-                error_detail = :error_detail
-            WHERE event_id = CAST(:event_id AS uuid)
-              AND consumer = :consumer
-            """
-        )
-        self.db.execute(
-            stmt,
-            {
-                "event_id": event_id,
-                "consumer": consumer,
-                "now": datetime.now(UTC),
-                "error_detail": error_detail,
-            },
-        )
+        self._transition(event_id, consumer, "REJECTED", error_detail,
+                         processed_at=datetime.now(UTC))
+
+    def mark_conflict(self, *, event_id: str, consumer: str,
+                      reason_code: str = "SYNC_OPERATION_CONFLICT") -> None:
+        self._transition(event_id, consumer, "CONFLICTO", reason_code,
+                         processed_at=datetime.now(UTC))
+
+    def _transition(self, event_id: str, consumer: str, status: str,
+                    reason: str | None, **timestamps: Any) -> None:
+        assert status in INBOX_STATUSES
+        self.db.execute(text("""
+            UPDATE inbox_event SET status=:status, processed_at=:processed_at,
+                error_detail=:reason, next_attempt_at=:next_attempt_at,
+                lease_owner=NULL, lease_expires_at=NULL
+             WHERE event_id=CAST(:event_id AS uuid) AND consumer=:consumer
+               AND status='PROCESSING'
+        """), {"status": status, "processed_at": timestamps.get("processed_at"),
+                 "next_attempt_at": timestamps.get("next_attempt_at"),
+                 "reason": reason, "event_id": event_id, "consumer": consumer})
+
+    def is_processed(self, *, event_id: str, consumer: str) -> bool:
+        return self.db.execute(text("""SELECT 1 FROM inbox_event WHERE
+            event_id=CAST(:event_id AS uuid) AND consumer=:consumer
+            AND status='PROCESSED'"""), {"event_id": event_id,
+                                         "consumer": consumer}).scalar_one_or_none() is not None
 
     def get(self, *, event_id: str, consumer: str) -> dict[str, Any] | None:
-        stmt = text(
-            """
-            SELECT id, event_id, event_type, aggregate_type, aggregate_id,
-                   consumer, status, processed_at, error_detail, created_at
-            FROM inbox_event
-            WHERE event_id = CAST(:event_id AS uuid) AND consumer = :consumer
-            """
-        )
-        row = self.db.execute(
-            stmt, {"event_id": event_id, "consumer": consumer}
-        ).mappings().one_or_none()
-        return self._map_row(row) if row is not None else None
+        row = self.db.execute(text("""SELECT * FROM inbox_event WHERE
+            event_id=CAST(:event_id AS uuid) AND consumer=:consumer"""),
+            {"event_id": event_id, "consumer": consumer}).mappings().one_or_none()
+        return self._map_row(row) if row else None

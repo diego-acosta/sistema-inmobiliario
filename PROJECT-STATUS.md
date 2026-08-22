@@ -572,3 +572,7 @@ transversal. No agrega SQL, permisos funcionales, headers CORE-EF, writes, outbo
 o contexto de sucursal/instalación. En ese corte #461, #412 y #435 permanecían pendientes;
 el estado vigente de #412 y #482 se documenta en el frente Administrativo anterior.
 #463–#467 conservan la deuda Ruff histórica como frente técnico separado.
+
+## 16. Incremento Técnico/Sync #511 — PENDING_DEPENDENCY
+
+#511 materializa el Frente B transversal de #507: `inbox_event` retiene envelope y procedencia, incorpora lifecycle `PENDING_DEPENDENCY`, claim atómico, lease/reclaim, backoff acotado, pausa automática y reanudación manual mediante el mismo entry point. La aplicación consumer-scoped conserva `event_id` como entrega y `op_id` como operación; el savepoint compartido evita efectos parciales. `REJECTED` sigue terminal. La materialización de `PENDING_DEPENDENCY` queda **COMPLETADA**; #510 permanece abierto y el Frente A de #507 no se declara resuelto. No se implementa Tarea, GOP ni scheduler productivo.
