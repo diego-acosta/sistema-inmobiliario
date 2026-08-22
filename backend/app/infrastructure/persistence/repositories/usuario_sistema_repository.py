@@ -16,6 +16,7 @@ class UsuarioConcurrencyError(ValueError):
 
 _USUARIO_COLUMNS = """
     id_usuario,
+    uid_global,
     codigo_usuario,
     login,
     email,
@@ -78,6 +79,18 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
                     f"SELECT {_USUARIO_COLUMNS} FROM usuario WHERE codigo_usuario = :codigo"
                 ),
                 {"codigo": codigo_usuario},
+            )
+            .mappings()
+            .one_or_none()
+        )
+        return self._map(row) if row is not None else None
+
+    def get_by_uid_global(self, uid_global: str) -> dict[str, Any] | None:
+        """Resuelve una identidad portable a la fila local, incluidas bajas lógicas."""
+        row = (
+            self.db.execute(
+                text(f"SELECT {_USUARIO_COLUMNS} FROM usuario WHERE uid_global = :uid"),
+                {"uid": uid_global},
             )
             .mappings()
             .one_or_none()

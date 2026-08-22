@@ -8,6 +8,19 @@ Antes de este freeze no existía un DEV-ARCH Administrativo en la rama base. El 
 
 ## 2. Ownership y clasificación
 
+### Identidad portable de usuario (#508)
+
+`usuario` es núcleo de Administrativo. Su `id_usuario` conserva identidad local y
+`uid_global` es su identidad portable interinstalación, propia, estable, única e
+inmutable. El repository Administrativo resuelve `uid_global` a la fila/PK local,
+incluidas las bajas lógicas, sin fallback por login, email o PK remota.
+
+Esta materialización no cambia Bearer ni `AuthenticatedPrincipal.id_usuario`, que
+continúa siendo identidad autenticada local. Tampoco habilita sincronización de
+`credencial_usuario` o `sesion_usuario`: ambas siguen locales y prohibidas por la
+política #455. Los eventos de lifecycle de usuario permanecen sólo documentados en
+`EVT-ADM`; producer/outbox, consumer/inbox y aplicación remota no están implementados.
+
 | Concepto | Clasificación | Decisión |
 | --- | --- | --- |
 | `parametro_sistema` | núcleo de Administrativo | Definición canónica de cada parámetro. |
@@ -378,12 +391,3 @@ default-deny. Raíz, pareja, outbox y receipt #470 comparten la transacción. Re
 no reemite. Consumer, inbox, reentrega, aplicación y sync remoto permanecen en
 #486. #485 deberá producir `calendario_comercial_programado` dentro de su propio
 write transaccional.
-
-## Incremento #485 — programación append-only del calendario
-
-Administrativo conserva ownership exclusivo del agregado. El command autenticado
-bloquea la raíz y la historia GLOBAL, aplica CAS sobre `version_registro`, cierra
-la pareja abierta y crea otra pareja con fecha explícita posterior. Claim #470,
-mutaciones, incremento único de raíz, EVT-ADM-079 y completion comparten una
-transacción; replay usa el snapshot durable sin releer estado. #486 conserva el
-consumer remoto y #426 el cálculo Comercial; #425 permanece abierto.
