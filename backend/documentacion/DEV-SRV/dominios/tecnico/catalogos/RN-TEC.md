@@ -208,3 +208,7 @@ Incluye operaciones distribuidas, sincronización, inbox y outbox, idempotencia,
 - No reemplaza al CAT-CU maestro.
 - Las reglas aquí listadas se usan como apoyo a implementación y validación backend.
 - Debe mantenerse alineado con CORE-EF-001, CORE-EF-VALIDACION y con la arquitectura distribuida real del sistema.
+
+## RN-TEC-511 — Reproceso de dependencia portable
+
+Una dependencia portable temporalmente ausente no admite placeholder, PK remota ni efecto parcial. Conserva la misma operación y se reintenta por claim Técnico atómico. El consumer clasifica el resultado; Técnico persiste lifecycle, lease, backoff, trazabilidad y exclusión `(consumer, op_id)`.
