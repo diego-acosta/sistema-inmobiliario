@@ -13,6 +13,11 @@ from app.application.integration.inbox_retry import (
     InboxOutcome, InboxOutcomeKind, InboxRetryProcessor, retry_backoff,
 )
 from app.application.common.idempotency import NonCanonicalizablePayload
+from app.application.common.synchronization_policy import (
+    InvalidSyncAggregate,
+    SensitiveSyncPayload,
+    UnknownSyncEvent,
+)
 from app.infrastructure.persistence.repositories.inbox_repository import (
     InboxPortableTargetRequired, InboxRepository,
 )
@@ -301,6 +306,80 @@ def test_claim_con_op_id_exige_target_portable_y_no_persiste(db_session):
     assert InboxRepository(db_session).get(
         event_id=event_id, consumer="fixture_511"
     ) is None
+
+
+def _claim_portable(db_session, *, event_type="sucursal_creada",
+                    aggregate_type="sucursal", payload=None, provenance=None):
+    event_id = str(uuid4())
+    InboxRepository(db_session).claim(
+        event_id=event_id, event_type=event_type, aggregate_type=aggregate_type,
+        aggregate_id=1, consumer="policy_511", op_id=str(uuid4()),
+        aggregate_uid=str(uuid4()), payload=payload, provenance=provenance,
+    )
+    return event_id
+
+
+@pytest.mark.parametrize(
+    ("event_type", "aggregate_type", "expected"),
+    [
+        ("evento_no_registrado", "sucursal", UnknownSyncEvent),
+        ("sucursal_creada", "instalacion", InvalidSyncAggregate),
+        ("sucursal_creada", "credencial_usuario", InvalidSyncAggregate),
+        ("sucursal_creada", "sesion_usuario", InvalidSyncAggregate),
+    ],
+)
+def test_claim_portable_rechaza_evento_o_aggregate_fuera_de_policy(
+    db_session, event_type, aggregate_type, expected,
+):
+    with pytest.raises(expected):
+        _claim_portable(
+            db_session, event_type=event_type, aggregate_type=aggregate_type,
+            payload={"uid_global": "portable"},
+        )
+    assert db_session.execute(text(
+        "SELECT count(*) FROM inbox_event WHERE consumer='policy_511'"
+    )).scalar_one() == 0
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"password": "secret"},
+        {"data": {"refresh_token": "secret"}},
+    ],
+)
+def test_claim_portable_rechaza_payload_sensible_sin_persistir(db_session, payload):
+    with pytest.raises(SensitiveSyncPayload) as raised:
+        _claim_portable(db_session, payload=payload)
+    assert raised.value.code == "SYNC_SENSITIVE_PAYLOAD"
+    assert "secret" not in str(raised.value)
+    assert db_session.execute(text(
+        "SELECT count(*) FROM inbox_event WHERE consumer='policy_511'"
+    )).scalar_one() == 0
+
+
+def test_claim_portable_rechaza_provenance_sensible_sin_persistir(db_session):
+    with pytest.raises(SensitiveSyncPayload) as raised:
+        _claim_portable(
+            db_session, payload={"uid_global": "portable"},
+            provenance={"origin": {"token": "secret"}},
+        )
+    assert raised.value.code == "SYNC_SENSITIVE_PAYLOAD"
+    assert "secret" not in str(raised.value)
+    assert db_session.execute(text(
+        "SELECT count(*) FROM inbox_event WHERE consumer='policy_511'"
+    )).scalar_one() == 0
+
+
+def test_claim_portable_exige_payload_dict_y_valido_persiste_fingerprint(db_session):
+    with pytest.raises(SensitiveSyncPayload, match="SYNC_INVALID_PAYLOAD"):
+        _claim_portable(db_session, payload=None)
+    event_id = _claim_portable(
+        db_session, payload={"uid_global": "portable"}, provenance=None,
+    )
+    row = InboxRepository(db_session).get(event_id=event_id, consumer="policy_511")
+    assert row["status"] == "PROCESSING"
+    assert row["payload_fingerprint"] is not None
 
 
 def test_target_portable_distinto_conflicta_sin_segundo_efecto(db_session):
