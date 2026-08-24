@@ -18,6 +18,10 @@ class InboxOwnershipLost(RuntimeError):
     code = "SYNC_INBOX_OWNERSHIP_LOST"
 
 
+class InboxPortableTargetRequired(RuntimeError):
+    code = "SYNC_PORTABLE_TARGET_REQUIRED"
+
+
 class InboxRepository:
     """Lifecycle técnico del inbox; nunca decide semántica del consumer."""
 
@@ -40,6 +44,8 @@ class InboxRepository:
         aggregate_uid: str | None = None,
         version_registro: int | None = None,
     ) -> bool:
+        if op_id is not None and aggregate_uid is None:
+            raise InboxPortableTargetRequired(InboxPortableTargetRequired.code)
         fingerprint = self._canonical_envelope_fingerprint(
             event_type=event_type,
             aggregate_type=aggregate_type,

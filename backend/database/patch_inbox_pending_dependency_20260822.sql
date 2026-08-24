@@ -89,6 +89,12 @@ BEGIN
         ALTER TABLE public.inbox_event ADD CONSTRAINT ck_inbox_event_lease_generation_511
             CHECK (lease_generation >= 0);
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE conrelid = 'public.inbox_event'::regclass
+                     AND conname = 'ck_inbox_event_portable_target_511') THEN
+        ALTER TABLE public.inbox_event ADD CONSTRAINT ck_inbox_event_portable_target_511
+            CHECK (op_id IS NULL OR aggregate_uid IS NOT NULL);
+    END IF;
 END
 $constraints$;
 
@@ -120,6 +126,12 @@ BEGIN
      WHERE conrelid='public.inbox_event'::regclass AND conname='ck_inbox_event_lease_generation_511';
     IF actual IS NULL OR replace(actual, ' ', '') <> 'CHECK((lease_generation>=0))' THEN
         RAISE EXCEPTION 'ck_inbox_event_lease_generation_511 has an incompatible definition';
+    END IF;
+    SELECT pg_get_constraintdef(oid) INTO actual FROM pg_constraint
+     WHERE conrelid='public.inbox_event'::regclass
+       AND conname='ck_inbox_event_portable_target_511';
+    IF actual IS NULL OR actual !~ 'op_id IS NULL.*aggregate_uid IS NOT NULL' THEN
+        RAISE EXCEPTION 'ck_inbox_event_portable_target_511 has an incompatible definition';
     END IF;
 END
 $constraint_contract$;

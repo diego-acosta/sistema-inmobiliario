@@ -6,13 +6,16 @@ from uuid import uuid4
 import psycopg
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.application.integration.inbox_retry import (
     InboxOutcome, InboxOutcomeKind, InboxRetryProcessor, retry_backoff,
 )
 from app.application.common.idempotency import NonCanonicalizablePayload
-from app.infrastructure.persistence.repositories.inbox_repository import InboxRepository
+from app.infrastructure.persistence.repositories.inbox_repository import (
+    InboxPortableTargetRequired, InboxRepository,
+)
 from app.infrastructure.persistence.repositories.inbox_repository import InboxOwnershipLost
 from app.config.database import engine
 
@@ -70,6 +73,10 @@ def test_patch_materializa_contrato(db_session):
     assert {"op_id", "payload", "payload_fingerprint", "provenance", "attempt_count",
             "last_attempt_at", "next_attempt_at", "lease_owner", "lease_expires_at",
             "lease_generation"} <= columns
+    constraint = db_session.execute(text("""SELECT pg_get_constraintdef(oid)
+        FROM pg_constraint WHERE conrelid='public.inbox_event'::regclass
+        AND conname='ck_inbox_event_portable_target_511'""")).scalar_one()
+    assert "op_id IS NULL" in constraint and "aggregate_uid IS NOT NULL" in constraint
 
 
 def test_patch_falla_ante_columna_existente_incompatible():
@@ -96,6 +103,60 @@ def test_patch_falla_ante_columna_existente_incompatible():
         with psycopg.connect(dbname="postgres", autocommit=True, **connect) as admin:
             admin.execute("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=%s", (database,))
             admin.execute(f'DROP DATABASE "{database}"')
+
+
+def test_patch_falla_ante_constraint_portable_incompatible():
+    database = f"inbox_511_{uuid4().hex}"
+    url = engine.url
+    connect = dict(host=url.host or "localhost", port=url.port or 5432,
+                   user=url.username, password=url.password)
+    with psycopg.connect(dbname="postgres", autocommit=True, **connect) as admin:
+        admin.execute(f'CREATE DATABASE "{database}"')
+    try:
+        with psycopg.connect(dbname=database, autocommit=True, **connect) as connection:
+            connection.execute("""CREATE TABLE public.inbox_event (
+                id bigserial PRIMARY KEY, event_id uuid NOT NULL,
+                event_type varchar(100) NOT NULL, aggregate_type varchar(100) NOT NULL,
+                aggregate_id bigint NOT NULL, consumer varchar(100) NOT NULL,
+                status varchar(20) NOT NULL DEFAULT 'PROCESSING', processed_at timestamp,
+                error_detail text, created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(event_id, consumer)
+            )""")
+            patch = Path("database/patch_inbox_pending_dependency_20260822.sql").read_text()
+            connection.execute(patch)
+            connection.execute("""ALTER TABLE public.inbox_event
+                DROP CONSTRAINT ck_inbox_event_portable_target_511,
+                ADD CONSTRAINT ck_inbox_event_portable_target_511
+                CHECK (op_id IS NULL)""")
+            with pytest.raises(psycopg.errors.RaiseException, match="portable_target"):
+                connection.execute(patch)
+    finally:
+        with psycopg.connect(dbname="postgres", autocommit=True, **connect) as admin:
+            admin.execute(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=%s",
+                (database,),
+            )
+            admin.execute(f'DROP DATABASE "{database}"')
+
+
+def test_constraint_sql_exige_target_portable_y_permite_legacy(db_session):
+    nested = db_session.begin_nested()
+    try:
+        with pytest.raises(IntegrityError, match="ck_inbox_event_portable_target_511"):
+            db_session.execute(text("""INSERT INTO inbox_event (
+                event_id, event_type, aggregate_type, aggregate_id, consumer, op_id
+            ) VALUES (:event_id, 'test', 'test', 1, 'sql_511', :op_id)"""), {
+                "event_id": str(uuid4()), "op_id": str(uuid4()),
+            })
+    finally:
+        nested.rollback()
+    legacy_id = str(uuid4())
+    db_session.execute(text("""INSERT INTO inbox_event (
+        event_id, event_type, aggregate_type, aggregate_id, consumer
+    ) VALUES (:event_id, 'test', 'test', 1, 'sql_511')"""), {"event_id": legacy_id})
+    assert db_session.execute(text("""SELECT 1 FROM inbox_event
+        WHERE event_id=CAST(:event_id AS uuid) AND op_id IS NULL
+          AND aggregate_uid IS NULL"""), {"event_id": legacy_id}).scalar_one() == 1
 
 
 def test_dependencia_ausente_preserva_envelope_y_retry_aplica_una_vez(db_session):
@@ -227,13 +288,53 @@ def test_claim_legacy_sin_envelope_no_inventa_fingerprint(db_session):
     )["payload_fingerprint"] is None
 
 
+def test_claim_con_op_id_exige_target_portable_y_no_persiste(db_session):
+    event_id = str(uuid4())
+    with pytest.raises(
+        InboxPortableTargetRequired, match="SYNC_PORTABLE_TARGET_REQUIRED"
+    ):
+        InboxRepository(db_session).claim(
+            event_id=event_id, event_type="sucursal_creada",
+            aggregate_type="sucursal", aggregate_id=10,
+            consumer="fixture_511", op_id=str(uuid4()), payload={"value": 1},
+        )
+    assert InboxRepository(db_session).get(
+        event_id=event_id, consumer="fixture_511"
+    ) is None
+
+
+def test_target_portable_distinto_conflicta_sin_segundo_efecto(db_session):
+    op_id = str(uuid4())
+    first = _pending(db_session, op_id=op_id, aggregate_uid=str(uuid4()))
+    calls = []
+
+    def apply(event):
+        calls.append(event["event_id"])
+        return InboxOutcome(InboxOutcomeKind.PROCESSED)
+
+    processor = _processor(db_session, consumer="fixture_511")
+    assert processor.run_once(
+        apply, worker_id="one", event_id=first, manual=True
+    ).kind is InboxOutcomeKind.PROCESSED
+    second = _pending(db_session, op_id=op_id, aggregate_uid=str(uuid4()))
+    repo = InboxRepository(db_session)
+    assert repo.get(event_id=first, consumer="fixture_511")["payload_fingerprint"] != (
+        repo.get(event_id=second, consumer="fixture_511")["payload_fingerprint"]
+    )
+    assert processor.run_once(
+        apply, worker_id="two", event_id=second, manual=True
+    ).kind is InboxOutcomeKind.CONFLICTO
+    assert calls == [first]
+
+
 def test_error_de_canonicalizacion_es_tipado_y_no_persiste_payload(db_session):
     event_id = str(uuid4())
     with pytest.raises(NonCanonicalizablePayload):
         InboxRepository(db_session).claim(
             event_id=event_id, event_type="sucursal_creada",
             aggregate_type="sucursal", aggregate_id=1, consumer="fixture_511",
-            op_id=str(uuid4()), payload={"value": float("nan")},
+            op_id=str(uuid4()), aggregate_uid=str(uuid4()),
+            payload={"value": float("nan")},
         )
     assert InboxRepository(db_session).get(
         event_id=event_id, consumer="fixture_511"

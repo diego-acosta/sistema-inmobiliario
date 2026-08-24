@@ -392,3 +392,4 @@ Incluye operaciones distribuidas, sincronización, inbox y outbox, idempotencia,
 - `SYNC_FUNCTIONAL_FAILURE`: código cerrado para fallas no clasificadas; nunca persiste excepción cruda.
 - `SYNC_WORKER_LEASE_EXPIRED`: reclaim técnico de un lease vencido.
 - `SYNC_INBOX_OWNERSHIP_LOST`: owner/generación de lease obsoletos; la transición fenced no se aplica y el efecto funcional local se revierte sin persistir token, payload ni excepción cruda.
+- `SYNC_PORTABLE_TARGET_REQUIRED`: un claim con `op_id` no declaró el `aggregate_uid` portable obligatorio; se rechaza antes de canonicalizar o persistir y nunca se usa la PK local como sustituto.
