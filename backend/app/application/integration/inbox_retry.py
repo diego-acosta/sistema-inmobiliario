@@ -63,6 +63,11 @@ class InboxRetryProcessor:
             "lease_generation": event["lease_generation"],
         }
 
+    @staticmethod
+    def _scope_leader_id(event: dict, compatible_in_flight: list[dict]) -> int:
+        """El menor delivery compatible lidera, sin importar su estado técnico."""
+        return min([event["id"], *(delivery["id"] for delivery in compatible_in_flight)])
+
     def run_once(self, applicator: Callable[[dict], InboxOutcome], *, worker_id: str,
                  event_id: str | None = None, manual: bool = False,
                  now: datetime | None = None) -> InboxOutcome | None:
@@ -109,10 +114,7 @@ class InboxRetryProcessor:
                 delivery for delivery in deliveries
                 if delivery["status"] in {"PENDING_DEPENDENCY", "PROCESSING"}
             ]
-            if any(delivery["status"] == "PROCESSING" for delivery in compatible_in_flight) or (
-                compatible_in_flight
-                and min(delivery["id"] for delivery in compatible_in_flight) < event["id"]
-            ):
+            if self._scope_leader_id(event, compatible_in_flight) != event["id"]:
                 outcome = InboxOutcome(
                     InboxOutcomeKind.PENDING_DEPENDENCY,
                     "SYNC_DEPENDENCY_UNAVAILABLE",

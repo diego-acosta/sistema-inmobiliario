@@ -426,6 +426,48 @@ def test_pending_compatible_elige_una_sola_entrega_para_el_efecto(db_session):
     assert calls == [leader]
 
 
+def test_leader_menor_progresa_aunque_otro_compatible_este_processing(db_session):
+    op_id = str(uuid4())
+    aggregate_uid = str(uuid4())
+    leader = _pending(db_session, op_id=op_id, aggregate_uid=aggregate_uid)
+    follower = _pending(db_session, op_id=op_id, aggregate_uid=aggregate_uid)
+    repo = InboxRepository(db_session)
+    claimed_follower = repo.claim_pending(
+        consumer="fixture_511", lease_owner="other-worker",
+        lease_duration=timedelta(minutes=5), automatic_attempt_limit=8,
+        event_id=follower, manual=True,
+    )
+    assert claimed_follower["status"] == "PROCESSING"
+    calls = []
+    outcome = _processor(db_session, consumer="fixture_511").run_once(
+        lambda event: calls.append(event["event_id"])
+        or InboxOutcome(InboxOutcomeKind.PROCESSED),
+        worker_id="leader-worker", event_id=leader, manual=True,
+    )
+    assert outcome.kind is InboxOutcomeKind.PROCESSED
+    assert calls == [leader]
+    assert repo.get(event_id=leader, consumer="fixture_511")["status"] == "PROCESSED"
+    scope = repo.get_operation_scope_deliveries(
+        consumer="fixture_511", op_id=op_id, exclude_id=claimed_follower["id"],
+    )
+    assert any(delivery["status"] == "PROCESSED" for delivery in scope)
+    repo.mark_as_processed(
+        event_id=follower, consumer="fixture_511", lease_owner="other-worker",
+        lease_generation=claimed_follower["lease_generation"],
+    )
+    assert repo.get(event_id=follower, consumer="fixture_511")["status"] == "PROCESSED"
+    assert calls == [leader]
+
+
+def test_dos_processing_compatibles_eligen_el_menor_id_sin_doble_defer():
+    event = {"id": 10, "status": "PROCESSING"}
+    deliveries = [{"id": 20, "status": "PROCESSING"}]
+    assert InboxRetryProcessor._scope_leader_id(event, deliveries) == 10
+    assert InboxRetryProcessor._scope_leader_id(
+        deliveries[0], [event]
+    ) == 10
+
+
 def test_processed_compatible_no_oculta_pending_incompatible(db_session):
     op_id = str(uuid4())
     aggregate_uid = str(uuid4())
