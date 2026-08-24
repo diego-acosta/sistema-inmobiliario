@@ -382,6 +382,78 @@ def test_claim_portable_exige_payload_dict_y_valido_persiste_fingerprint(db_sess
     assert row["payload_fingerprint"] is not None
 
 
+def _claim_retained_without_op(
+    db_session, *, event_type="sucursal_creada", aggregate_type="sucursal",
+    payload=None, provenance=None,
+):
+    event_id = str(uuid4())
+    InboxRepository(db_session).claim(
+        event_id=event_id, event_type=event_type, aggregate_type=aggregate_type,
+        aggregate_id=1, consumer="retained_without_op_511",
+        payload=payload, provenance=provenance,
+    )
+    return event_id
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"password": "secret"},
+        {"data": {"refresh_token": "secret"}},
+    ],
+)
+def test_envelope_sin_op_id_rechaza_payload_sensible(db_session, payload):
+    with pytest.raises(SensitiveSyncPayload) as raised:
+        _claim_retained_without_op(db_session, payload=payload)
+    assert raised.value.code == "SYNC_SENSITIVE_PAYLOAD"
+    assert "secret" not in str(raised.value)
+    assert db_session.execute(text("""SELECT count(*) FROM inbox_event
+        WHERE consumer='retained_without_op_511'""")).scalar_one() == 0
+
+
+def test_envelope_sin_op_id_rechaza_provenance_sensible(db_session):
+    with pytest.raises(SensitiveSyncPayload) as raised:
+        _claim_retained_without_op(
+            db_session, payload={"uid_global": "retained"},
+            provenance={"origin": {"token": "secret"}},
+        )
+    assert raised.value.code == "SYNC_SENSITIVE_PAYLOAD"
+    assert "secret" not in str(raised.value)
+    assert db_session.execute(text("""SELECT count(*) FROM inbox_event
+        WHERE consumer='retained_without_op_511'""")).scalar_one() == 0
+
+
+@pytest.mark.parametrize(
+    ("event_type", "aggregate_type", "expected"),
+    [
+        ("evento_no_registrado", "sucursal", UnknownSyncEvent),
+        ("sucursal_creada", "instalacion", InvalidSyncAggregate),
+    ],
+)
+def test_envelope_sin_op_id_aplica_allowlist_default_deny(
+    db_session, event_type, aggregate_type, expected,
+):
+    with pytest.raises(expected):
+        _claim_retained_without_op(
+            db_session, event_type=event_type, aggregate_type=aggregate_type,
+            payload={"uid_global": "retained"},
+        )
+    assert db_session.execute(text("""SELECT count(*) FROM inbox_event
+        WHERE consumer='retained_without_op_511'""")).scalar_one() == 0
+
+
+def test_envelope_valido_sin_op_id_se_valida_y_conserva_fingerprint(db_session):
+    event_id = _claim_retained_without_op(
+        db_session, payload={"uid_global": "retained"},
+        provenance={"origin": {"installation_uid": "origin"}},
+    )
+    row = InboxRepository(db_session).get(
+        event_id=event_id, consumer="retained_without_op_511",
+    )
+    assert row["op_id"] is None
+    assert row["payload_fingerprint"] is not None
+
+
 def test_target_portable_distinto_conflicta_sin_segundo_efecto(db_session):
     op_id = str(uuid4())
     first = _pending(db_session, op_id=op_id, aggregate_uid=str(uuid4()))

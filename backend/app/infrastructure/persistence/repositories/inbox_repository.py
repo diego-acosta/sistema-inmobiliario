@@ -48,9 +48,12 @@ class InboxRepository:
         aggregate_uid: str | None = None,
         version_registro: int | None = None,
     ) -> bool:
+        has_retained_envelope = any(value is not None for value in (
+            op_id, payload, provenance, aggregate_uid, version_registro,
+        ))
         if op_id is not None and aggregate_uid is None:
             raise InboxPortableTargetRequired(InboxPortableTargetRequired.code)
-        if op_id is not None:
+        if has_retained_envelope:
             validate_sync_event(event_type, aggregate_type, payload)
             validate_no_sensitive_sync_data(provenance)
         fingerprint = self._canonical_envelope_fingerprint(
