@@ -525,3 +525,138 @@ def test_todas_las_transiciones_rechazan_generation_stale(transition):
         row = InboxRepository(verify).get(event_id=event_id, consumer=consumer)
         assert row["status"] == "PROCESSING"
         assert row["lease_owner"] == "owner-b"
+
+
+def _apply_transition(repo, transition, *, event_id, consumer, **ownership):
+    common = {"event_id": event_id, "consumer": consumer, **ownership}
+    if transition == "processed":
+        repo.mark_as_processed(**common)
+    elif transition == "pending":
+        repo.mark_pending_dependency(
+            **common, reason_code="SYNC_DEPENDENCY_UNAVAILABLE",
+            next_attempt_at=datetime.now(UTC) + timedelta(minutes=1),
+        )
+    elif transition == "rejected":
+        repo.mark_as_rejected(**common, error_detail="SYNC_PAYLOAD_INVALID")
+    else:
+        repo.mark_conflict(**common)
+
+
+@pytest.mark.parametrize("transition", ["processed", "pending", "rejected", "conflict"])
+def test_fila_con_lease_rechaza_transicion_sin_fencing(transition):
+    consumer = f"missing-fence-{uuid4()}"
+    event_id, _ = _committed_pending(consumer=consumer)
+    with Session(engine) as claim_session:
+        claimed = InboxRepository(claim_session).claim_pending(
+            consumer=consumer, lease_owner="leased-owner",
+            lease_duration=timedelta(minutes=5), automatic_attempt_limit=8,
+            event_id=event_id, manual=True,
+        )
+        claim_session.commit()
+    with Session(engine) as unfenced:
+        with pytest.raises(InboxOwnershipLost):
+            _apply_transition(
+                InboxRepository(unfenced), transition,
+                event_id=event_id, consumer=consumer,
+            )
+        unfenced.rollback()
+    with Session(engine) as verify:
+        row = InboxRepository(verify).get(event_id=event_id, consumer=consumer)
+        assert row["status"] == "PROCESSING"
+        assert row["lease_owner"] == "leased-owner"
+        assert row["lease_generation"] == claimed["lease_generation"]
+        assert row["lease_expires_at"] == claimed["lease_expires_at"]
+
+
+@pytest.mark.parametrize("transition", ["processed", "pending", "rejected", "conflict"])
+def test_fila_legacy_sin_lease_acepta_transicion_historica(transition):
+    consumer = f"legacy-transition-{uuid4()}"
+    event_id = str(uuid4())
+    with Session(engine) as legacy:
+        repo = InboxRepository(legacy)
+        assert repo.claim(
+            event_id=event_id, event_type="sucursal_creada", aggregate_type="sucursal",
+            aggregate_id=1, consumer=consumer,
+        )
+        legacy.commit()
+    with Session(engine) as transition_session:
+        _apply_transition(
+            InboxRepository(transition_session), transition,
+            event_id=event_id, consumer=consumer,
+        )
+        transition_session.commit()
+    expected = {
+        "processed": "PROCESSED", "pending": "PENDING_DEPENDENCY",
+        "rejected": "REJECTED", "conflict": "CONFLICTO",
+    }[transition]
+    with Session(engine) as verify:
+        assert InboxRepository(verify).get(
+            event_id=event_id, consumer=consumer
+        )["status"] == expected
+
+
+@pytest.mark.parametrize("partial", ["owner", "generation"])
+def test_argumentos_de_fencing_parciales_se_rechazan_sin_modificar_fila(partial):
+    consumer = f"partial-fence-{uuid4()}"
+    event_id, _ = _committed_pending(consumer=consumer)
+    with Session(engine) as claim_session:
+        claimed = InboxRepository(claim_session).claim_pending(
+            consumer=consumer, lease_owner="owner", lease_duration=timedelta(minutes=5),
+            automatic_attempt_limit=8, event_id=event_id, manual=True,
+        )
+        claim_session.commit()
+    ownership = (
+        {"lease_owner": "owner"} if partial == "owner"
+        else {"lease_generation": claimed["lease_generation"]}
+    )
+    with Session(engine) as partial_session:
+        with pytest.raises(InboxOwnershipLost):
+            InboxRepository(partial_session).mark_as_processed(
+                event_id=event_id, consumer=consumer, **ownership,
+            )
+        partial_session.rollback()
+    with Session(engine) as verify:
+        row = InboxRepository(verify).get(event_id=event_id, consumer=consumer)
+        assert row["status"] == "PROCESSING"
+        assert row["lease_owner"] == "owner"
+        assert row["lease_generation"] == claimed["lease_generation"]
+
+
+def test_fencing_correcto_permite_transicion_y_lease_vencido_la_rechaza():
+    current = datetime.now(UTC)
+    valid_consumer = f"valid-fence-{uuid4()}"
+    valid_event, _ = _committed_pending(consumer=valid_consumer)
+    with Session(engine) as claim_session:
+        valid = InboxRepository(claim_session).claim_pending(
+            consumer=valid_consumer, lease_owner="owner",
+            lease_duration=timedelta(minutes=5), automatic_attempt_limit=8,
+            event_id=valid_event, manual=True, now=current,
+        )
+        claim_session.commit()
+    with Session(engine) as transition_session:
+        InboxRepository(transition_session).mark_as_processed(
+            event_id=valid_event, consumer=valid_consumer, lease_owner="owner",
+            lease_generation=valid["lease_generation"],
+        )
+        transition_session.commit()
+
+    expired_consumer = f"expired-fence-{uuid4()}"
+    expired_event, _ = _committed_pending(consumer=expired_consumer)
+    with Session(engine) as claim_session:
+        expired = InboxRepository(claim_session).claim_pending(
+            consumer=expired_consumer, lease_owner="owner",
+            lease_duration=timedelta(seconds=1), automatic_attempt_limit=8,
+            event_id=expired_event, manual=True, now=current - timedelta(minutes=2),
+        )
+        claim_session.commit()
+    with Session(engine) as transition_session:
+        with pytest.raises(InboxOwnershipLost):
+            InboxRepository(transition_session).mark_as_processed(
+                event_id=expired_event, consumer=expired_consumer,
+                lease_owner="owner", lease_generation=expired["lease_generation"],
+            )
+        transition_session.rollback()
+    with Session(engine) as verify:
+        assert InboxRepository(verify).get(
+            event_id=expired_event, consumer=expired_consumer
+        )["status"] == "PROCESSING"

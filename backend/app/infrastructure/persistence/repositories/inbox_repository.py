@@ -185,26 +185,43 @@ class InboxRepository:
 
     def _transition(self, event_id: str, consumer: str, status: str,
                     reason: str | None, **timestamps: Any) -> None:
-        assert status in INBOX_STATUSES
-        fenced = timestamps.get("lease_generation") is not None
+        if status not in INBOX_STATUSES:
+            raise ValueError("SYNC_INBOX_TRANSITION_INVALID")
+        lease_owner = timestamps.get("lease_owner")
+        lease_generation = timestamps.get("lease_generation")
+        if (lease_owner is None) != (lease_generation is None):
+            raise InboxOwnershipLost(InboxOwnershipLost.code)
+        fenced = lease_owner is not None
         result = self.db.execute(text("""
             UPDATE inbox_event SET status=:status, processed_at=:processed_at,
                 error_detail=:reason, next_attempt_at=:next_attempt_at,
                 lease_owner=NULL, lease_expires_at=NULL
              WHERE event_id=CAST(:event_id AS uuid) AND consumer=:consumer
                AND status='PROCESSING'
-               AND (NOT CAST(:fenced AS boolean) OR (
-                    lease_owner=:lease_owner
-                    AND lease_generation=:lease_generation
-                    AND lease_expires_at > :ownership_now
-               ))
+               AND (
+                    (NOT CAST(:fenced AS boolean)
+                     AND lease_owner IS NULL AND lease_expires_at IS NULL)
+                    OR
+                    (CAST(:fenced AS boolean)
+                     AND lease_owner=:lease_owner
+                     AND lease_generation=:lease_generation
+                     AND lease_expires_at > :ownership_now)
+               )
         """), {"status": status, "processed_at": timestamps.get("processed_at"),
                  "next_attempt_at": timestamps.get("next_attempt_at"),
                  "reason": reason, "event_id": event_id, "consumer": consumer,
-                 "fenced": fenced, "lease_owner": timestamps.get("lease_owner"),
-                 "lease_generation": timestamps.get("lease_generation"),
+                 "fenced": fenced, "lease_owner": lease_owner,
+                 "lease_generation": lease_generation,
                  "ownership_now": datetime.now(UTC)})
-        if fenced and result.rowcount != 1:
+        if result.rowcount == 1:
+            return
+        stored_is_leased = self.db.execute(text("""
+            SELECT 1 FROM inbox_event
+             WHERE event_id=CAST(:event_id AS uuid) AND consumer=:consumer
+               AND status='PROCESSING'
+               AND lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL
+        """), {"event_id": event_id, "consumer": consumer}).scalar_one_or_none()
+        if fenced or stored_is_leased is not None:
             raise InboxOwnershipLost(InboxOwnershipLost.code)
 
     def is_processed(self, *, event_id: str, consumer: str) -> bool:
