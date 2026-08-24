@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -24,6 +25,10 @@ class InboxOwnershipLost(RuntimeError):
 
 class InboxPortableTargetRequired(RuntimeError):
     code = "SYNC_PORTABLE_TARGET_REQUIRED"
+
+
+class InboxInvalidPortableTarget(RuntimeError):
+    code = "SYNC_INVALID_PORTABLE_TARGET"
 
 
 class InboxRepository:
@@ -53,13 +58,19 @@ class InboxRepository:
         ))
         if op_id is not None and aggregate_uid is None:
             raise InboxPortableTargetRequired(InboxPortableTargetRequired.code)
+        try:
+            canonical_aggregate_uid = (
+                str(UUID(str(aggregate_uid))) if aggregate_uid is not None else None
+            )
+        except (AttributeError, TypeError, ValueError):
+            raise InboxInvalidPortableTarget(InboxInvalidPortableTarget.code) from None
         if has_retained_envelope:
             validate_sync_event(event_type, aggregate_type, payload)
             validate_no_sensitive_sync_data(provenance)
         fingerprint = self._canonical_envelope_fingerprint(
             event_type=event_type,
             aggregate_type=aggregate_type,
-            aggregate_uid=aggregate_uid,
+            aggregate_uid=canonical_aggregate_uid,
             version_registro=version_registro,
             payload=payload,
             provenance=provenance,
@@ -80,7 +91,7 @@ class InboxRepository:
             "event_id": event_id, "event_type": event_type,
             "aggregate_type": aggregate_type, "aggregate_id": aggregate_id,
             "consumer": consumer, "op_id": op_id,
-            "aggregate_uid": aggregate_uid,
+            "aggregate_uid": canonical_aggregate_uid,
             "version_registro": version_registro,
             "payload": json.dumps(payload) if payload is not None else None,
             "fingerprint": fingerprint,

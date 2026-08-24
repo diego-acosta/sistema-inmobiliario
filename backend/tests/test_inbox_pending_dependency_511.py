@@ -19,7 +19,7 @@ from app.application.common.synchronization_policy import (
     UnknownSyncEvent,
 )
 from app.infrastructure.persistence.repositories.inbox_repository import (
-    InboxPortableTargetRequired, InboxRepository,
+    InboxInvalidPortableTarget, InboxPortableTargetRequired, InboxRepository,
 )
 from app.infrastructure.persistence.repositories.inbox_repository import InboxOwnershipLost
 from app.config.database import engine
@@ -476,6 +476,50 @@ def test_target_portable_distinto_conflicta_sin_segundo_efecto(db_session):
         apply, worker_id="two", event_id=second, manual=True
     ).kind is InboxOutcomeKind.CONFLICTO
     assert calls == [first]
+
+
+def test_uuid_portable_equivalente_canonicaliza_fingerprint_y_hace_replay(db_session):
+    op_id = str(uuid4())
+    uppercase_uid = "ABCDEF12-3456-7890-ABCD-EF1234567890"
+    lowercase_uid = uppercase_uid.lower()
+    first = _pending(db_session, op_id=op_id, aggregate_uid=uppercase_uid)
+    second = _pending(db_session, op_id=op_id, aggregate_uid=lowercase_uid)
+    repo = InboxRepository(db_session)
+    first_row = repo.get(event_id=first, consumer="fixture_511")
+    second_row = repo.get(event_id=second, consumer="fixture_511")
+    assert first_row["payload_fingerprint"] == second_row["payload_fingerprint"]
+    assert str(first_row["aggregate_uid"]) == lowercase_uid
+    assert str(second_row["aggregate_uid"]) == lowercase_uid
+    calls = []
+
+    def apply(event):
+        calls.append(event["event_id"])
+        return InboxOutcome(InboxOutcomeKind.PROCESSED)
+
+    processor = _processor(db_session, consumer="fixture_511")
+    assert processor.run_once(
+        apply, worker_id="first", event_id=first, manual=True,
+    ).kind is InboxOutcomeKind.PROCESSED
+    assert processor.run_once(
+        apply, worker_id="replay", event_id=second, manual=True,
+    ).kind is InboxOutcomeKind.PROCESSED
+    assert calls == [first]
+
+
+def test_aggregate_uid_invalido_se_rechaza_antes_de_sql(db_session):
+    event_id = str(uuid4())
+    with pytest.raises(
+        InboxInvalidPortableTarget, match="SYNC_INVALID_PORTABLE_TARGET"
+    ):
+        InboxRepository(db_session).claim(
+            event_id=event_id, event_type="sucursal_creada",
+            aggregate_type="sucursal", aggregate_id=1, consumer="fixture_511",
+            op_id=str(uuid4()), aggregate_uid="not-a-uuid",
+            payload={"uid_global": "target"},
+        )
+    assert InboxRepository(db_session).get(
+        event_id=event_id, consumer="fixture_511"
+    ) is None
 
 
 def test_error_de_canonicalizacion_es_tipado_y_no_persiste_payload(db_session):
