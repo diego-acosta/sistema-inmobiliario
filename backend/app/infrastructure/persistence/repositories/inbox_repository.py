@@ -134,36 +134,46 @@ class InboxRepository:
                       lease_duration: timedelta, automatic_attempt_limit: int,
                       now: datetime | None = None, event_id: str | None = None,
                       manual: bool = False) -> dict[str, Any] | None:
-        current = now or datetime.now(UTC)
+        eligibility_now = now or datetime.now(UTC)
         row = self.db.execute(text("""
-            WITH candidate AS (
+            WITH db_clock AS (
+                SELECT clock_timestamp() AT TIME ZONE 'UTC' AS now_utc
+            ), candidate AS (
                 SELECT id FROM inbox_event
                  WHERE consumer = :consumer AND status = 'PENDING_DEPENDENCY'
                    AND (CAST(:event_id AS uuid) IS NULL OR event_id = CAST(:event_id AS uuid))
                    AND (CAST(:manual AS boolean) OR attempt_count < :attempt_limit)
-                   AND (CAST(:manual AS boolean) OR next_attempt_at IS NULL OR next_attempt_at <= :now)
+                   AND (CAST(:manual AS boolean) OR next_attempt_at IS NULL
+                        OR next_attempt_at <= :eligibility_now)
                  ORDER BY next_attempt_at NULLS FIRST, created_at, id
                  FOR UPDATE SKIP LOCKED LIMIT 1
             )
             UPDATE inbox_event i SET status='PROCESSING', lease_owner=:owner,
-                lease_expires_at=:expires, attempt_count=i.attempt_count + 1,
+                lease_expires_at=db_clock.now_utc + :lease_duration,
+                attempt_count=i.attempt_count + 1,
                 lease_generation=i.lease_generation + 1,
-                last_attempt_at=:now, processed_at=NULL
-              FROM candidate WHERE i.id=candidate.id RETURNING i.*
+                last_attempt_at=db_clock.now_utc, processed_at=NULL
+              FROM candidate, db_clock WHERE i.id=candidate.id RETURNING i.*
         """), {"consumer": consumer, "event_id": event_id, "manual": manual,
-                 "attempt_limit": automatic_attempt_limit, "now": current,
-                 "owner": lease_owner, "expires": current + lease_duration}).mappings().one_or_none()
+                 "attempt_limit": automatic_attempt_limit,
+                 "eligibility_now": eligibility_now, "owner": lease_owner,
+                 "lease_duration": lease_duration}).mappings().one_or_none()
         return self._map_row(row) if row else None
 
     def reclaim_expired(self, *, consumer: str, now: datetime | None = None) -> int:
+        del now  # compatibilidad de API; nunca es autoridad temporal del lease
         result = self.db.execute(text("""
+            WITH db_clock AS (
+                SELECT clock_timestamp() AT TIME ZONE 'UTC' AS now_utc
+            )
             UPDATE inbox_event SET status='PENDING_DEPENDENCY', lease_owner=NULL,
-                lease_expires_at=NULL, next_attempt_at=:now,
+                lease_expires_at=NULL, next_attempt_at=db_clock.now_utc,
                 error_detail='SYNC_WORKER_LEASE_EXPIRED'
+              FROM db_clock
              WHERE consumer=:consumer AND status='PROCESSING'
                AND lease_expires_at IS NOT NULL
-               AND lease_expires_at <= :now
-        """), {"consumer": consumer, "now": now or datetime.now(UTC)})
+               AND lease_expires_at <= db_clock.now_utc
+        """), {"consumer": consumer})
         return result.rowcount
 
     def get_operation_scope_deliveries(
@@ -220,9 +230,13 @@ class InboxRepository:
             raise InboxOwnershipLost(InboxOwnershipLost.code)
         fenced = lease_owner is not None
         result = self.db.execute(text("""
+            WITH db_clock AS (
+                SELECT clock_timestamp() AT TIME ZONE 'UTC' AS now_utc
+            )
             UPDATE inbox_event SET status=:status, processed_at=:processed_at,
                 error_detail=:reason, next_attempt_at=:next_attempt_at,
                 lease_owner=NULL, lease_expires_at=NULL
+              FROM db_clock
              WHERE event_id=CAST(:event_id AS uuid) AND consumer=:consumer
                AND status='PROCESSING'
                AND (
@@ -232,14 +246,13 @@ class InboxRepository:
                     (CAST(:fenced AS boolean)
                      AND lease_owner=:lease_owner
                      AND lease_generation=:lease_generation
-                     AND lease_expires_at > :ownership_now)
+                     AND lease_expires_at > db_clock.now_utc)
                )
         """), {"status": status, "processed_at": timestamps.get("processed_at"),
                  "next_attempt_at": timestamps.get("next_attempt_at"),
                  "reason": reason, "event_id": event_id, "consumer": consumer,
                  "fenced": fenced, "lease_owner": lease_owner,
-                 "lease_generation": lease_generation,
-                 "ownership_now": datetime.now(UTC)})
+                 "lease_generation": lease_generation})
         if result.rowcount == 1:
             return
         stored_is_leased = self.db.execute(text("""

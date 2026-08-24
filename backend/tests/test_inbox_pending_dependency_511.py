@@ -72,6 +72,14 @@ def _processor(db_session, **kwargs):
     )
 
 
+def _set_lease_from_db_clock(db, *, event_id, delta):
+    db.execute(text("""UPDATE inbox_event
+        SET lease_expires_at=(clock_timestamp() AT TIME ZONE 'UTC') + :delta
+        WHERE event_id=CAST(:event_id AS uuid)"""), {
+            "event_id": event_id, "delta": delta,
+        })
+
+
 def test_patch_materializa_contrato(db_session):
     columns = set(db_session.execute(text("""SELECT column_name FROM information_schema.columns
         WHERE table_schema='public' AND table_name='inbox_event'""")).scalars())
@@ -211,13 +219,36 @@ def test_lease_no_vencido_no_reclaim_y_vencido_si(db_session):
                                  lease_duration=timedelta(minutes=5),
                                  automatic_attempt_limit=8, now=now, manual=True)
     assert claimed and repo.reclaim_expired(
-        consumer="fixture_511", now=now + timedelta(minutes=4)
+        consumer="fixture_511", now=now + timedelta(days=365)
     ) == 0
+    _set_lease_from_db_clock(
+        db_session, event_id=event_id, delta=-timedelta(seconds=1),
+    )
     assert repo.reclaim_expired(
-        consumer="fixture_511", now=now + timedelta(minutes=6)
+        consumer="fixture_511", now=now - timedelta(days=365)
     ) == 1
     row = repo.get(event_id=event_id, consumer="fixture_511")
     assert row["status"] == "PENDING_DEPENDENCY" and row["attempt_count"] == 1
+
+
+@pytest.mark.parametrize("caller_offset", [timedelta(days=-365), timedelta(days=365)])
+def test_claim_lease_usa_reloj_db_y_no_now_del_caller(db_session, caller_offset):
+    event_id = _pending(db_session)
+    duration = timedelta(minutes=5)
+    db_before = db_session.execute(text(
+        "SELECT clock_timestamp() AT TIME ZONE 'UTC'"
+    )).scalar_one()
+    claimed = InboxRepository(db_session).claim_pending(
+        consumer="fixture_511", lease_owner="db-clock",
+        lease_duration=duration, automatic_attempt_limit=8,
+        event_id=event_id, manual=True,
+        now=datetime.now(UTC) + caller_offset,
+    )
+    db_after = db_session.execute(text(
+        "SELECT clock_timestamp() AT TIME ZONE 'UTC'"
+    )).scalar_one()
+    assert db_before + duration <= claimed["lease_expires_at"] <= db_after + duration
+    assert db_before <= claimed["last_attempt_at"] <= db_after
 
 
 def test_mismo_op_id_scope_consumer_replay_y_conflicto(db_session):
@@ -546,6 +577,9 @@ def test_reclaim_esta_aislado_por_consumer(db_session):
             consumer=consumer, lease_owner="dead", lease_duration=timedelta(minutes=1),
             automatic_attempt_limit=8, now=now, manual=True,
         )
+    _set_lease_from_db_clock(
+        db_session, event_id=event_a, delta=-timedelta(seconds=1),
+    )
     processor = _processor(db_session, consumer="consumer_a")
     processor.run_once(
         lambda _: InboxOutcome(InboxOutcomeKind.PENDING_DEPENDENCY),
@@ -737,6 +771,9 @@ def test_lease_visible_vigente_no_reclaim_y_vencido_genera_nuevo_fence():
     with Session(engine) as second:
         repo = InboxRepository(second)
         assert repo.reclaim_expired(consumer=consumer, now=now + timedelta(minutes=4)) == 0
+        _set_lease_from_db_clock(
+            second, event_id=event_id, delta=-timedelta(seconds=1),
+        )
         assert repo.reclaim_expired(consumer=consumer, now=now + timedelta(minutes=6)) == 1
         second.commit()
     with Session(engine) as third:
@@ -771,6 +808,9 @@ def test_worker_stale_revierte_efecto_y_nuevo_owner_completa_una_vez():
                 ), {"op": op_id})
                 with Session(engine) as takeover:
                     repo = InboxRepository(takeover)
+                    _set_lease_from_db_clock(
+                        takeover, event_id=event_id, delta=-timedelta(seconds=1),
+                    )
                     assert repo.reclaim_expired(
                         consumer=consumer, now=now + timedelta(minutes=2)
                     ) == 1
@@ -830,6 +870,9 @@ def test_todas_las_transiciones_rechazan_generation_stale(transition):
         session.commit()
     with Session(engine) as session:
         repo = InboxRepository(session)
+        _set_lease_from_db_clock(
+            session, event_id=event_id, delta=-timedelta(seconds=1),
+        )
         assert repo.reclaim_expired(consumer=consumer, now=now + timedelta(minutes=2)) == 1
         session.commit()
     with Session(engine) as session:
@@ -985,6 +1028,9 @@ def test_fencing_correcto_permite_transicion_y_lease_vencido_la_rechaza():
             consumer=expired_consumer, lease_owner="owner",
             lease_duration=timedelta(seconds=1), automatic_attempt_limit=8,
             event_id=expired_event, manual=True, now=current - timedelta(minutes=2),
+        )
+        _set_lease_from_db_clock(
+            claim_session, event_id=expired_event, delta=-timedelta(seconds=1),
         )
         claim_session.commit()
     with Session(engine) as transition_session:
