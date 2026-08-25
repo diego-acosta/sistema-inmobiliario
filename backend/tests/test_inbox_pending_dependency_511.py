@@ -84,21 +84,27 @@ def _set_lease_from_db_clock(db, *, event_id, delta):
 def _insert_retained_direct(
     db, *, event_type="sucursal_creada", aggregate_type="sucursal",
     payload=None, provenance=None, version_registro=1, consumer="retained_sql_511",
+    op_id=None, aggregate_uid=None, payload_fingerprint=None,
+    status="PENDING_DEPENDENCY",
 ):
     event_id = str(uuid4())
     db.execute(text("""INSERT INTO inbox_event (
         event_id, event_type, aggregate_type, aggregate_id, consumer, status,
-        payload, provenance, version_registro, next_attempt_at
+        payload, provenance, version_registro, next_attempt_at, op_id,
+        aggregate_uid, payload_fingerprint
     ) VALUES (
         CAST(:event_id AS uuid), :event_type, :aggregate_type, 1, :consumer,
-        'PENDING_DEPENDENCY', CAST(:payload AS jsonb), CAST(:provenance AS jsonb),
-        :version_registro, clock_timestamp() AT TIME ZONE 'UTC'
+        :status, CAST(:payload AS jsonb), CAST(:provenance AS jsonb),
+        :version_registro, clock_timestamp() AT TIME ZONE 'UTC',
+        CAST(:op_id AS uuid), CAST(:aggregate_uid AS uuid), :payload_fingerprint
     )"""), {
         "event_id": event_id, "event_type": event_type,
         "aggregate_type": aggregate_type, "consumer": consumer,
         "payload": json.dumps(payload) if payload is not None else None,
         "provenance": json.dumps(provenance) if provenance is not None else None,
-        "version_registro": version_registro,
+        "version_registro": version_registro, "status": status,
+        "op_id": op_id, "aggregate_uid": aggregate_uid,
+        "payload_fingerprint": payload_fingerprint,
     })
     return event_id
 
@@ -848,6 +854,90 @@ def test_rechazo_por_policy_respeta_fencing_y_no_pisa_nuevo_owner(
     )
     assert row["status"] == "PROCESSING"
     assert row["lease_owner"] == "new-owner"
+
+
+def test_current_valido_ignora_sibling_pending_invalido_y_luego_lo_rechaza(
+    db_session,
+):
+    op_id = str(uuid4())
+    aggregate_uid = str(uuid4())
+    sibling = _insert_retained_direct(
+        db_session, consumer="fixture_511", event_type="evento_desconocido",
+        payload={"password": "secret"}, op_id=op_id,
+        aggregate_uid=aggregate_uid, payload_fingerprint="b" * 64,
+    )
+    current = _pending(db_session, op_id=op_id, aggregate_uid=aggregate_uid)
+    calls = []
+    processor = _processor(db_session, consumer="fixture_511")
+    assert processor.run_once(
+        lambda event: calls.append(event["event_id"])
+        or InboxOutcome(InboxOutcomeKind.PROCESSED),
+        worker_id="current", event_id=current, manual=True,
+    ).kind is InboxOutcomeKind.PROCESSED
+    assert calls == [current]
+    assert InboxRepository(db_session).get(
+        event_id=sibling, consumer="fixture_511",
+    )["status"] == "PENDING_DEPENDENCY"
+
+    sibling_calls = []
+    rejected = processor.run_once(
+        lambda event: sibling_calls.append(event)
+        or InboxOutcome(InboxOutcomeKind.PROCESSED),
+        worker_id="sibling", event_id=sibling, manual=True,
+    )
+    assert rejected == InboxOutcome(
+        InboxOutcomeKind.REJECTED, "SYNC_EVENT_NOT_ALLOWED"
+    )
+    assert sibling_calls == []
+
+
+def test_orden_inverso_sibling_invalido_no_cambia_resultado_del_current(db_session):
+    op_id = str(uuid4())
+    aggregate_uid = str(uuid4())
+    sibling = _insert_retained_direct(
+        db_session, consumer="fixture_511", event_type="evento_desconocido",
+        payload={"value": 1}, op_id=op_id, aggregate_uid=aggregate_uid,
+        payload_fingerprint="c" * 64,
+    )
+    current = _pending(db_session, op_id=op_id, aggregate_uid=aggregate_uid)
+    processor = _processor(db_session, consumer="fixture_511")
+    assert processor.run_once(
+        lambda _: pytest.fail("invalid sibling reached applicator"),
+        worker_id="sibling", event_id=sibling, manual=True,
+    ).kind is InboxOutcomeKind.REJECTED
+    calls = []
+    assert processor.run_once(
+        lambda event: calls.append(event["event_id"])
+        or InboxOutcome(InboxOutcomeKind.PROCESSED),
+        worker_id="current", event_id=current, manual=True,
+    ).kind is InboxOutcomeKind.PROCESSED
+    assert calls == [current]
+
+
+@pytest.mark.parametrize("sibling_status", ["PROCESSING", "PROCESSED", "CONFLICTO"])
+def test_current_no_usa_sibling_invalido_como_block_replay_o_conflicto(
+    db_session, sibling_status,
+):
+    op_id = str(uuid4())
+    aggregate_uid = str(uuid4())
+    sibling = _insert_retained_direct(
+        db_session, consumer="fixture_511", event_type="evento_desconocido",
+        payload={"value": 1}, op_id=op_id, aggregate_uid=aggregate_uid,
+        payload_fingerprint="d" * 64, status=sibling_status,
+    )
+    current = _pending(db_session, op_id=op_id, aggregate_uid=aggregate_uid)
+    calls = []
+    assert _processor(db_session, consumer="fixture_511").run_once(
+        lambda event: calls.append(event["event_id"])
+        or InboxOutcome(InboxOutcomeKind.PROCESSED),
+        worker_id="current", event_id=current, manual=True,
+    ).kind is InboxOutcomeKind.PROCESSED
+    assert calls == [current]
+    sibling_row = InboxRepository(db_session).get(
+        event_id=sibling, consumer="fixture_511",
+    )
+    assert sibling_row["status"] == sibling_status
+    assert sibling_row["error_detail"] is None
 
 
 def test_claim_es_visible_desde_otra_conexion_antes_del_applicator():

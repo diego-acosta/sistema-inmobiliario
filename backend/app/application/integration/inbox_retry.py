@@ -73,6 +73,30 @@ class InboxRetryProcessor:
         """El menor delivery compatible lidera, sin importar su estado técnico."""
         return min([event["id"], *(delivery["id"] for delivery in compatible_in_flight)])
 
+    @staticmethod
+    def _classify_scope_deliveries(
+        deliveries: list[dict],
+    ) -> tuple[list[dict], list[dict]]:
+        """Separa evidencia vigente de siblings históricos inválidos, sin mutarlos."""
+        trusted_siblings = []
+        invalid_siblings = []
+        for delivery in deliveries:
+            try:
+                validate_retained_sync_envelope(
+                    event_type=delivery["event_type"],
+                    aggregate_type=delivery["aggregate_type"],
+                    payload=delivery.get("payload"),
+                    provenance=delivery.get("provenance"),
+                    op_id=delivery.get("op_id"),
+                    aggregate_uid=delivery.get("aggregate_uid"),
+                    version_registro=delivery.get("version_registro"),
+                )
+            except SynchronizationPolicyError:
+                invalid_siblings.append(delivery)
+            else:
+                trusted_siblings.append(delivery)
+        return trusted_siblings, invalid_siblings
+
     def run_once(self, applicator: Callable[[dict], InboxOutcome], *, worker_id: str,
                  event_id: str | None = None, manual: bool = False,
                  now: datetime | None = None) -> InboxOutcome | None:
@@ -116,23 +140,29 @@ class InboxRetryProcessor:
             deliveries = self.repository.get_operation_scope_deliveries(
                 consumer=self.consumer, op_id=event["op_id"], exclude_id=event["id"]
             )
+            trusted_siblings, _invalid_siblings = self._classify_scope_deliveries(
+                deliveries
+            )
             if any(
                 delivery["payload_fingerprint"] != event["payload_fingerprint"]
-                for delivery in deliveries
+                for delivery in trusted_siblings
             ):
                 outcome = InboxOutcome(InboxOutcomeKind.CONFLICTO, "SYNC_OPERATION_CONFLICT")
                 self.repository.mark_conflict(
                     event_id=event["event_id"], consumer=self.consumer, **ownership
                 )
                 return outcome
-            if any(delivery["status"] == "PROCESSED" for delivery in deliveries):
+            if any(
+                delivery["status"] == "PROCESSED"
+                for delivery in trusted_siblings
+            ):
                 outcome = InboxOutcome(InboxOutcomeKind.PROCESSED)
                 self.repository.mark_as_processed(
                     event_id=event["event_id"], consumer=self.consumer, **ownership
                 )
                 return outcome
             compatible_in_flight = [
-                delivery for delivery in deliveries
+                delivery for delivery in trusted_siblings
                 if delivery["status"] in {"PENDING_DEPENDENCY", "PROCESSING"}
             ]
             if self._scope_leader_id(event, compatible_in_flight) != event["id"]:
