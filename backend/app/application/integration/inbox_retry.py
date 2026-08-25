@@ -9,6 +9,11 @@ from typing import Callable, ContextManager
 from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.application.common.synchronization_policy import (
+    SynchronizationPolicyError,
+    sanitize_sync_error,
+    validate_retained_sync_envelope,
+)
 from app.infrastructure.persistence.repositories.inbox_repository import InboxRepository
 
 DEFAULT_LEASE = timedelta(minutes=5)
@@ -87,6 +92,22 @@ class InboxRetryProcessor:
         if event is None:
             return None
         ownership = self._ownership(event, worker_id)
+
+        try:
+            validate_retained_sync_envelope(
+                event_type=event["event_type"],
+                aggregate_type=event["aggregate_type"],
+                payload=event.get("payload"), provenance=event.get("provenance"),
+                op_id=event.get("op_id"), aggregate_uid=event.get("aggregate_uid"),
+                version_registro=event.get("version_registro"),
+            )
+        except SynchronizationPolicyError as exc:
+            reason = sanitize_sync_error(exc, preserve_invalid_payload=True)
+            self.repository.mark_as_rejected(
+                event_id=event["event_id"], consumer=self.consumer,
+                error_detail=reason, **ownership,
+            )
+            return InboxOutcome(InboxOutcomeKind.REJECTED, reason)
 
         # Scope técnico consumer/op_id: serializa entregas distintas de una operación.
         if event.get("op_id"):

@@ -1,5 +1,6 @@
 from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
+import json
 from pathlib import Path
 from uuid import uuid4
 
@@ -78,6 +79,28 @@ def _set_lease_from_db_clock(db, *, event_id, delta):
         WHERE event_id=CAST(:event_id AS uuid)"""), {
             "event_id": event_id, "delta": delta,
         })
+
+
+def _insert_retained_direct(
+    db, *, event_type="sucursal_creada", aggregate_type="sucursal",
+    payload=None, provenance=None, version_registro=1, consumer="retained_sql_511",
+):
+    event_id = str(uuid4())
+    db.execute(text("""INSERT INTO inbox_event (
+        event_id, event_type, aggregate_type, aggregate_id, consumer, status,
+        payload, provenance, version_registro, next_attempt_at
+    ) VALUES (
+        CAST(:event_id AS uuid), :event_type, :aggregate_type, 1, :consumer,
+        'PENDING_DEPENDENCY', CAST(:payload AS jsonb), CAST(:provenance AS jsonb),
+        :version_registro, clock_timestamp() AT TIME ZONE 'UTC'
+    )"""), {
+        "event_id": event_id, "event_type": event_type,
+        "aggregate_type": aggregate_type, "consumer": consumer,
+        "payload": json.dumps(payload) if payload is not None else None,
+        "provenance": json.dumps(provenance) if provenance is not None else None,
+        "version_registro": version_registro,
+    })
+    return event_id
 
 
 def test_patch_materializa_contrato(db_session):
@@ -729,6 +752,102 @@ def test_reason_no_allowlisted_se_sanitiza_y_rejected_es_terminal(db_session):
     assert row["status"] == "REJECTED" and row["error_detail"] == "SYNC_FUNCTIONAL_FAILURE"
     assert processor.run_once(lambda _: InboxOutcome(InboxOutcomeKind.PROCESSED),
                               worker_id="worker", event_id=event_id, manual=True) is None
+
+
+@pytest.mark.parametrize(
+    ("event_type", "aggregate_type", "payload", "provenance", "reason"),
+    [
+        (
+            "evento_desconocido", "sucursal", {"password": "secret"}, None,
+            "SYNC_EVENT_NOT_ALLOWED",
+        ),
+        (
+            "sucursal_creada", "instalacion", {"uid_global": "target"}, None,
+            "SYNC_AGGREGATE_NOT_ALLOWED",
+        ),
+        (
+            "sucursal_creada", "sucursal", {"uid_global": "target"},
+            {"origin": {"token": "secret"}}, "SYNC_SENSITIVE_PAYLOAD",
+        ),
+        (
+            "sucursal_creada", "sucursal", None, None, "SYNC_INVALID_PAYLOAD",
+        ),
+    ],
+)
+def test_run_once_revalida_fila_sql_y_rechaza_sin_exponerla_al_applicator(
+    db_session, event_type, aggregate_type, payload, provenance, reason,
+):
+    event_id = _insert_retained_direct(
+        db_session, event_type=event_type, aggregate_type=aggregate_type,
+        payload=payload, provenance=provenance,
+    )
+    calls = []
+    outcome = _processor(db_session, consumer="retained_sql_511").run_once(
+        lambda event: calls.append(event) or InboxOutcome(InboxOutcomeKind.PROCESSED),
+        worker_id="policy-worker", event_id=event_id, manual=True,
+    )
+    row = InboxRepository(db_session).get(
+        event_id=event_id, consumer="retained_sql_511",
+    )
+    assert outcome == InboxOutcome(InboxOutcomeKind.REJECTED, reason)
+    assert calls == []
+    assert row["status"] == "REJECTED"
+    assert row["error_detail"] == reason
+    assert "secret" not in row["error_detail"]
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_run_once_permite_fila_sql_valida_y_legacy_payloadless(db_session, legacy):
+    event_id = _insert_retained_direct(
+        db_session,
+        payload=None if legacy else {"uid_global": "target"},
+        provenance=None if legacy else {"installation_uid": "origin"},
+        version_registro=None if legacy else 1,
+    )
+    calls = []
+    outcome = _processor(db_session, consumer="retained_sql_511").run_once(
+        lambda event: calls.append(event["event_id"])
+        or InboxOutcome(InboxOutcomeKind.PROCESSED),
+        worker_id="valid-worker", event_id=event_id, manual=True,
+    )
+    assert outcome.kind is InboxOutcomeKind.PROCESSED
+    assert calls == [event_id]
+
+
+def test_rechazo_por_policy_respeta_fencing_y_no_pisa_nuevo_owner(
+    db_session, monkeypatch,
+):
+    event_id = _insert_retained_direct(
+        db_session, event_type="evento_desconocido", payload={"value": 1},
+    )
+
+    def lose_ownership(**_):
+        _set_lease_from_db_clock(
+            db_session, event_id=event_id, delta=-timedelta(seconds=1),
+        )
+        repo = InboxRepository(db_session)
+        assert repo.reclaim_expired(consumer="retained_sql_511") == 1
+        assert repo.claim_pending(
+            consumer="retained_sql_511", lease_owner="new-owner",
+            lease_duration=timedelta(minutes=5), automatic_attempt_limit=8,
+            event_id=event_id, manual=True,
+        )
+        raise UnknownSyncEvent(UnknownSyncEvent.code)
+
+    monkeypatch.setattr(
+        "app.application.integration.inbox_retry.validate_retained_sync_envelope",
+        lose_ownership,
+    )
+    with pytest.raises(InboxOwnershipLost):
+        _processor(db_session, consumer="retained_sql_511").run_once(
+            lambda _: InboxOutcome(InboxOutcomeKind.PROCESSED),
+            worker_id="stale-owner", event_id=event_id, manual=True,
+        )
+    row = InboxRepository(db_session).get(
+        event_id=event_id, consumer="retained_sql_511",
+    )
+    assert row["status"] == "PROCESSING"
+    assert row["lease_owner"] == "new-owner"
 
 
 def test_claim_es_visible_desde_otra_conexion_antes_del_applicator():

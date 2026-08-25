@@ -10,8 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.application.common.idempotency import canonical_payload_hash
 from app.application.common.synchronization_policy import (
-    validate_no_sensitive_sync_data,
-    validate_sync_event,
+    validate_retained_sync_envelope,
 )
 
 INBOX_STATUSES = frozenset(
@@ -53,9 +52,6 @@ class InboxRepository:
         aggregate_uid: str | None = None,
         version_registro: int | None = None,
     ) -> bool:
-        has_retained_envelope = any(value is not None for value in (
-            op_id, payload, provenance, aggregate_uid, version_registro,
-        ))
         if op_id is not None and aggregate_uid is None:
             raise InboxPortableTargetRequired(InboxPortableTargetRequired.code)
         try:
@@ -64,9 +60,12 @@ class InboxRepository:
             )
         except (AttributeError, TypeError, ValueError):
             raise InboxInvalidPortableTarget(InboxInvalidPortableTarget.code) from None
-        if has_retained_envelope:
-            validate_sync_event(event_type, aggregate_type, payload)
-            validate_no_sensitive_sync_data(provenance)
+        validate_retained_sync_envelope(
+            event_type=event_type, aggregate_type=aggregate_type, payload=payload,
+            provenance=provenance, op_id=op_id,
+            aggregate_uid=canonical_aggregate_uid,
+            version_registro=version_registro,
+        )
         fingerprint = self._canonical_envelope_fingerprint(
             event_type=event_type,
             aggregate_type=aggregate_type,

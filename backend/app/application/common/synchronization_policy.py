@@ -117,7 +117,32 @@ def validate_sync_event(event_type: str, aggregate_type: str, payload: Any) -> S
     return policy
 
 
-def sanitize_sync_error(exc: BaseException | str) -> str:
+def validate_retained_sync_envelope(
+    *, event_type: str, aggregate_type: str, payload: Any,
+    provenance: Any, op_id: Any = None, aggregate_uid: Any = None,
+    version_registro: Any = None,
+) -> bool:
+    """Valida todo envelope retenido; preserva el claim legacy payload-less."""
+    retained = any(value is not None for value in (
+        op_id, payload, provenance, aggregate_uid, version_registro,
+    ))
+    if retained:
+        validate_sync_event(event_type, aggregate_type, payload)
+        validate_no_sensitive_sync_data(provenance)
+    return retained
+
+
+def sanitize_sync_error(
+    exc: BaseException | str, *, preserve_invalid_payload: bool = False
+) -> str:
+    if preserve_invalid_payload and (
+        exc == "SYNC_INVALID_PAYLOAD"
+        or (
+            isinstance(exc, SensitiveSyncPayload)
+            and exc.args == ("SYNC_INVALID_PAYLOAD",)
+        )
+    ):
+        return "SYNC_INVALID_PAYLOAD"
     if isinstance(exc, str) and exc in {
         "SYNC_POLICY_REJECTED", "SYNC_EVENT_NOT_ALLOWED",
         "SYNC_AGGREGATE_NOT_ALLOWED", "SYNC_SENSITIVE_PAYLOAD",

@@ -84,6 +84,11 @@ def test_error_de_publicacion_se_sanitiza() -> None:
     raw = RuntimeError("postgresql://usuario:password@host/db SELECT sentinel")
     assert sanitize_sync_error(raw) == "SYNC_PUBLISH_FAILED"
     assert "password" not in sanitize_sync_error(raw)
+    invalid = SensitiveSyncPayload("SYNC_INVALID_PAYLOAD")
+    assert sanitize_sync_error(invalid) == "SYNC_SENSITIVE_PAYLOAD"
+    assert sanitize_sync_error(
+        invalid, preserve_invalid_payload=True
+    ) == "SYNC_INVALID_PAYLOAD"
 
 
 def test_valor_parametro_modificado_policy_contract() -> None:
