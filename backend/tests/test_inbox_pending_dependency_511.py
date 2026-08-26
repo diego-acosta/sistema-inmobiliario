@@ -1196,6 +1196,110 @@ def test_operation_scope_takeover_no_depende_de_lock_stale():
             )
 
 
+def test_operation_scope_reclaim_exige_fingerprint_inmutable(db_session):
+    consumer = "scope-fingerprint-511"
+    op_id = str(uuid4())
+    expires = db_session.execute(text(
+        "SELECT (clock_timestamp() AT TIME ZONE 'UTC') + interval '5 minutes'"
+    )).scalar_one()
+    repo = InboxRepository(db_session)
+    first = repo.claim_operation_scope(
+        consumer=consumer, op_id=op_id, payload_fingerprint="a" * 64,
+        lease_owner="first", lease_expires_at=expires,
+    )
+    repo.finish_operation_scope(
+        consumer=consumer, op_id=op_id, lease_owner="first",
+        lease_generation=first["lease_generation"], terminal_status=None,
+    )
+    compatible = repo.claim_operation_scope(
+        consumer=consumer, op_id=op_id, payload_fingerprint="a" * 64,
+        lease_owner="compatible", lease_expires_at=expires,
+    )
+    assert compatible["acquired"] is True
+    assert compatible["lease_generation"] == first["lease_generation"] + 1
+    repo.finish_operation_scope(
+        consumer=consumer, op_id=op_id, lease_owner="compatible",
+        lease_generation=compatible["lease_generation"], terminal_status=None,
+    )
+    incompatible = repo.claim_operation_scope(
+        consumer=consumer, op_id=op_id, payload_fingerprint="b" * 64,
+        lease_owner="incompatible", lease_expires_at=expires,
+    )
+    assert incompatible["acquired"] is False
+    assert incompatible["payload_fingerprint"] == "a" * 64
+    assert incompatible["lease_generation"] == compatible["lease_generation"]
+
+
+def test_rejected_scope_preserva_fingerprint_y_duplicate_incompatible_conflicta(
+    db_session,
+):
+    op_id = str(uuid4())
+    aggregate_uid = str(uuid4())
+    first = _pending(
+        db_session, op_id=op_id, aggregate_uid=aggregate_uid,
+        payload={"uid_global": "first"},
+    )
+    processor = _processor(db_session, consumer="fixture_511")
+    assert processor.run_once(
+        lambda _: InboxOutcome(InboxOutcomeKind.REJECTED, "SYNC_PAYLOAD_INVALID"),
+        worker_id="rejected-owner", event_id=first, manual=True,
+    ).kind is InboxOutcomeKind.REJECTED
+    incompatible = _pending(
+        db_session, op_id=op_id, aggregate_uid=aggregate_uid,
+        payload={"uid_global": "different"},
+    )
+    calls = []
+    outcome = processor.run_once(
+        lambda event: calls.append(event) or InboxOutcome(InboxOutcomeKind.PROCESSED),
+        worker_id="incompatible-owner", event_id=incompatible, manual=True,
+    )
+    assert outcome == InboxOutcome(
+        InboxOutcomeKind.CONFLICTO, "SYNC_OPERATION_CONFLICT"
+    )
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    ("db_delta", "caller_delta", "eligible"),
+    [
+        (timedelta(minutes=5), timedelta(days=365), False),
+        (timedelta(seconds=-1), timedelta(days=-365), True),
+    ],
+)
+def test_elegibilidad_automatica_usa_reloj_db(
+    db_session, db_delta, caller_delta, eligible,
+):
+    event_id = _pending(db_session)
+    db_session.execute(text("""UPDATE inbox_event SET next_attempt_at=
+        (clock_timestamp() AT TIME ZONE 'UTC') + :delta
+        WHERE event_id=CAST(:event_id AS uuid)"""), {
+        "delta": db_delta, "event_id": event_id,
+    })
+    caller_now = datetime.now(UTC) + caller_delta
+    listed = InboxRepository(db_session).list_eligible(
+        limit=10, automatic_attempt_limit=8, now=caller_now,
+    )
+    assert (event_id in {row["event_id"] for row in listed}) is eligible
+    claimed = InboxRepository(db_session).claim_pending(
+        consumer="fixture_511", lease_owner="db-eligibility",
+        lease_duration=timedelta(minutes=5), automatic_attempt_limit=8,
+        event_id=event_id, now=caller_now,
+    )
+    assert (claimed is not None) is eligible
+
+
+def test_claim_manual_ignora_elegibilidad_db_futura(db_session):
+    event_id = _pending(db_session)
+    db_session.execute(text("""UPDATE inbox_event SET next_attempt_at=
+        (clock_timestamp() AT TIME ZONE 'UTC') + interval '5 minutes'
+        WHERE event_id=CAST(:event_id AS uuid)"""), {"event_id": event_id})
+    assert InboxRepository(db_session).claim_pending(
+        consumer="fixture_511", lease_owner="manual-db-eligibility",
+        lease_duration=timedelta(minutes=5), automatic_attempt_limit=8,
+        event_id=event_id, now=datetime.now(UTC) - timedelta(days=365), manual=True,
+    ) is not None
+
+
 def test_backoff_se_programa_desde_finalizacion_db(db_session):
     event_id = _pending(db_session)
     processor = _processor(db_session, consumer="fixture_511")
