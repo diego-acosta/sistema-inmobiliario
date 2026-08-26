@@ -20,7 +20,8 @@ from app.application.common.synchronization_policy import (
     UnknownSyncEvent,
 )
 from app.infrastructure.persistence.repositories.inbox_repository import (
-    InboxInvalidPortableTarget, InboxPortableTargetRequired, InboxRepository,
+    InboxInvalidFingerprint, InboxInvalidPortableTarget,
+    InboxPortableTargetRequired, InboxRepository,
 )
 from app.infrastructure.persistence.repositories.inbox_repository import InboxOwnershipLost
 from app.config.database import engine
@@ -119,6 +120,11 @@ def test_patch_materializa_contrato(db_session):
         FROM pg_constraint WHERE conrelid='public.inbox_event'::regclass
         AND conname='ck_inbox_event_portable_target_511'""")).scalar_one()
     assert "op_id IS NULL" in constraint and "aggregate_uid IS NOT NULL" in constraint
+    scoped_fingerprint = db_session.execute(text("""SELECT pg_get_constraintdef(oid)
+        FROM pg_constraint WHERE conrelid='public.inbox_event'::regclass
+        AND conname='ck_inbox_event_scoped_fingerprint_511'""")).scalar_one()
+    assert "op_id IS NULL" in scoped_fingerprint
+    assert "payload_fingerprint IS NOT NULL" in scoped_fingerprint
 
 
 def test_patch_falla_ante_columna_existente_incompatible():
@@ -147,7 +153,20 @@ def test_patch_falla_ante_columna_existente_incompatible():
             admin.execute(f'DROP DATABASE "{database}"')
 
 
-def test_patch_falla_ante_constraint_portable_incompatible():
+@pytest.mark.parametrize(
+    ("constraint_name", "bad_definition", "error_match"),
+    [
+        ("ck_inbox_event_portable_target_511", "op_id IS NULL", "portable_target"),
+        (
+            "ck_inbox_event_scoped_fingerprint_511",
+            "payload_fingerprint IS NULL",
+            "scoped_fingerprint",
+        ),
+    ],
+)
+def test_patch_falla_ante_constraint_511_incompatible(
+    constraint_name, bad_definition, error_match,
+):
     database = f"inbox_511_{uuid4().hex}"
     url = engine.url
     connect = dict(host=url.host or "localhost", port=url.port or 5432,
@@ -166,11 +185,10 @@ def test_patch_falla_ante_constraint_portable_incompatible():
             )""")
             patch = Path("database/patch_inbox_pending_dependency_20260822.sql").read_text()
             connection.execute(patch)
-            connection.execute("""ALTER TABLE public.inbox_event
-                DROP CONSTRAINT ck_inbox_event_portable_target_511,
-                ADD CONSTRAINT ck_inbox_event_portable_target_511
-                CHECK (op_id IS NULL)""")
-            with pytest.raises(psycopg.errors.RaiseException, match="portable_target"):
+            connection.execute(f"""ALTER TABLE public.inbox_event
+                DROP CONSTRAINT {constraint_name},
+                ADD CONSTRAINT {constraint_name} CHECK ({bad_definition})""")
+            with pytest.raises(psycopg.errors.RaiseException, match=error_match):
                 connection.execute(patch)
     finally:
         with psycopg.connect(dbname="postgres", autocommit=True, **connect) as admin:
@@ -199,6 +217,26 @@ def test_constraint_sql_exige_target_portable_y_permite_legacy(db_session):
     assert db_session.execute(text("""SELECT 1 FROM inbox_event
         WHERE event_id=CAST(:event_id AS uuid) AND op_id IS NULL
           AND aggregate_uid IS NULL"""), {"event_id": legacy_id}).scalar_one() == 1
+
+
+def test_constraint_sql_exige_fingerprint_para_scope(db_session):
+    nested = db_session.begin_nested()
+    try:
+        with pytest.raises(
+            IntegrityError, match="ck_inbox_event_scoped_fingerprint_511"
+        ):
+            db_session.execute(text("""INSERT INTO inbox_event (
+                event_id, event_type, aggregate_type, aggregate_id, consumer,
+                op_id, aggregate_uid
+            ) VALUES (
+                :event_id, 'sucursal_creada', 'sucursal', 1, 'sql_fp_511',
+                :op_id, :aggregate_uid
+            )"""), {
+                "event_id": str(uuid4()), "op_id": str(uuid4()),
+                "aggregate_uid": str(uuid4()),
+            })
+    finally:
+        nested.rollback()
 
 
 def test_dependencia_ausente_preserva_envelope_y_retry_aplica_una_vez(db_session):
@@ -938,6 +976,59 @@ def test_current_no_usa_sibling_invalido_como_block_replay_o_conflicto(
     )
     assert sibling_row["status"] == sibling_status
     assert sibling_row["error_detail"] is None
+
+
+@pytest.mark.parametrize("stored_fingerprint", [None, "a" * 64])
+def test_current_scoped_rechaza_fingerprint_no_verificable(
+    db_session, stored_fingerprint,
+):
+    if stored_fingerprint is None:
+        db_session.execute(text("""ALTER TABLE inbox_event
+            DROP CONSTRAINT ck_inbox_event_scoped_fingerprint_511"""))
+    event_id = _insert_retained_direct(
+        db_session, consumer="fixture_511", payload={"uid_global": "target"},
+        op_id=str(uuid4()), aggregate_uid=str(uuid4()),
+        payload_fingerprint=stored_fingerprint,
+    )
+    calls = []
+    outcome = _processor(db_session, consumer="fixture_511").run_once(
+        lambda event: calls.append(event) or InboxOutcome(InboxOutcomeKind.PROCESSED),
+        worker_id="corrupt-current", event_id=event_id, manual=True,
+    )
+    assert outcome == InboxOutcome(
+        InboxOutcomeKind.REJECTED, InboxInvalidFingerprint.code
+    )
+    assert calls == []
+    row = InboxRepository(db_session).get(event_id=event_id, consumer="fixture_511")
+    assert row["status"] == "REJECTED"
+    assert row["error_detail"] == InboxInvalidFingerprint.code
+
+
+@pytest.mark.parametrize("stored_fingerprint", [None, "e" * 64])
+def test_current_ignora_sibling_con_fingerprint_no_verificable(
+    db_session, stored_fingerprint,
+):
+    if stored_fingerprint is None:
+        db_session.execute(text("""ALTER TABLE inbox_event
+            DROP CONSTRAINT ck_inbox_event_scoped_fingerprint_511"""))
+    op_id = str(uuid4())
+    aggregate_uid = str(uuid4())
+    sibling = _insert_retained_direct(
+        db_session, consumer="fixture_511", payload={"uid_global": "other"},
+        op_id=op_id, aggregate_uid=aggregate_uid,
+        payload_fingerprint=stored_fingerprint, status="PROCESSED",
+    )
+    current = _pending(db_session, op_id=op_id, aggregate_uid=aggregate_uid)
+    calls = []
+    assert _processor(db_session, consumer="fixture_511").run_once(
+        lambda event: calls.append(event["event_id"])
+        or InboxOutcome(InboxOutcomeKind.PROCESSED),
+        worker_id="valid-current", event_id=current, manual=True,
+    ).kind is InboxOutcomeKind.PROCESSED
+    assert calls == [current]
+    assert InboxRepository(db_session).get(
+        event_id=sibling, consumer="fixture_511",
+    )["status"] == "PROCESSED"
 
 
 def test_claim_es_visible_desde_otra_conexion_antes_del_applicator():

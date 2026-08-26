@@ -30,6 +30,49 @@ class InboxInvalidPortableTarget(RuntimeError):
     code = "SYNC_INVALID_PORTABLE_TARGET"
 
 
+class InboxInvalidFingerprint(RuntimeError):
+    code = "SYNC_INBOX_FINGERPRINT_INVALID"
+
+
+def compute_retained_envelope_fingerprint(
+    *, event_type: str, aggregate_type: str, aggregate_uid: Any,
+    version_registro: int | None, payload: dict[str, Any] | None,
+    provenance: dict[str, Any] | None, op_id: Any,
+) -> str | None:
+    """Recomputa la huella desde el mismo envelope canónico usado al ingresar."""
+    if op_id is None and payload is None and provenance is None:
+        return None
+    try:
+        canonical_uid = str(UUID(str(aggregate_uid))) if aggregate_uid is not None else None
+    except (AttributeError, TypeError, ValueError):
+        raise InboxInvalidPortableTarget(InboxInvalidPortableTarget.code) from None
+    return canonical_payload_hash({
+        "event_type": event_type,
+        "aggregate_type": aggregate_type,
+        "aggregate_uid": canonical_uid,
+        "version_registro": version_registro,
+        "payload": payload,
+        "provenance": provenance,
+    })
+
+
+def has_valid_scoped_fingerprint(delivery: dict[str, Any]) -> bool:
+    if delivery.get("op_id") is None:
+        return True
+    stored = delivery.get("payload_fingerprint")
+    if stored is None:
+        return False
+    expected = compute_retained_envelope_fingerprint(
+        event_type=delivery["event_type"],
+        aggregate_type=delivery["aggregate_type"],
+        aggregate_uid=delivery.get("aggregate_uid"),
+        version_registro=delivery.get("version_registro"),
+        payload=delivery.get("payload"), provenance=delivery.get("provenance"),
+        op_id=delivery.get("op_id"),
+    )
+    return stored == expected
+
+
 class InboxRepository:
     """Lifecycle técnico del inbox; nunca decide semántica del consumer."""
 
@@ -66,7 +109,7 @@ class InboxRepository:
             aggregate_uid=canonical_aggregate_uid,
             version_registro=version_registro,
         )
-        fingerprint = self._canonical_envelope_fingerprint(
+        fingerprint = compute_retained_envelope_fingerprint(
             event_type=event_type,
             aggregate_type=aggregate_type,
             aggregate_uid=canonical_aggregate_uid,
@@ -104,18 +147,11 @@ class InboxRepository:
         version_registro: int | None, payload: dict[str, Any] | None,
         provenance: dict[str, Any] | None, op_id: str | None,
     ) -> str | None:
-        """Hash RFC 8785 del material portable; nunca confía en un hash externo."""
-        if op_id is None and payload is None and provenance is None:
-            return None  # claim legacy sin envelope portable suficiente
-        envelope = {
-            "event_type": event_type,
-            "aggregate_type": aggregate_type,
-            "aggregate_uid": aggregate_uid,
-            "version_registro": version_registro,
-            "payload": payload,
-            "provenance": provenance,
-        }
-        return canonical_payload_hash(envelope)
+        return compute_retained_envelope_fingerprint(
+            event_type=event_type, aggregate_type=aggregate_type,
+            aggregate_uid=aggregate_uid, version_registro=version_registro,
+            payload=payload, provenance=provenance, op_id=op_id,
+        )
 
     def list_eligible(self, *, limit: int, automatic_attempt_limit: int,
                       now: datetime | None = None) -> list[dict[str, Any]]:

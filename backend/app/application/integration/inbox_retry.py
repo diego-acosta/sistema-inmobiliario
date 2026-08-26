@@ -14,7 +14,11 @@ from app.application.common.synchronization_policy import (
     sanitize_sync_error,
     validate_retained_sync_envelope,
 )
-from app.infrastructure.persistence.repositories.inbox_repository import InboxRepository
+from app.infrastructure.persistence.repositories.inbox_repository import (
+    InboxInvalidFingerprint,
+    InboxRepository,
+    has_valid_scoped_fingerprint,
+)
 
 DEFAULT_LEASE = timedelta(minutes=5)
 DEFAULT_AUTOMATIC_ATTEMPT_LIMIT = 8
@@ -94,7 +98,10 @@ class InboxRetryProcessor:
             except SynchronizationPolicyError:
                 invalid_siblings.append(delivery)
             else:
-                trusted_siblings.append(delivery)
+                if has_valid_scoped_fingerprint(delivery):
+                    trusted_siblings.append(delivery)
+                else:
+                    invalid_siblings.append(delivery)
         return trusted_siblings, invalid_siblings
 
     def run_once(self, applicator: Callable[[dict], InboxOutcome], *, worker_id: str,
@@ -127,6 +134,13 @@ class InboxRetryProcessor:
             )
         except SynchronizationPolicyError as exc:
             reason = sanitize_sync_error(exc, preserve_invalid_payload=True)
+            self.repository.mark_as_rejected(
+                event_id=event["event_id"], consumer=self.consumer,
+                error_detail=reason, **ownership,
+            )
+            return InboxOutcome(InboxOutcomeKind.REJECTED, reason)
+        if not has_valid_scoped_fingerprint(event):
+            reason = InboxInvalidFingerprint.code
             self.repository.mark_as_rejected(
                 event_id=event["event_id"], consumer=self.consumer,
                 error_detail=reason, **ownership,
