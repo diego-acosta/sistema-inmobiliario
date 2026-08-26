@@ -217,6 +217,76 @@ class InboxRepository:
         """), {"consumer": consumer})
         return result.rowcount
 
+    def claim_operation_scope(
+        self, *, consumer: str, op_id: str, payload_fingerprint: str,
+        lease_owner: str, lease_expires_at: datetime,
+    ) -> dict[str, Any]:
+        inserted = self.db.execute(text("""
+            WITH db_clock AS (
+                SELECT clock_timestamp() AT TIME ZONE 'UTC' AS now_utc
+            )
+            INSERT INTO inbox_operation_scope (
+                consumer, op_id, payload_fingerprint, lease_owner,
+                lease_expires_at, lease_generation, updated_at
+            ) SELECT :consumer, CAST(:op_id AS uuid), :fingerprint, :owner,
+                     :lease_expires_at, 1, now_utc FROM db_clock
+            ON CONFLICT (consumer, op_id) DO NOTHING
+            RETURNING *, true AS acquired
+        """), {
+            "consumer": consumer, "op_id": op_id,
+            "fingerprint": payload_fingerprint, "owner": lease_owner,
+            "lease_expires_at": lease_expires_at,
+        }).mappings().one_or_none()
+        if inserted:
+            return dict(inserted)
+        reclaimed = self.db.execute(text("""
+            WITH db_clock AS (
+                SELECT clock_timestamp() AT TIME ZONE 'UTC' AS now_utc
+            )
+            UPDATE inbox_operation_scope s SET lease_owner=:owner,
+                lease_expires_at=:lease_expires_at,
+                lease_generation=s.lease_generation + 1, updated_at=db_clock.now_utc
+              FROM db_clock
+             WHERE s.consumer=:consumer AND s.op_id=CAST(:op_id AS uuid)
+               AND s.terminal_status IS NULL
+               AND (s.lease_expires_at IS NULL OR s.lease_expires_at <= db_clock.now_utc)
+            RETURNING s.*, true AS acquired
+        """), {
+            "consumer": consumer, "op_id": op_id, "owner": lease_owner,
+            "lease_expires_at": lease_expires_at,
+        }).mappings().one_or_none()
+        if reclaimed:
+            return dict(reclaimed)
+        row = self.db.execute(text("""SELECT *, false AS acquired
+            FROM inbox_operation_scope
+            WHERE consumer=:consumer AND op_id=CAST(:op_id AS uuid)"""), {
+            "consumer": consumer, "op_id": op_id,
+        }).mappings().one()
+        return dict(row)
+
+    def finish_operation_scope(
+        self, *, consumer: str, op_id: str, lease_owner: str,
+        lease_generation: int, terminal_status: str | None,
+    ) -> None:
+        result = self.db.execute(text("""
+            WITH db_clock AS (
+                SELECT clock_timestamp() AT TIME ZONE 'UTC' AS now_utc
+            )
+            UPDATE inbox_operation_scope s
+               SET terminal_status=:terminal_status, lease_owner=NULL,
+                   lease_expires_at=NULL, updated_at=db_clock.now_utc
+              FROM db_clock
+             WHERE s.consumer=:consumer AND s.op_id=CAST(:op_id AS uuid)
+               AND s.lease_owner=:owner AND s.lease_generation=:generation
+               AND s.lease_expires_at > db_clock.now_utc
+               AND s.terminal_status IS NULL
+        """), {
+            "consumer": consumer, "op_id": op_id, "owner": lease_owner,
+            "generation": lease_generation, "terminal_status": terminal_status,
+        })
+        if result.rowcount != 1:
+            raise InboxOwnershipLost(InboxOwnershipLost.code)
+
     def get_operation_scope_deliveries(
         self, *, consumer: str, op_id: str, exclude_id: int
     ) -> list[dict[str, Any]]:
@@ -232,11 +302,16 @@ class InboxRepository:
         return [self._map_row(row) for row in rows]
 
     def mark_pending_dependency(self, *, event_id: str, consumer: str,
-                                reason_code: str, next_attempt_at: datetime,
+                                reason_code: str,
+                                next_attempt_at: datetime | None = None,
+                                retry_delay: timedelta | None = None,
                                 lease_owner: str | None = None,
                                 lease_generation: int | None = None) -> None:
+        if next_attempt_at is not None and retry_delay is not None:
+            raise ValueError("SYNC_INBOX_RETRY_SCHEDULE_INVALID")
         self._transition(event_id, consumer, "PENDING_DEPENDENCY", reason_code,
-                         next_attempt_at=next_attempt_at, lease_owner=lease_owner,
+                         next_attempt_at=next_attempt_at, retry_delay=retry_delay,
+                         lease_owner=lease_owner,
                          lease_generation=lease_generation)
 
     def mark_as_processed(self, *, event_id: str, consumer: str,
@@ -275,7 +350,10 @@ class InboxRepository:
                 SELECT clock_timestamp() AT TIME ZONE 'UTC' AS now_utc
             )
             UPDATE inbox_event SET status=:status, processed_at=:processed_at,
-                error_detail=:reason, next_attempt_at=:next_attempt_at,
+                error_detail=:reason, next_attempt_at=CASE
+                    WHEN CAST(:retry_delay AS interval) IS NOT NULL
+                    THEN db_clock.now_utc + CAST(:retry_delay AS interval)
+                    ELSE CAST(:next_attempt_at AS timestamp) END,
                 lease_owner=NULL, lease_expires_at=NULL
               FROM db_clock
              WHERE event_id=CAST(:event_id AS uuid) AND consumer=:consumer
@@ -291,6 +369,7 @@ class InboxRepository:
                )
         """), {"status": status, "processed_at": timestamps.get("processed_at"),
                  "next_attempt_at": timestamps.get("next_attempt_at"),
+                 "retry_delay": timestamps.get("retry_delay"),
                  "reason": reason, "event_id": event_id, "consumer": consumer,
                  "fenced": fenced, "lease_owner": lease_owner,
                  "lease_generation": lease_generation})

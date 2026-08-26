@@ -6,7 +6,6 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Callable, ContextManager
 
-from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.application.common.synchronization_policy import (
@@ -147,10 +146,47 @@ class InboxRetryProcessor:
             )
             return InboxOutcome(InboxOutcomeKind.REJECTED, reason)
 
-        # Scope técnico consumer/op_id: serializa entregas distintas de una operación.
+        operation_ownership = None
+        operation_terminal = None
+        # El derecho de efecto scoped se obtiene en una transacción técnica corta y
+        # recuperable; nunca depende de un advisory lock retenido por el applicator.
         if event.get("op_id"):
-            self.session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:scope), hashtext(:op))"),
-                                 {"scope": self.consumer, "op": event["op_id"]})
+            with self.lifecycle_session_factory() as lifecycle_session:
+                scope = InboxRepository(lifecycle_session).claim_operation_scope(
+                    consumer=self.consumer, op_id=event["op_id"],
+                    payload_fingerprint=event["payload_fingerprint"],
+                    lease_owner=worker_id,
+                    lease_expires_at=event["lease_expires_at"],
+                )
+                lifecycle_session.commit()
+            if not scope["acquired"]:
+                if scope["payload_fingerprint"] != event["payload_fingerprint"]:
+                    outcome = InboxOutcome(
+                        InboxOutcomeKind.CONFLICTO, "SYNC_OPERATION_CONFLICT"
+                    )
+                    self.repository.mark_conflict(
+                        event_id=event["event_id"], consumer=self.consumer,
+                        reason_code=outcome.reason_code, **ownership,
+                    )
+                    return outcome
+                operation_terminal = scope["terminal_status"]
+                if operation_terminal is None:
+                    delay = retry_backoff(event["attempt_count"])
+                    self.repository.mark_pending_dependency(
+                        event_id=event["event_id"], consumer=self.consumer,
+                        reason_code="SYNC_DEPENDENCY_UNAVAILABLE", retry_delay=delay,
+                        **ownership,
+                    )
+                    return InboxOutcome(
+                        InboxOutcomeKind.PENDING_DEPENDENCY,
+                        "SYNC_DEPENDENCY_UNAVAILABLE",
+                    )
+            else:
+                operation_ownership = {
+                    "consumer": self.consumer, "op_id": event["op_id"],
+                    "lease_owner": worker_id,
+                    "lease_generation": scope["lease_generation"],
+                }
             deliveries = self.repository.get_operation_scope_deliveries(
                 consumer=self.consumer, op_id=event["op_id"], exclude_id=event["id"]
             )
@@ -162,26 +198,38 @@ class InboxRetryProcessor:
                 for delivery in trusted_siblings
             ):
                 outcome = InboxOutcome(InboxOutcomeKind.CONFLICTO, "SYNC_OPERATION_CONFLICT")
+                if operation_ownership is not None:
+                    self.repository.finish_operation_scope(
+                        terminal_status="CONFLICTO", **operation_ownership
+                    )
                 self.repository.mark_conflict(
                     event_id=event["event_id"], consumer=self.consumer, **ownership
                 )
                 return outcome
-            if any(
+            if operation_terminal == "PROCESSED" or any(
                 delivery["status"] == "PROCESSED"
                 for delivery in trusted_siblings
             ):
                 outcome = InboxOutcome(InboxOutcomeKind.PROCESSED)
+                if operation_ownership is not None:
+                    self.repository.finish_operation_scope(
+                        terminal_status="PROCESSED", **operation_ownership
+                    )
                 self.repository.mark_as_processed(
                     event_id=event["event_id"], consumer=self.consumer, **ownership
                 )
                 return outcome
-            if any(
+            if operation_terminal == "CONFLICTO" or any(
                 delivery["status"] == "CONFLICTO"
                 for delivery in trusted_siblings
             ):
                 outcome = InboxOutcome(
                     InboxOutcomeKind.CONFLICTO, "SYNC_OPERATION_CONFLICT"
                 )
+                if operation_ownership is not None:
+                    self.repository.finish_operation_scope(
+                        terminal_status="CONFLICTO", **operation_ownership
+                    )
                 self.repository.mark_conflict(
                     event_id=event["event_id"], consumer=self.consumer,
                     reason_code=outcome.reason_code, **ownership,
@@ -199,8 +247,11 @@ class InboxRetryProcessor:
                 self.repository.mark_pending_dependency(
                     event_id=event["event_id"], consumer=self.consumer,
                     reason_code=outcome.reason_code,
-                    next_attempt_at=current + retry_backoff(event["attempt_count"]),
+                    retry_delay=retry_backoff(event["attempt_count"]),
                     **ownership,
+                )
+                self.repository.finish_operation_scope(
+                    terminal_status=None, **operation_ownership
                 )
                 return outcome
 
@@ -210,6 +261,10 @@ class InboxRetryProcessor:
             if not isinstance(outcome, InboxOutcome):
                 raise TypeError("consumer must return InboxOutcome")
             if outcome.kind is InboxOutcomeKind.PROCESSED:
+                if operation_ownership is not None:
+                    self.repository.finish_operation_scope(
+                        terminal_status="PROCESSED", **operation_ownership
+                    )
                 self.repository.mark_as_processed(
                     event_id=event["event_id"], consumer=self.consumer, **ownership
                 )
@@ -224,16 +279,28 @@ class InboxRetryProcessor:
         if reason not in SANITIZED_REASON_CODES:
             reason = "SYNC_FUNCTIONAL_FAILURE"
         if outcome.kind is InboxOutcomeKind.PENDING_DEPENDENCY:
+            if operation_ownership is not None:
+                self.repository.finish_operation_scope(
+                    terminal_status=None, **operation_ownership
+                )
             self.repository.mark_pending_dependency(
                 event_id=event["event_id"], consumer=self.consumer, reason_code=reason,
-                next_attempt_at=current + retry_backoff(event["attempt_count"]),
+                retry_delay=retry_backoff(event["attempt_count"]),
                 **ownership,
             )
         elif outcome.kind is InboxOutcomeKind.REJECTED:
+            if operation_ownership is not None:
+                self.repository.finish_operation_scope(
+                    terminal_status=None, **operation_ownership
+                )
             self.repository.mark_as_rejected(event_id=event["event_id"],
                                              consumer=self.consumer, error_detail=reason,
                                              **ownership)
         else:
+            if operation_ownership is not None:
+                self.repository.finish_operation_scope(
+                    terminal_status="CONFLICTO", **operation_ownership
+                )
             self.repository.mark_conflict(event_id=event["event_id"],
                                           consumer=self.consumer, reason_code=reason,
                                           **ownership)

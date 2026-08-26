@@ -30,6 +30,60 @@ ALTER TABLE public.inbox_event
     ADD COLUMN IF NOT EXISTS lease_expires_at timestamp without time zone,
     ADD COLUMN IF NOT EXISTS lease_generation bigint NOT NULL DEFAULT 0;
 
+CREATE TABLE IF NOT EXISTS public.inbox_operation_scope (
+    consumer varchar(100) NOT NULL,
+    op_id uuid NOT NULL,
+    payload_fingerprint varchar(64) NOT NULL,
+    lease_owner varchar(100),
+    lease_expires_at timestamp without time zone,
+    lease_generation bigint NOT NULL DEFAULT 0,
+    terminal_status varchar(20),
+    updated_at timestamp without time zone NOT NULL DEFAULT
+        (clock_timestamp() AT TIME ZONE 'UTC'),
+    CONSTRAINT pk_inbox_operation_scope_511 PRIMARY KEY (consumer, op_id),
+    CONSTRAINT ck_inbox_operation_scope_lease_511 CHECK (
+        (lease_owner IS NULL) = (lease_expires_at IS NULL)
+    ),
+    CONSTRAINT ck_inbox_operation_scope_generation_511 CHECK (lease_generation >= 0),
+    CONSTRAINT ck_inbox_operation_scope_terminal_511 CHECK (
+        terminal_status IS NULL OR terminal_status IN ('PROCESSED', 'CONFLICTO')
+    ),
+    CONSTRAINT ck_inbox_operation_scope_fingerprint_511 CHECK (
+        payload_fingerprint ~ '^[0-9a-f]{64}$'
+    )
+);
+
+DO $scope_contract$
+DECLARE
+    actual text;
+BEGIN
+    IF (SELECT count(*) FROM information_schema.columns
+        WHERE table_schema='public' AND table_name='inbox_operation_scope'
+          AND (column_name, data_type) IN (
+            ('consumer', 'character varying'), ('op_id', 'uuid'),
+            ('payload_fingerprint', 'character varying'),
+            ('lease_owner', 'character varying'),
+            ('lease_expires_at', 'timestamp without time zone'),
+            ('lease_generation', 'bigint'), ('terminal_status', 'character varying'),
+            ('updated_at', 'timestamp without time zone')
+          )) <> 8 THEN
+        RAISE EXCEPTION 'inbox_operation_scope has an incompatible definition';
+    END IF;
+    SELECT pg_get_constraintdef(oid) INTO actual FROM pg_constraint
+     WHERE conrelid='public.inbox_operation_scope'::regclass
+       AND conname='pk_inbox_operation_scope_511';
+    IF actual IS NULL OR actual !~ 'PRIMARY KEY.*consumer, op_id' THEN
+        RAISE EXCEPTION 'pk_inbox_operation_scope_511 has an incompatible definition';
+    END IF;
+    SELECT pg_get_constraintdef(oid) INTO actual FROM pg_constraint
+     WHERE conrelid='public.inbox_operation_scope'::regclass
+       AND conname='ck_inbox_operation_scope_terminal_511';
+    IF actual IS NULL OR actual !~ 'PROCESSED.*CONFLICTO' THEN
+        RAISE EXCEPTION 'ck_inbox_operation_scope_terminal_511 has an incompatible definition';
+    END IF;
+END
+$scope_contract$;
+
 DO $columns$
 DECLARE
     spec record;

@@ -125,6 +125,10 @@ def test_patch_materializa_contrato(db_session):
         AND conname='ck_inbox_event_scoped_fingerprint_511'""")).scalar_one()
     assert "op_id IS NULL" in scoped_fingerprint
     assert "payload_fingerprint IS NOT NULL" in scoped_fingerprint
+    scope_pk = db_session.execute(text("""SELECT pg_get_constraintdef(oid)
+        FROM pg_constraint WHERE conrelid='public.inbox_operation_scope'::regclass
+        AND conname='pk_inbox_operation_scope_511'""")).scalar_one()
+    assert "PRIMARY KEY (consumer, op_id)" in scope_pk
 
 
 def test_patch_falla_ante_columna_existente_incompatible():
@@ -1103,6 +1107,121 @@ def test_duplicate_compatible_reutiliza_conflicto_terminal(db_session):
     assert InboxRepository(db_session).get(
         event_id=duplicate, consumer="fixture_511"
     )["status"] == "CONFLICTO"
+
+
+def test_dos_deliveries_scoped_se_retienen_pero_producen_un_efecto(db_session):
+    repo = InboxRepository(db_session)
+    op_id = str(uuid4())
+    aggregate_uid = str(uuid4())
+    deliveries = [str(uuid4()), str(uuid4())]
+    for event_id in deliveries:
+        assert repo.claim(
+            event_id=event_id, event_type="sucursal_creada",
+            aggregate_type="sucursal", aggregate_id=1, consumer="fixture_511",
+            op_id=op_id, aggregate_uid=aggregate_uid,
+            payload={"uid_global": "same"},
+            provenance={"installation_uid": "origin"}, version_registro=1,
+        )
+        repo.mark_pending_dependency(
+            event_id=event_id, consumer="fixture_511",
+            reason_code="SYNC_DEPENDENCY_UNAVAILABLE",
+            next_attempt_at=datetime.now(UTC),
+        )
+    calls = []
+    processor = _processor(db_session, consumer="fixture_511")
+    for index, event_id in enumerate(deliveries):
+        processor.run_once(
+            lambda event: calls.append(event["event_id"])
+            or InboxOutcome(InboxOutcomeKind.PROCESSED),
+            worker_id=f"initial-{index}", event_id=event_id, manual=True,
+        )
+    assert calls == [deliveries[0]]
+    assert [repo.get(event_id=item, consumer="fixture_511")["status"]
+            for item in deliveries] == ["PROCESSED", "PROCESSED"]
+
+
+def test_operation_scope_takeover_no_depende_de_lock_stale():
+    consumer = f"scope-takeover-{uuid4()}"
+    event_id, op_id = _committed_pending(consumer=consumer)
+    with Session(engine) as first:
+        repo_a = InboxRepository(first)
+        delivery_a = repo_a.claim_pending(
+            consumer=consumer, lease_owner="worker-a", lease_duration=timedelta(minutes=5),
+            automatic_attempt_limit=8, event_id=event_id, manual=True,
+        )
+        first.commit()
+        scope_a = repo_a.claim_operation_scope(
+            consumer=consumer, op_id=op_id,
+            payload_fingerprint=delivery_a["payload_fingerprint"],
+            lease_owner="worker-a", lease_expires_at=delivery_a["lease_expires_at"],
+        )
+        first.commit()
+    with Session(engine) as expire:
+        expire.execute(text("""UPDATE inbox_event SET lease_expires_at=
+            (clock_timestamp() AT TIME ZONE 'UTC') - interval '1 second'
+            WHERE event_id=CAST(:event_id AS uuid)"""), {"event_id": event_id})
+        expire.execute(text("""UPDATE inbox_operation_scope SET lease_expires_at=
+            (clock_timestamp() AT TIME ZONE 'UTC') - interval '1 second'
+            WHERE consumer=:consumer AND op_id=CAST(:op_id AS uuid)"""),
+            {"consumer": consumer, "op_id": op_id})
+        expire.commit()
+    with Session(engine) as second:
+        repo_b = InboxRepository(second)
+        assert repo_b.reclaim_expired(consumer=consumer) == 1
+        second.commit()
+        delivery_b = repo_b.claim_pending(
+            consumer=consumer, lease_owner="worker-b", lease_duration=timedelta(minutes=5),
+            automatic_attempt_limit=8, event_id=event_id, manual=True,
+        )
+        second.commit()
+        scope_b = repo_b.claim_operation_scope(
+            consumer=consumer, op_id=op_id,
+            payload_fingerprint=delivery_b["payload_fingerprint"],
+            lease_owner="worker-b", lease_expires_at=delivery_b["lease_expires_at"],
+        )
+        second.commit()
+        assert scope_b["acquired"] is True
+        assert scope_b["lease_generation"] == scope_a["lease_generation"] + 1
+        repo_b.finish_operation_scope(
+            consumer=consumer, op_id=op_id, lease_owner="worker-b",
+            lease_generation=scope_b["lease_generation"], terminal_status="PROCESSED",
+        )
+        second.commit()
+    with Session(engine) as stale:
+        with pytest.raises(InboxOwnershipLost):
+            InboxRepository(stale).finish_operation_scope(
+                consumer=consumer, op_id=op_id, lease_owner="worker-a",
+                lease_generation=scope_a["lease_generation"],
+                terminal_status="PROCESSED",
+            )
+
+
+def test_backoff_se_programa_desde_finalizacion_db(db_session):
+    event_id = _pending(db_session)
+    processor = _processor(db_session, consumer="fixture_511")
+    db_before = db_session.execute(text(
+        "SELECT clock_timestamp() AT TIME ZONE 'UTC'"
+    )).scalar_one()
+    outcome = processor.run_once(
+        lambda _: InboxOutcome(
+            InboxOutcomeKind.PENDING_DEPENDENCY, "SYNC_DEPENDENCY_UNAVAILABLE"
+        ),
+        worker_id="completion-clock", event_id=event_id, manual=True,
+        now=datetime.now(UTC) - timedelta(days=1),
+    )
+    row = InboxRepository(db_session).get(event_id=event_id, consumer="fixture_511")
+    assert outcome.kind is InboxOutcomeKind.PENDING_DEPENDENCY
+    assert row["next_attempt_at"] >= db_before + retry_backoff(row["attempt_count"])
+    assert InboxRepository(db_session).claim_pending(
+        consumer="fixture_511", lease_owner="automatic",
+        lease_duration=timedelta(minutes=5), automatic_attempt_limit=8,
+        event_id=event_id,
+    ) is None
+    assert InboxRepository(db_session).claim_pending(
+        consumer="fixture_511", lease_owner="manual",
+        lease_duration=timedelta(minutes=5), automatic_attempt_limit=8,
+        event_id=event_id, manual=True,
+    ) is not None
 
 
 def test_claim_es_visible_desde_otra_conexion_antes_del_applicator():
