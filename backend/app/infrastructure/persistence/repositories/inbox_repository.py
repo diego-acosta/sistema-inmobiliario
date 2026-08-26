@@ -8,7 +8,10 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.application.common.idempotency import canonical_payload_hash
+from app.application.common.idempotency import (
+    NonCanonicalizablePayload,
+    canonical_payload_hash,
+)
 from app.application.common.synchronization_policy import (
     validate_retained_sync_envelope,
 )
@@ -62,14 +65,17 @@ def has_valid_scoped_fingerprint(delivery: dict[str, Any]) -> bool:
     stored = delivery.get("payload_fingerprint")
     if stored is None:
         return False
-    expected = compute_retained_envelope_fingerprint(
-        event_type=delivery["event_type"],
-        aggregate_type=delivery["aggregate_type"],
-        aggregate_uid=delivery.get("aggregate_uid"),
-        version_registro=delivery.get("version_registro"),
-        payload=delivery.get("payload"), provenance=delivery.get("provenance"),
-        op_id=delivery.get("op_id"),
-    )
+    try:
+        expected = compute_retained_envelope_fingerprint(
+            event_type=delivery["event_type"],
+            aggregate_type=delivery["aggregate_type"],
+            aggregate_uid=delivery.get("aggregate_uid"),
+            version_registro=delivery.get("version_registro"),
+            payload=delivery.get("payload"), provenance=delivery.get("provenance"),
+            op_id=delivery.get("op_id"),
+        )
+    except NonCanonicalizablePayload:
+        return False
     return stored == expected
 
 

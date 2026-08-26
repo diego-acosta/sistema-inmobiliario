@@ -175,6 +175,18 @@ class InboxRetryProcessor:
                     event_id=event["event_id"], consumer=self.consumer, **ownership
                 )
                 return outcome
+            if any(
+                delivery["status"] == "CONFLICTO"
+                for delivery in trusted_siblings
+            ):
+                outcome = InboxOutcome(
+                    InboxOutcomeKind.CONFLICTO, "SYNC_OPERATION_CONFLICT"
+                )
+                self.repository.mark_conflict(
+                    event_id=event["event_id"], consumer=self.consumer,
+                    reason_code=outcome.reason_code, **ownership,
+                )
+                return outcome
             compatible_in_flight = [
                 delivery for delivery in trusted_siblings
                 if delivery["status"] in {"PENDING_DEPENDENCY", "PROCESSING"}

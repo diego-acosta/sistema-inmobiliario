@@ -1031,6 +1031,80 @@ def test_current_ignora_sibling_con_fingerprint_no_verificable(
     )["status"] == "PROCESSED"
 
 
+def test_current_scoped_rechaza_fingerprint_no_canonicalizable(db_session):
+    event_id = _insert_retained_direct(
+        db_session, consumer="fixture_511", payload={"value": 1.25},
+        op_id=str(uuid4()), aggregate_uid=str(uuid4()),
+        payload_fingerprint="a" * 64,
+    )
+    calls = []
+    outcome = _processor(db_session, consumer="fixture_511").run_once(
+        lambda event: calls.append(event) or InboxOutcome(InboxOutcomeKind.PROCESSED),
+        worker_id="non-canonical-current", event_id=event_id, manual=True,
+    )
+    assert outcome == InboxOutcome(
+        InboxOutcomeKind.REJECTED, InboxInvalidFingerprint.code
+    )
+    assert calls == []
+    row = InboxRepository(db_session).get(event_id=event_id, consumer="fixture_511")
+    assert row["status"] == "REJECTED"
+    assert row["error_detail"] == InboxInvalidFingerprint.code
+    assert row["lease_owner"] is None
+
+
+def test_current_ignora_sibling_con_fingerprint_no_canonicalizable(db_session):
+    op_id = str(uuid4())
+    aggregate_uid = str(uuid4())
+    sibling = _insert_retained_direct(
+        db_session, consumer="fixture_511", payload={"value": 1.25},
+        op_id=op_id, aggregate_uid=aggregate_uid,
+        payload_fingerprint="b" * 64, status="PROCESSED",
+    )
+    current = _pending(db_session, op_id=op_id, aggregate_uid=aggregate_uid)
+    calls = []
+    outcome = _processor(db_session, consumer="fixture_511").run_once(
+        lambda event: calls.append(event["event_id"])
+        or InboxOutcome(InboxOutcomeKind.PROCESSED),
+        worker_id="canonical-current", event_id=current, manual=True,
+    )
+    assert outcome.kind is InboxOutcomeKind.PROCESSED
+    assert calls == [current]
+    sibling_row = InboxRepository(db_session).get(
+        event_id=sibling, consumer="fixture_511"
+    )
+    assert sibling_row["status"] == "PROCESSED"
+    assert sibling_row["error_detail"] is None
+
+
+def test_duplicate_compatible_reutiliza_conflicto_terminal(db_session):
+    op_id = str(uuid4())
+    aggregate_uid = str(uuid4())
+    first = _pending(db_session, op_id=op_id, aggregate_uid=aggregate_uid)
+    calls = []
+    processor = _processor(db_session, consumer="fixture_511")
+
+    def conflict_applicator(event):
+        calls.append(event["event_id"])
+        return InboxOutcome(InboxOutcomeKind.CONFLICTO, "SYNC_OPERATION_CONFLICT")
+
+    assert processor.run_once(
+        conflict_applicator, worker_id="first-conflict", event_id=first, manual=True,
+    ) == InboxOutcome(InboxOutcomeKind.CONFLICTO, "SYNC_OPERATION_CONFLICT")
+    duplicate = _pending(db_session, op_id=op_id, aggregate_uid=aggregate_uid)
+    outcome = processor.run_once(
+        lambda event: calls.append(event["event_id"])
+        or InboxOutcome(InboxOutcomeKind.PROCESSED),
+        worker_id="conflict-replay", event_id=duplicate, manual=True,
+    )
+    assert outcome == InboxOutcome(
+        InboxOutcomeKind.CONFLICTO, "SYNC_OPERATION_CONFLICT"
+    )
+    assert calls == [first]
+    assert InboxRepository(db_session).get(
+        event_id=duplicate, consumer="fixture_511"
+    )["status"] == "CONFLICTO"
+
+
 def test_claim_es_visible_desde_otra_conexion_antes_del_applicator():
     consumer = f"visibility-{uuid4()}"
     event_id, _ = _committed_pending(consumer=consumer)
