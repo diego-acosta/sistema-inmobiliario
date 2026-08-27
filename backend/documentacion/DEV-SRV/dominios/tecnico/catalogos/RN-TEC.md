@@ -199,7 +199,7 @@ Incluye operaciones distribuidas, sincronización, inbox y outbox, idempotencia,
 - origen_principal: SRV-TEC-002
 
 ### RN-TEC-036 — Serialización de aplicación por op_id
-- descripcion: op_id conserva la identidad primaria de la operación; cada consumer debe obtener exclusión idempotente atómica para su efecto en el scope lógico (consumer, op_id) o equivalente antes de aplicarlo. Un único aplicador puede reutilizar directamente el receipt global #469/#470; múltiples consumers con efectos independientes requieren receipts consumer-scoped y no colisionan sólo por compartir op_id. event_id sólo identifica y deduplica la entrega.
+- descripcion: op_id conserva la identidad primaria de la operación; `inbox_operation_scope` es la única autoridad consumer-scoped de equivalencia, exclusión y receipt antes del efecto. `attempt_id` identifica cada adquisición concreta y `worker_id` es sólo diagnóstico. No existe elección de leader por delivery. Un único aplicador puede reutilizar directamente el receipt global #469/#470 cuando corresponda; múltiples consumers con efectos independientes no colisionan sólo por compartir op_id. event_id sólo identifica y deduplica la entrega.
 - aplica_a: inbox, op_id, operacion_distribuida, sincronizacion
 - origen_principal: CORE-EF
 
@@ -211,4 +211,4 @@ Incluye operaciones distribuidas, sincronización, inbox y outbox, idempotencia,
 
 ## RN-TEC-511 — Reproceso de dependencia portable
 
-Una dependencia portable temporalmente ausente no admite placeholder, PK remota ni efecto parcial. Conserva la misma operación y se reintenta por claim Técnico atómico. Todo claim con `op_id` requiere `aggregate_uid` como target portable estable; `aggregate_id` local no lo reemplaza. El consumer clasifica el resultado; Técnico persiste lifecycle, lease, backoff, trazabilidad y exclusión `(consumer, op_id)`.
+Una dependencia portable temporalmente ausente no admite placeholder, PK remota ni efecto parcial. Conserva la misma operación y se reintenta por claim Técnico atómico. Todo registro con `op_id` requiere `aggregate_uid` como target portable estable; `aggregate_id` local no lo reemplaza. Cada adquisición genera `attempt_id`; la expiración habilita takeover y sólo un takeover exitoso incrementa el fence e invalida al attempt anterior. El consumer clasifica el resultado; Técnico persiste lifecycle, lease, backoff, trazabilidad y exclusión `(consumer, op_id)`.

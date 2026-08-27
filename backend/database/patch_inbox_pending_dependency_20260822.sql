@@ -26,25 +26,28 @@ ALTER TABLE public.inbox_event
     ADD COLUMN IF NOT EXISTS attempt_count integer NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS last_attempt_at timestamp without time zone,
     ADD COLUMN IF NOT EXISTS next_attempt_at timestamp without time zone,
-    ADD COLUMN IF NOT EXISTS lease_owner varchar(100),
+    ADD COLUMN IF NOT EXISTS attempt_id uuid,
+    ADD COLUMN IF NOT EXISTS worker_id varchar(100),
     ADD COLUMN IF NOT EXISTS lease_expires_at timestamp without time zone,
-    ADD COLUMN IF NOT EXISTS lease_generation bigint NOT NULL DEFAULT 0;
+    ADD COLUMN IF NOT EXISTS fence_generation bigint NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS public.inbox_operation_scope (
     consumer varchar(100) NOT NULL,
     op_id uuid NOT NULL,
     payload_fingerprint varchar(64) NOT NULL,
-    lease_owner varchar(100),
+    attempt_id uuid,
+    worker_id varchar(100),
     lease_expires_at timestamp without time zone,
-    lease_generation bigint NOT NULL DEFAULT 0,
+    fence_generation bigint NOT NULL DEFAULT 0,
     terminal_status varchar(20),
     updated_at timestamp without time zone NOT NULL DEFAULT
         (clock_timestamp() AT TIME ZONE 'UTC'),
     CONSTRAINT pk_inbox_operation_scope_511 PRIMARY KEY (consumer, op_id),
     CONSTRAINT ck_inbox_operation_scope_lease_511 CHECK (
-        (lease_owner IS NULL) = (lease_expires_at IS NULL)
+        (attempt_id IS NULL) = (lease_expires_at IS NULL)
+        AND (attempt_id IS NOT NULL OR worker_id IS NULL)
     ),
-    CONSTRAINT ck_inbox_operation_scope_generation_511 CHECK (lease_generation >= 0),
+    CONSTRAINT ck_inbox_operation_scope_generation_511 CHECK (fence_generation >= 0),
     CONSTRAINT ck_inbox_operation_scope_terminal_511 CHECK (
         terminal_status IS NULL OR terminal_status IN ('PROCESSED', 'CONFLICTO')
     ),
@@ -62,11 +65,11 @@ BEGIN
           AND (column_name, data_type) IN (
             ('consumer', 'character varying'), ('op_id', 'uuid'),
             ('payload_fingerprint', 'character varying'),
-            ('lease_owner', 'character varying'),
+            ('attempt_id', 'uuid'), ('worker_id', 'character varying'),
             ('lease_expires_at', 'timestamp without time zone'),
-            ('lease_generation', 'bigint'), ('terminal_status', 'character varying'),
+            ('fence_generation', 'bigint'), ('terminal_status', 'character varying'),
             ('updated_at', 'timestamp without time zone')
-          )) <> 8 THEN
+          )) <> 9 THEN
         RAISE EXCEPTION 'inbox_operation_scope has an incompatible definition';
     END IF;
     SELECT pg_get_constraintdef(oid) INTO actual FROM pg_constraint
@@ -99,9 +102,10 @@ BEGIN
         ('attempt_count', 'integer', true, '0'::text),
         ('last_attempt_at', 'timestamp without time zone', false, NULL::text),
         ('next_attempt_at', 'timestamp without time zone', false, NULL::text),
-        ('lease_owner', 'character varying(100)', false, NULL::text),
+        ('attempt_id', 'uuid', false, NULL::text),
+        ('worker_id', 'character varying(100)', false, NULL::text),
         ('lease_expires_at', 'timestamp without time zone', false, NULL::text),
-        ('lease_generation', 'bigint', true, '0'::text)
+        ('fence_generation', 'bigint', true, '0'::text)
     ) AS expected(name, sql_type, not_null, default_expr)
     LOOP
         SELECT format_type(a.atttypid, a.atttypmod) AS sql_type,
@@ -137,11 +141,12 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_inbox_event_lease_511') THEN
         ALTER TABLE public.inbox_event ADD CONSTRAINT ck_inbox_event_lease_511
-            CHECK ((lease_owner IS NULL) = (lease_expires_at IS NULL));
+            CHECK ((attempt_id IS NULL) = (lease_expires_at IS NULL)
+                   AND (attempt_id IS NOT NULL OR worker_id IS NULL));
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_inbox_event_lease_generation_511') THEN
-        ALTER TABLE public.inbox_event ADD CONSTRAINT ck_inbox_event_lease_generation_511
-            CHECK (lease_generation >= 0);
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_inbox_event_fence_generation_511') THEN
+        ALTER TABLE public.inbox_event ADD CONSTRAINT ck_inbox_event_fence_generation_511
+            CHECK (fence_generation >= 0);
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_constraint
                    WHERE conrelid = 'public.inbox_event'::regclass
@@ -180,13 +185,13 @@ BEGIN
     END IF;
     SELECT pg_get_constraintdef(oid) INTO actual FROM pg_constraint
      WHERE conrelid='public.inbox_event'::regclass AND conname='ck_inbox_event_lease_511';
-    IF actual IS NULL OR actual !~ 'lease_owner IS NULL.*lease_expires_at IS NULL' THEN
+    IF actual IS NULL OR actual !~ 'attempt_id IS NULL.*lease_expires_at IS NULL' THEN
         RAISE EXCEPTION 'ck_inbox_event_lease_511 has an incompatible definition';
     END IF;
     SELECT pg_get_constraintdef(oid) INTO actual FROM pg_constraint
-     WHERE conrelid='public.inbox_event'::regclass AND conname='ck_inbox_event_lease_generation_511';
-    IF actual IS NULL OR replace(actual, ' ', '') <> 'CHECK((lease_generation>=0))' THEN
-        RAISE EXCEPTION 'ck_inbox_event_lease_generation_511 has an incompatible definition';
+     WHERE conrelid='public.inbox_event'::regclass AND conname='ck_inbox_event_fence_generation_511';
+    IF actual IS NULL OR replace(actual, ' ', '') <> 'CHECK((fence_generation>=0))' THEN
+        RAISE EXCEPTION 'ck_inbox_event_fence_generation_511 has an incompatible definition';
     END IF;
     SELECT pg_get_constraintdef(oid) INTO actual FROM pg_constraint
      WHERE conrelid='public.inbox_event'::regclass

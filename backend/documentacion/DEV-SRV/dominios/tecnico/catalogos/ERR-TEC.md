@@ -391,7 +391,7 @@ Incluye operaciones distribuidas, sincronización, inbox y outbox, idempotencia,
 - `SYNC_PAYLOAD_INVALID`: imposibilidad permanente por payload.
 - `SYNC_FUNCTIONAL_FAILURE`: código cerrado para fallas no clasificadas; nunca persiste excepción cruda.
 - `SYNC_WORKER_LEASE_EXPIRED`: reclaim técnico de un lease vencido.
-- `SYNC_INBOX_OWNERSHIP_LOST`: owner/generación de lease obsoletos; la transición fenced no se aplica y el efecto funcional local se revierte sin persistir token, payload ni excepción cruda.
+- `SYNC_INBOX_OWNERSHIP_LOST`: `attempt_id` o fence generation obsoletos; la transición fenced no se aplica y el efecto funcional local se revierte sin persistir token, payload ni excepción cruda. `worker_id` nunca prueba ownership.
 - `SYNC_PORTABLE_TARGET_REQUIRED`: un claim con `op_id` no declaró el `aggregate_uid` portable obligatorio; se rechaza antes de canonicalizar o persistir y nunca se usa la PK local como sustituto.
 - `SYNC_INVALID_PORTABLE_TARGET`: `aggregate_uid` no representa un UUID portable válido; se rechaza antes del fingerprint y SQL sin incluir el valor recibido en el error.
 - `SYNC_INBOX_FINGERPRINT_INVALID`: una delivery scoped no posee una huella verificable contra su envelope canónico; se rechaza sin persistir hashes ni payloads en el error.

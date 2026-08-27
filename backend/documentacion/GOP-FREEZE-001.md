@@ -1686,12 +1686,15 @@ la identidad portable debe resolverse antes de persistir. El retry reutiliza el
 mismo registro y no genera otro `op_id`; `(event_id, consumer)` deduplica la
 recepción y `op_id` más huella preservan identidad/contenido. Claim atómico,
 lease/reclaim de ejecución vencida y una única transacción controlan cada fila.
-Antes del efecto, el aplicador debe además serializar atómicamente en el scope
-lógico `(consumer, op_id)` o equivalente: `op_id` conserva la identidad primaria
+Antes del efecto, el aplicador debe además adquirir atómicamente
+`inbox_operation_scope`, autoridad única del scope lógico `(consumer, op_id)`:
+`op_id` conserva la identidad primaria
 de la operación, mientras `event_id` sólo identifica la entrega y dos entregas con
 distinto `event_id` pueden representar la misma operación. Con envelope
 compatible, sólo una aplica y las demás reutilizan el resultado durable; con
-envelope incompatible, se persiste `CONFLICTO` sin segunda aplicación. Esta
+envelope incompatible, se persiste `CONFLICTO` sin segunda aplicación. No existe
+elección de leader por delivery: cada adquisición concreta usa un `attempt_id`
+único y `worker_id` queda sólo como diagnóstico. Esta
 garantía puede reutilizar directamente #469/#470 sólo si un único aplicador es
 dueño del efecto completo del `op_id`. Si el flujo futuro define múltiples
 consumers con efectos independientes, Técnico debe proveer idempotencia
@@ -1715,9 +1718,11 @@ transversal de SQL/repository/worker/tests antes de ser capacidad runtime.
 
 **Estado vigente desde #511:** Técnico/Sync materializa transversalmente
 `PENDING_DEPENDENCY`, retención de envelope y procedencia, fingerprint canónico,
-intentos, elegibilidad, claim/reclaim con lease, backoff, entry point automático
-reusable, reproceso manual/controlado, exclusión consumer-scoped y atomicidad con
-savepoint, manteniendo `REJECTED` terminal. Esta infraestructura no pertenece a
+intentos, elegibilidad, claim/reclaim con `attempt_id`, backoff, entry point
+automático reusable, reproceso manual/controlado, exclusión consumer-scoped por
+operation scope y atomicidad con savepoint, manteniendo `REJECTED` terminal. La
+expiración habilita takeover; el takeover exitoso avanza el fence e invalida al
+attempt anterior. Esta infraestructura no pertenece a
 GOP, no implementa Tarea y no implica que futuros consumers GOP estén
 integrados. #511 tampoco incorpora un scheduler/daemon productivo definitivo.
 
