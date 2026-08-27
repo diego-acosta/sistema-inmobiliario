@@ -56,9 +56,21 @@ CREATE TABLE IF NOT EXISTS public.inbox_operation_scope (
     )
 );
 
+CREATE TEMP TABLE inbox_operation_scope_contract_probe_511
+    (LIKE public.inbox_operation_scope INCLUDING DEFAULTS)
+    ON COMMIT DROP;
+ALTER TABLE inbox_operation_scope_contract_probe_511
+    ADD CONSTRAINT expected_terminal_511 CHECK (
+        terminal_status IS NULL OR terminal_status IN ('PROCESSED', 'CONFLICTO')
+    ),
+    ADD CONSTRAINT legacy_terminal_511 CHECK (terminal_status IS NULL);
+
 DO $scope_contract$
 DECLARE
     actual text;
+    expected_terminal text;
+    legacy_terminal text;
+    terminal_validated boolean;
 BEGIN
     IF (SELECT count(*) FROM information_schema.columns
         WHERE table_schema='public' AND table_name='inbox_operation_scope'
@@ -78,10 +90,41 @@ BEGIN
     IF actual IS NULL OR actual !~ 'PRIMARY KEY.*consumer, op_id' THEN
         RAISE EXCEPTION 'pk_inbox_operation_scope_511 has an incompatible definition';
     END IF;
-    SELECT pg_get_constraintdef(oid) INTO actual FROM pg_constraint
+    SELECT pg_get_expr(conbin, conrelid, false), convalidated
+      INTO actual, terminal_validated
+      FROM pg_constraint
      WHERE conrelid='public.inbox_operation_scope'::regclass
        AND conname='ck_inbox_operation_scope_terminal_511';
-    IF actual IS NULL OR actual !~ 'PROCESSED.*CONFLICTO' THEN
+    SELECT pg_get_expr(conbin, conrelid, false) INTO expected_terminal
+      FROM pg_constraint
+     WHERE conrelid='inbox_operation_scope_contract_probe_511'::regclass
+       AND conname='expected_terminal_511';
+    SELECT pg_get_expr(conbin, conrelid, false) INTO legacy_terminal
+      FROM pg_constraint
+     WHERE conrelid='inbox_operation_scope_contract_probe_511'::regclass
+       AND conname='legacy_terminal_511';
+    IF actual = legacy_terminal AND terminal_validated THEN
+        IF EXISTS (
+            SELECT 1 FROM public.inbox_operation_scope
+             WHERE terminal_status IS NOT NULL
+               AND terminal_status NOT IN ('PROCESSED', 'CONFLICTO')
+        ) THEN
+            RAISE EXCEPTION 'legacy inbox_operation_scope terminal data is not migrable';
+        END IF;
+        ALTER TABLE public.inbox_operation_scope
+            DROP CONSTRAINT ck_inbox_operation_scope_terminal_511;
+        ALTER TABLE public.inbox_operation_scope
+            ADD CONSTRAINT ck_inbox_operation_scope_terminal_511 CHECK (
+                terminal_status IS NULL
+                OR terminal_status IN ('PROCESSED', 'CONFLICTO')
+            );
+        SELECT pg_get_expr(conbin, conrelid, false), convalidated
+          INTO actual, terminal_validated
+          FROM pg_constraint
+         WHERE conrelid='public.inbox_operation_scope'::regclass
+           AND conname='ck_inbox_operation_scope_terminal_511';
+    END IF;
+    IF actual IS DISTINCT FROM expected_terminal OR NOT terminal_validated THEN
         RAISE EXCEPTION 'ck_inbox_operation_scope_terminal_511 has an incompatible definition';
     END IF;
 END

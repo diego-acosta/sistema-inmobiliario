@@ -8,6 +8,9 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
 
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
 from app.application.common.idempotency import (
     NonCanonicalizablePayload,
     canonical_payload_hash,
@@ -15,8 +18,6 @@ from app.application.common.idempotency import (
 from app.application.common.synchronization_policy import (
     validate_retained_sync_envelope,
 )
-from sqlalchemy import text
-from sqlalchemy.orm import Session
 
 INBOX_STATUSES = frozenset(
     {"PENDING_DEPENDENCY", "PROCESSING", "PROCESSED", "REJECTED", "CONFLICTO"}
@@ -409,7 +410,8 @@ class InboxRepository:
         result = self.db.execute(
             text("""
             UPDATE inbox_operation_scope
-               SET terminal_status=:terminal_status, attempt_id=NULL, worker_id=NULL,
+               SET terminal_status=CAST(:terminal_status AS varchar),
+                   attempt_id=NULL, worker_id=NULL,
                    lease_expires_at=NULL,
                    updated_at=clock_timestamp() AT TIME ZONE 'UTC'
              WHERE consumer=:consumer AND op_id=CAST(:op_id AS uuid)
@@ -549,8 +551,9 @@ class InboxRepository:
         result = self.db.execute(
             text("""
             WITH db_clock AS (SELECT clock_timestamp() AT TIME ZONE 'UTC' AS now_utc)
-            UPDATE inbox_event SET status=:status,
-                processed_at=CASE WHEN :status IN ('PROCESSED','REJECTED','CONFLICTO')
+            UPDATE inbox_event SET status=CAST(:status AS varchar),
+                processed_at=CASE
+                    WHEN CAST(:status AS varchar) IN ('PROCESSED','REJECTED','CONFLICTO')
                                   THEN db_clock.now_utc ELSE NULL END,
                 error_detail=:reason,
                 next_attempt_at=CASE

@@ -8,6 +8,10 @@ from uuid import uuid4
 
 import psycopg
 import pytest
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
 from app.application.common.idempotency import NonCanonicalizablePayload
 from app.application.common.synchronization_policy import SensitiveSyncPayload
 from app.application.integration.inbox_retry import (
@@ -28,8 +32,6 @@ from app.infrastructure.persistence.repositories.inbox_repository import (
     OperationClaim,
     OperationDecision,
 )
-from sqlalchemy import text
-from sqlalchemy.orm import Session
 
 
 def _register(
@@ -150,7 +152,7 @@ def test_patch_materializa_identidades_separadas(db_session):
     } <= scope_columns
 
 
-def test_patch_es_reejecutable_y_fail_fast_ante_scope_incompatible():
+def test_patch_migra_scope_historico_y_falla_ante_constraint_desconocido():
     patch = Path("database/patch_inbox_pending_dependency_20260822.sql").read_text()
     conninfo = engine.url.render_as_string(hide_password=False).replace(
         "postgresql+psycopg", "postgresql"
@@ -164,14 +166,91 @@ def test_patch_es_reejecutable_y_fail_fast_ante_scope_incompatible():
         connection.execute(
             "ALTER TABLE inbox_operation_scope ADD CONSTRAINT ck_inbox_operation_scope_terminal_511 CHECK (terminal_status IS NULL)"
         )
+        connection.execute(patch)
+        definition = connection.execute("""
+            SELECT pg_get_constraintdef(oid) FROM pg_constraint
+             WHERE conrelid='inbox_operation_scope'::regclass
+               AND conname='ck_inbox_operation_scope_terminal_511'
+        """).fetchone()[0]
+        assert "PROCESSED" in definition
+        assert "CONFLICTO" in definition
+
+        connection.execute(
+            "ALTER TABLE inbox_operation_scope DROP CONSTRAINT ck_inbox_operation_scope_terminal_511"
+        )
+        connection.execute(
+            "ALTER TABLE inbox_operation_scope ADD CONSTRAINT ck_inbox_operation_scope_terminal_511 CHECK (terminal_status IS NULL OR terminal_status = 'PROCESSED')"
+        )
         with pytest.raises(psycopg.Error):
             connection.execute(patch)
+        connection.execute("ROLLBACK")
         connection.execute(
             "ALTER TABLE inbox_operation_scope DROP CONSTRAINT ck_inbox_operation_scope_terminal_511"
         )
         connection.execute(
             "ALTER TABLE inbox_operation_scope ADD CONSTRAINT ck_inbox_operation_scope_terminal_511 CHECK (terminal_status IS NULL OR terminal_status IN ('PROCESSED','CONFLICTO'))"
         )
+
+
+def test_scope_terminal_acepta_conjunto_cerrado_y_rechaza_otro(db_session):
+    for terminal in (None, "PROCESSED", "CONFLICTO"):
+        db_session.execute(
+            text("""
+                INSERT INTO inbox_operation_scope (
+                    consumer, op_id, payload_fingerprint, terminal_status
+                ) VALUES (
+                    :consumer, CAST(:op_id AS uuid), :fingerprint,
+                    CAST(:terminal AS varchar)
+                )
+            """),
+            {
+                "consumer": f"terminal-{terminal}",
+                "op_id": str(uuid4()),
+                "fingerprint": "a" * 64,
+                "terminal": terminal,
+            },
+        )
+    with pytest.raises(IntegrityError), db_session.begin_nested():
+        db_session.execute(
+            text("""
+                INSERT INTO inbox_operation_scope (
+                    consumer, op_id, payload_fingerprint, terminal_status
+                ) VALUES (
+                    'terminal-invalid', CAST(:op_id AS uuid), :fingerprint, 'REJECTED'
+                )
+            """),
+            {"op_id": str(uuid4()), "fingerprint": "b" * 64},
+        )
+
+
+@pytest.mark.parametrize(
+    "terminal",
+    ["PENDING_DEPENDENCY", "PROCESSED", "REJECTED", "CONFLICTO"],
+)
+def test_transition_tipado_funciona_para_todos_los_estados(terminal):
+    consumer = f"transition-{terminal}-{uuid4()}"
+    event_id, _ = _committed_delivery(consumer=consumer)
+    with Session(engine) as session:
+        repo = InboxRepository(session)
+        claim = _claim(session, consumer=consumer, event_id=event_id)
+        session.commit()
+        if terminal == "PENDING_DEPENDENCY":
+            repo.mark_pending_dependency(
+                claim=claim,
+                reason_code="SYNC_DEPENDENCY_UNAVAILABLE",
+                retry_delay=timedelta(seconds=30),
+            )
+        elif terminal == "PROCESSED":
+            repo.mark_as_processed(claim=claim)
+        elif terminal == "REJECTED":
+            repo.mark_as_rejected(claim=claim, error_detail="SYNC_PAYLOAD_INVALID")
+        else:
+            repo.mark_conflict(claim=claim)
+        session.commit()
+    with Session(engine) as verify:
+        assert InboxRepository(verify).get(
+            event_id=event_id, consumer=consumer
+        )["status"] == terminal
 
 
 def test_claim_portable_registra_pending_sin_otorgar_ownership(db_session):
@@ -263,7 +342,11 @@ def test_fingerprint_adulterado_se_rechaza_antes_del_applicator(db_session):
         {"fingerprint": "a" * 64, "event_id": event_id},
     )
     calls = []
-    outcome = InboxRetryProcessor(db_session, consumer="fingerprint").run_once(
+    outcome = InboxRetryProcessor(
+        db_session,
+        consumer="fingerprint",
+        lifecycle_session_factory=lambda: _NullSession(db_session),
+    ).run_once(
         lambda event: calls.append(event) or InboxOutcome(InboxOutcomeKind.PROCESSED),
         worker_id="worker",
         event_id=event_id,

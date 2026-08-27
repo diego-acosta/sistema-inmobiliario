@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from datetime import timedelta
 from enum import StrEnum
 
+from sqlalchemy.orm import Session, sessionmaker
+
 from app.application.common.synchronization_policy import (
     SynchronizationPolicyError,
     sanitize_sync_error,
@@ -21,7 +23,6 @@ from app.infrastructure.persistence.repositories.inbox_repository import (
     OperationDecision,
     has_valid_scoped_fingerprint,
 )
-from sqlalchemy.orm import Session, sessionmaker
 
 DEFAULT_LEASE = timedelta(minutes=5)
 DEFAULT_AUTOMATIC_ATTEMPT_LIMIT = 8
