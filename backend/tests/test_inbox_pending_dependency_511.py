@@ -917,32 +917,29 @@ def test_rechazo_por_policy_respeta_fencing_y_no_pisa_nuevo_owner(
     )
 
     def lose_ownership(**_):
-        _set_lease_from_db_clock(
-            db_session, event_id=event_id, delta=-timedelta(seconds=1),
-        )
-        repo = InboxRepository(db_session)
-        assert repo.reclaim_expired(consumer="retained_sql_511") == 1
-        assert repo.claim_pending(
-            consumer="retained_sql_511", lease_owner="new-owner",
-            lease_duration=timedelta(minutes=5), automatic_attempt_limit=8,
-            event_id=event_id, manual=True,
-        )
         raise UnknownSyncEvent(UnknownSyncEvent.code)
 
     monkeypatch.setattr(
         "app.application.integration.inbox_retry.validate_retained_sync_envelope",
         lose_ownership,
     )
+    processor = _processor(db_session, consumer="retained_sql_511")
+
+    def ownership_lost(**_):
+        raise InboxOwnershipLost(InboxOwnershipLost.code)
+
+    monkeypatch.setattr(processor.repository, "mark_as_rejected", ownership_lost)
     with pytest.raises(InboxOwnershipLost):
-        _processor(db_session, consumer="retained_sql_511").run_once(
+        processor.run_once(
             lambda _: InboxOutcome(InboxOutcomeKind.PROCESSED),
             worker_id="stale-owner", event_id=event_id, manual=True,
         )
+    assert db_session.in_transaction() is False
     row = InboxRepository(db_session).get(
         event_id=event_id, consumer="retained_sql_511",
     )
     assert row["status"] == "PROCESSING"
-    assert row["lease_owner"] == "new-owner"
+    assert row["lease_owner"] == "stale-owner"
 
 
 def test_current_valido_ignora_sibling_pending_invalido_y_luego_lo_rechaza(
@@ -1437,6 +1434,71 @@ def test_run_once_commitea_efecto_y_receipts_antes_de_retornar():
     finally:
         with engine.begin() as cleanup:
             cleanup.execute(text(f"DROP TABLE IF EXISTS {table}"))
+
+
+@pytest.mark.parametrize(
+    ("outcome", "transition_name"),
+    [
+        (
+            InboxOutcome(
+                InboxOutcomeKind.PENDING_DEPENDENCY,
+                "SYNC_DEPENDENCY_UNAVAILABLE",
+            ),
+            "mark_pending_dependency",
+        ),
+        (InboxOutcome(InboxOutcomeKind.REJECTED, "SYNC_PAYLOAD_INVALID"),
+         "mark_as_rejected"),
+        (InboxOutcome(InboxOutcomeKind.CONFLICTO, "SYNC_OPERATION_CONFLICT"),
+         "mark_conflict"),
+    ],
+)
+def test_fallo_post_applicator_rollbackea_scope_y_libera_lock(
+    outcome, transition_name,
+):
+    consumer = f"post-applicator-{uuid4()}"
+    event_id, op_id = _committed_pending(consumer=consumer)
+    with Session(engine) as functional:
+        processor = InboxRetryProcessor(functional, consumer=consumer)
+        original_transition = getattr(processor.repository, transition_name)
+
+        def expire_delivery_then_transition(**kwargs):
+            with Session(engine) as expire:
+                _set_lease_from_db_clock(
+                    expire, event_id=event_id, delta=-timedelta(seconds=1),
+                )
+                expire.commit()
+            return original_transition(**kwargs)
+
+        setattr(processor.repository, transition_name, expire_delivery_then_transition)
+        with pytest.raises(InboxOwnershipLost):
+            processor.run_once(
+                lambda _: outcome, worker_id="stale-post-applicator",
+                event_id=event_id, manual=True,
+            )
+        assert functional.in_transaction() is False
+
+    with Session(engine) as observer:
+        scope = observer.execute(text("""SELECT * FROM inbox_operation_scope
+            WHERE consumer=:consumer AND op_id=CAST(:op_id AS uuid)
+            FOR UPDATE NOWAIT"""), {
+            "consumer": consumer, "op_id": op_id,
+        }).mappings().one()
+        assert scope["terminal_status"] is None
+        assert scope["lease_owner"] == "stale-post-applicator"
+        observer.execute(text("""UPDATE inbox_operation_scope SET lease_expires_at=
+            (clock_timestamp() AT TIME ZONE 'UTC') - interval '1 second'
+            WHERE consumer=:consumer AND op_id=CAST(:op_id AS uuid)"""), {
+            "consumer": consumer, "op_id": op_id,
+        })
+        observer.commit()
+    with Session(engine) as takeover:
+        reclaimed = InboxRepository(takeover).claim_operation_scope(
+            consumer=consumer, op_id=op_id,
+            payload_fingerprint=scope["payload_fingerprint"],
+            lease_owner="takeover", lease_expires_at=datetime.now(UTC) + timedelta(minutes=5),
+        )
+        assert reclaimed["acquired"] is True
+        assert reclaimed["lease_generation"] == scope["lease_generation"] + 1
 
 
 def test_lease_visible_vigente_no_reclaim_y_vencido_genera_nuevo_fence():

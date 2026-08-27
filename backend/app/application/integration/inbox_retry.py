@@ -115,6 +115,19 @@ class InboxRetryProcessor:
     def run_once(self, applicator: Callable[[dict], InboxOutcome], *, worker_id: str,
                  event_id: str | None = None, manual: bool = False,
                  now: datetime | None = None) -> InboxOutcome | None:
+        """Ejecuta un intento y nunca propaga dejando abierta su transacción."""
+        try:
+            return self._run_once(
+                applicator, worker_id=worker_id, event_id=event_id,
+                manual=manual, now=now,
+            )
+        except Exception:
+            self.session.rollback()
+            raise
+
+    def _run_once(self, applicator: Callable[[dict], InboxOutcome], *, worker_id: str,
+                  event_id: str | None = None, manual: bool = False,
+                  now: datetime | None = None) -> InboxOutcome | None:
         current = now or datetime.now(UTC)
         # Fase técnica corta: reclaim + claim se confirman antes del applicator.
         with self.lifecycle_session_factory() as lifecycle_session:
