@@ -3,17 +3,19 @@ from __future__ import annotations
 import pytest
 
 from app.application.common.synchronization_policy import (
-    InvalidSyncAggregate,
     PROHIBITED_SYNC_AGGREGATES,
     SYNC_EVENT_POLICIES,
+    InvalidSyncAggregate,
     SensitiveSyncPayload,
     SyncDispatchError,
     UnknownSyncEvent,
     sanitize_sync_error,
-    validate_sync_event,
     validate_no_sensitive_sync_data,
+    validate_sync_event,
 )
-from app.application.financiero.services.inbox_event_dispatcher import InboxEventDispatcher
+from app.application.financiero.services.inbox_event_dispatcher import (
+    InboxEventDispatcher,
+)
 from app.application.integration.outbox_to_inbox_worker import _validate_payload
 
 
