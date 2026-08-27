@@ -173,10 +173,85 @@ class InboxRetryProcessor:
             )
 
         operation_ownership = None
-        operation_terminal = None
-        # El derecho de efecto scoped se obtiene en una transacción técnica corta y
-        # recuperable; nunca depende de un advisory lock retenido por el applicator.
+        # La evidencia y el leader lógico se resuelven antes del ownership físico.
         if event.get("op_id"):
+            deliveries = self.repository.get_operation_scope_deliveries(
+                consumer=self.consumer, op_id=event["op_id"], exclude_id=event["id"]
+            )
+            trusted_siblings, _invalid_siblings = self._classify_scope_deliveries(
+                deliveries
+            )
+            stored_scope = self.repository.get_operation_scope(
+                consumer=self.consumer, op_id=event["op_id"]
+            )
+            if any(
+                delivery["payload_fingerprint"] != event["payload_fingerprint"]
+                for delivery in trusted_siblings
+            ) or (
+                stored_scope is not None
+                and stored_scope["payload_fingerprint"] != event["payload_fingerprint"]
+            ):
+                outcome = InboxOutcome(
+                    InboxOutcomeKind.CONFLICTO, "SYNC_OPERATION_CONFLICT"
+                )
+                self.repository.mark_conflict(
+                    event_id=event["event_id"], consumer=self.consumer,
+                    reason_code=outcome.reason_code, **ownership,
+                )
+                return self._commit_outcome(outcome)
+            if (
+                stored_scope is not None
+                and stored_scope["terminal_status"] == "PROCESSED"
+            ) or any(
+                delivery["status"] == "PROCESSED" for delivery in trusted_siblings
+            ):
+                outcome = InboxOutcome(InboxOutcomeKind.PROCESSED)
+                self.repository.mark_as_processed(
+                    event_id=event["event_id"], consumer=self.consumer, **ownership
+                )
+                return self._commit_outcome(outcome)
+            if (
+                stored_scope is not None
+                and stored_scope["terminal_status"] == "CONFLICTO"
+            ) or any(
+                delivery["status"] == "CONFLICTO" for delivery in trusted_siblings
+            ):
+                outcome = InboxOutcome(
+                    InboxOutcomeKind.CONFLICTO, "SYNC_OPERATION_CONFLICT"
+                )
+                self.repository.mark_conflict(
+                    event_id=event["event_id"], consumer=self.consumer,
+                    reason_code=outcome.reason_code, **ownership,
+                )
+                return self._commit_outcome(outcome)
+
+            compatible_in_flight = [
+                delivery for delivery in trusted_siblings
+                if delivery["status"] in {"PENDING_DEPENDENCY", "PROCESSING"}
+            ]
+            if self._scope_leader_id(event, compatible_in_flight) != event["id"]:
+                if (
+                    stored_scope is not None
+                    and stored_scope["terminal_status"] is None
+                    and stored_scope["lease_owner"] == worker_id
+                ):
+                    self.repository.finish_operation_scope(
+                        consumer=self.consumer, op_id=event["op_id"],
+                        lease_owner=worker_id,
+                        lease_generation=stored_scope["lease_generation"],
+                        terminal_status=None,
+                    )
+                outcome = InboxOutcome(
+                    InboxOutcomeKind.PENDING_DEPENDENCY,
+                    "SYNC_DEPENDENCY_UNAVAILABLE",
+                )
+                self.repository.mark_pending_dependency(
+                    event_id=event["event_id"], consumer=self.consumer,
+                    reason_code=outcome.reason_code,
+                    retry_delay=retry_backoff(event["attempt_count"]), **ownership,
+                )
+                return self._commit_outcome(outcome)
+
             with self.lifecycle_session_factory() as lifecycle_session:
                 scope = InboxRepository(lifecycle_session).claim_operation_scope(
                     consumer=self.consumer, op_id=event["op_id"],
@@ -195,79 +270,21 @@ class InboxRetryProcessor:
                         reason_code=outcome.reason_code, **ownership,
                     )
                     return self._commit_outcome(outcome)
-                operation_terminal = scope["terminal_status"]
-                if operation_terminal is None:
-                    delay = retry_backoff(event["attempt_count"])
-                    self.repository.mark_pending_dependency(
+                if scope["terminal_status"] == "PROCESSED":
+                    outcome = InboxOutcome(InboxOutcomeKind.PROCESSED)
+                    self.repository.mark_as_processed(
+                        event_id=event["event_id"], consumer=self.consumer, **ownership
+                    )
+                    return self._commit_outcome(outcome)
+                if scope["terminal_status"] == "CONFLICTO":
+                    outcome = InboxOutcome(
+                        InboxOutcomeKind.CONFLICTO, "SYNC_OPERATION_CONFLICT"
+                    )
+                    self.repository.mark_conflict(
                         event_id=event["event_id"], consumer=self.consumer,
-                        reason_code="SYNC_DEPENDENCY_UNAVAILABLE", retry_delay=delay,
-                        **ownership,
+                        reason_code=outcome.reason_code, **ownership,
                     )
-                    return self._commit_outcome(
-                        InboxOutcome(
-                            InboxOutcomeKind.PENDING_DEPENDENCY,
-                            "SYNC_DEPENDENCY_UNAVAILABLE",
-                        )
-                    )
-            else:
-                operation_ownership = {
-                    "consumer": self.consumer, "op_id": event["op_id"],
-                    "lease_owner": worker_id,
-                    "lease_generation": scope["lease_generation"],
-                }
-            deliveries = self.repository.get_operation_scope_deliveries(
-                consumer=self.consumer, op_id=event["op_id"], exclude_id=event["id"]
-            )
-            trusted_siblings, _invalid_siblings = self._classify_scope_deliveries(
-                deliveries
-            )
-            if any(
-                delivery["payload_fingerprint"] != event["payload_fingerprint"]
-                for delivery in trusted_siblings
-            ):
-                outcome = InboxOutcome(InboxOutcomeKind.CONFLICTO, "SYNC_OPERATION_CONFLICT")
-                if operation_ownership is not None:
-                    self.repository.finish_operation_scope(
-                        terminal_status="CONFLICTO", **operation_ownership
-                    )
-                self.repository.mark_conflict(
-                    event_id=event["event_id"], consumer=self.consumer, **ownership
-                )
-                return self._commit_outcome(outcome)
-            if operation_terminal == "PROCESSED" or any(
-                delivery["status"] == "PROCESSED"
-                for delivery in trusted_siblings
-            ):
-                outcome = InboxOutcome(InboxOutcomeKind.PROCESSED)
-                if operation_ownership is not None:
-                    self.repository.finish_operation_scope(
-                        terminal_status="PROCESSED", **operation_ownership
-                    )
-                self.repository.mark_as_processed(
-                    event_id=event["event_id"], consumer=self.consumer, **ownership
-                )
-                return self._commit_outcome(outcome)
-            if operation_terminal == "CONFLICTO" or any(
-                delivery["status"] == "CONFLICTO"
-                for delivery in trusted_siblings
-            ):
-                outcome = InboxOutcome(
-                    InboxOutcomeKind.CONFLICTO, "SYNC_OPERATION_CONFLICT"
-                )
-                if operation_ownership is not None:
-                    self.repository.finish_operation_scope(
-                        terminal_status="CONFLICTO", **operation_ownership
-                    )
-                self.repository.mark_conflict(
-                    event_id=event["event_id"], consumer=self.consumer,
-                    reason_code=outcome.reason_code, **ownership,
-                )
-                return self._commit_outcome(outcome)
-            compatible_in_flight = [
-                delivery for delivery in trusted_siblings
-                if delivery["status"] in {"PENDING_DEPENDENCY", "PROCESSING"}
-            ]
-            if self._scope_leader_id(event, compatible_in_flight) != event["id"]:
+                    return self._commit_outcome(outcome)
                 outcome = InboxOutcome(
                     InboxOutcomeKind.PENDING_DEPENDENCY,
                     "SYNC_DEPENDENCY_UNAVAILABLE",
@@ -275,13 +292,14 @@ class InboxRetryProcessor:
                 self.repository.mark_pending_dependency(
                     event_id=event["event_id"], consumer=self.consumer,
                     reason_code=outcome.reason_code,
-                    retry_delay=retry_backoff(event["attempt_count"]),
-                    **ownership,
-                )
-                self.repository.finish_operation_scope(
-                    terminal_status=None, **operation_ownership
+                    retry_delay=retry_backoff(event["attempt_count"]), **ownership,
                 )
                 return self._commit_outcome(outcome)
+            operation_ownership = {
+                "consumer": self.consumer, "op_id": event["op_id"],
+                "lease_owner": worker_id,
+                "lease_generation": scope["lease_generation"],
+            }
 
         nested = self.session.begin_nested()
         try:

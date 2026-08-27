@@ -292,6 +292,13 @@ class InboxRepository:
         }).mappings().one()
         return dict(row)
 
+    def get_operation_scope(self, *, consumer: str, op_id: str) -> dict[str, Any] | None:
+        row = self.db.execute(text("""SELECT * FROM inbox_operation_scope
+            WHERE consumer=:consumer AND op_id=CAST(:op_id AS uuid)"""), {
+            "consumer": consumer, "op_id": op_id,
+        }).mappings().one_or_none()
+        return dict(row) if row else None
+
     def finish_operation_scope(
         self, *, consumer: str, op_id: str, lease_owner: str,
         lease_generation: int, terminal_status: str | None,

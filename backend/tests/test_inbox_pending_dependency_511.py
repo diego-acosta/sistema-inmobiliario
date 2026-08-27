@@ -815,6 +815,72 @@ def test_dos_processing_compatibles_eligen_el_menor_id_sin_doble_defer():
     ) == 10
 
 
+def test_non_leader_owner_libera_scope_y_leader_progresa(db_session):
+    op_id = str(uuid4())
+    aggregate_uid = str(uuid4())
+    leader = _pending(db_session, op_id=op_id, aggregate_uid=aggregate_uid)
+    follower = _pending(db_session, op_id=op_id, aggregate_uid=aggregate_uid)
+    repo = InboxRepository(db_session)
+    follower_row = repo.get(event_id=follower, consumer="fixture_511")
+    scope = repo.claim_operation_scope(
+        consumer="fixture_511", op_id=op_id,
+        payload_fingerprint=follower_row["payload_fingerprint"],
+        lease_owner="follower-first",
+        lease_expires_at=datetime.now(UTC) + timedelta(minutes=5),
+    )
+    assert scope["acquired"] is True
+    processor = _processor(db_session, consumer="fixture_511")
+    calls = []
+    follower_outcome = processor.run_once(
+        lambda event: calls.append(event["event_id"])
+        or InboxOutcome(InboxOutcomeKind.PROCESSED),
+        worker_id="follower-first", event_id=follower, manual=True,
+    )
+    assert follower_outcome.kind is InboxOutcomeKind.PENDING_DEPENDENCY
+    assert calls == []
+    released = repo.get_operation_scope(consumer="fixture_511", op_id=op_id)
+    assert released["lease_owner"] is None
+    assert released["terminal_status"] is None
+
+    leader_outcome = processor.run_once(
+        lambda event: calls.append(event["event_id"])
+        or InboxOutcome(InboxOutcomeKind.PROCESSED),
+        worker_id="logical-leader", event_id=leader, manual=True,
+    )
+    assert leader_outcome.kind is InboxOutcomeKind.PROCESSED
+    assert calls == [leader]
+    assert processor.run_once(
+        lambda event: calls.append(event["event_id"])
+        or InboxOutcome(InboxOutcomeKind.PROCESSED),
+        worker_id="follower-replay", event_id=follower, manual=True,
+    ).kind is InboxOutcomeKind.PROCESSED
+    assert calls == [leader]
+
+
+def test_colisiones_repetidas_del_follower_no_impiden_progreso_del_leader(db_session):
+    op_id = str(uuid4())
+    aggregate_uid = str(uuid4())
+    leader = _pending(db_session, op_id=op_id, aggregate_uid=aggregate_uid)
+    follower = _pending(db_session, op_id=op_id, aggregate_uid=aggregate_uid)
+    processor = _processor(db_session, consumer="fixture_511")
+    calls = []
+    for round_number in range(3):
+        outcome = processor.run_once(
+            lambda event: calls.append(event["event_id"])
+            or InboxOutcome(InboxOutcomeKind.PROCESSED),
+            worker_id=f"follower-round-{round_number}",
+            event_id=follower, manual=True,
+        )
+        assert outcome.kind is InboxOutcomeKind.PENDING_DEPENDENCY
+    assert calls == []
+    assert processor.run_once(
+        lambda event: calls.append(event["event_id"])
+        or InboxOutcome(InboxOutcomeKind.PROCESSED),
+        worker_id="leader-after-collisions", event_id=leader, manual=True,
+    ).kind is InboxOutcomeKind.PROCESSED
+    assert calls == [leader]
+
+
 def test_processed_compatible_no_oculta_pending_incompatible(db_session):
     op_id = str(uuid4())
     aggregate_uid = str(uuid4())
