@@ -157,39 +157,101 @@ def test_patch_migra_scope_historico_y_falla_ante_constraint_desconocido():
     conninfo = engine.url.render_as_string(hide_password=False).replace(
         "postgresql+psycopg", "postgresql"
     )
+    constraint_name = "ck_inbox_operation_scope_terminal_511"
+    final_constraint_sql = f"""
+        ALTER TABLE inbox_operation_scope
+        ADD CONSTRAINT {constraint_name}
+        CHECK (
+            terminal_status IS NULL
+            OR terminal_status IN ('PROCESSED', 'CONFLICTO')
+        )
+    """
+
     with psycopg.connect(conninfo, autocommit=True) as connection:
         connection.execute(patch)
         connection.execute(patch)
-        connection.execute(
-            "ALTER TABLE inbox_operation_scope DROP CONSTRAINT ck_inbox_operation_scope_terminal_511"
-        )
-        connection.execute(
-            "ALTER TABLE inbox_operation_scope ADD CONSTRAINT ck_inbox_operation_scope_terminal_511 CHECK (terminal_status IS NULL)"
-        )
-        connection.execute(patch)
-        definition = connection.execute("""
-            SELECT pg_get_constraintdef(oid) FROM pg_constraint
+        terminal_rows = connection.execute("""
+            SELECT consumer, op_id, terminal_status
+              FROM inbox_operation_scope
+             WHERE terminal_status IS NOT NULL
+        """).fetchall()
+
+        try:
+            # La variante historica solo admite NULL. Los receipts ajenos se
+            # preservan y se restauran exactamente despues de mutar el schema.
+            connection.execute("""
+                UPDATE inbox_operation_scope
+                   SET terminal_status = NULL
+                 WHERE terminal_status IS NOT NULL
+            """)
+            connection.execute(
+                f"ALTER TABLE inbox_operation_scope "
+                f"DROP CONSTRAINT {constraint_name}"
+            )
+            connection.execute(
+                f"ALTER TABLE inbox_operation_scope "
+                f"ADD CONSTRAINT {constraint_name} "
+                "CHECK (terminal_status IS NULL)"
+            )
+            connection.execute(patch)
+            definition = connection.execute(
+                """
+                SELECT pg_get_constraintdef(oid)
+                  FROM pg_constraint
+                 WHERE conrelid='inbox_operation_scope'::regclass
+                   AND conname=%s
+                """,
+                (constraint_name,),
+            ).fetchone()[0]
+            assert "PROCESSED" in definition
+            assert "CONFLICTO" in definition
+
+            connection.execute(
+                f"ALTER TABLE inbox_operation_scope "
+                f"DROP CONSTRAINT {constraint_name}"
+            )
+            connection.execute(
+                f"ALTER TABLE inbox_operation_scope "
+                f"ADD CONSTRAINT {constraint_name} "
+                "CHECK (terminal_status IS NULL "
+                "OR terminal_status = 'PROCESSED')"
+            )
+            with pytest.raises(psycopg.Error):
+                connection.execute(patch)
+        finally:
+            # El patch fallido deja su BEGIN abortado aun con autocommit.
+            # Recuperar primero la conexion y restaurar siempre el contrato final.
+            connection.execute("ROLLBACK")
+            connection.execute(
+                f"ALTER TABLE inbox_operation_scope "
+                f"DROP CONSTRAINT IF EXISTS {constraint_name}"
+            )
+            connection.execute(final_constraint_sql)
+            with connection.cursor() as cursor:
+                cursor.executemany(
+                    """
+                    UPDATE inbox_operation_scope
+                       SET terminal_status = %s
+                     WHERE consumer = %s
+                       AND op_id = %s
+                    """,
+                    [
+                        (terminal_status, consumer, op_id)
+                        for consumer, op_id, terminal_status in terminal_rows
+                    ],
+                )
+
+        definition = connection.execute(
+            """
+            SELECT pg_get_constraintdef(oid)
+              FROM pg_constraint
              WHERE conrelid='inbox_operation_scope'::regclass
-               AND conname='ck_inbox_operation_scope_terminal_511'
-        """).fetchone()[0]
+               AND conname=%s
+            """,
+            (constraint_name,),
+        ).fetchone()[0]
         assert "PROCESSED" in definition
         assert "CONFLICTO" in definition
-
-        connection.execute(
-            "ALTER TABLE inbox_operation_scope DROP CONSTRAINT ck_inbox_operation_scope_terminal_511"
-        )
-        connection.execute(
-            "ALTER TABLE inbox_operation_scope ADD CONSTRAINT ck_inbox_operation_scope_terminal_511 CHECK (terminal_status IS NULL OR terminal_status = 'PROCESSED')"
-        )
-        with pytest.raises(psycopg.Error):
-            connection.execute(patch)
-        connection.execute("ROLLBACK")
-        connection.execute(
-            "ALTER TABLE inbox_operation_scope DROP CONSTRAINT ck_inbox_operation_scope_terminal_511"
-        )
-        connection.execute(
-            "ALTER TABLE inbox_operation_scope ADD CONSTRAINT ck_inbox_operation_scope_terminal_511 CHECK (terminal_status IS NULL OR terminal_status IN ('PROCESSED','CONFLICTO'))"
-        )
 
 
 def test_scope_terminal_acepta_conjunto_cerrado_y_rechaza_otro(db_session):
