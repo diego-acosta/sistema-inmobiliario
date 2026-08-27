@@ -1718,11 +1718,12 @@ transversal de SQL/repository/worker/tests antes de ser capacidad runtime.
 
 **Estado vigente desde #511:** Técnico/Sync materializa transversalmente
 `PENDING_DEPENDENCY`, retención de envelope y procedencia, fingerprint canónico,
-intentos, elegibilidad, claim/reclaim con `attempt_id`, backoff, entry point
+intentos, elegibilidad, claim/takeover atómico con `attempt_id`, backoff, entry point
 automático reusable, reproceso manual/controlado, exclusión consumer-scoped por
 operation scope y atomicidad con savepoint, manteniendo `REJECTED` terminal. La
-expiración habilita takeover; el takeover exitoso avanza el fence e invalida al
-attempt anterior. Esta infraestructura no pertenece a
+expiración habilita takeover; el takeover de delivery transiciona directamente de
+un attempt al siguiente sin cleanup pending intermedio, avanza el fence e invalida
+al attempt anterior. Esta infraestructura no pertenece a
 GOP, no implementa Tarea y no implica que futuros consumers GOP estén
 integrados. #511 tampoco incorpora un scheduler/daemon productivo definitivo.
 

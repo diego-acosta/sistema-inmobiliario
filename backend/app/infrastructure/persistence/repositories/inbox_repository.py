@@ -276,6 +276,7 @@ class InboxRepository:
         event_id: str | None = None,
         manual: bool = False,
     ) -> DeliveryClaim | None:
+        """Adquiere una pending elegible o hace takeover atómico de una vencida."""
         del now
         attempt_id = str(uuid4())
         row = (
@@ -284,11 +285,24 @@ class InboxRepository:
             WITH db_clock AS (SELECT clock_timestamp() AT TIME ZONE 'UTC' AS now_utc),
             candidate AS (
                 SELECT i.id FROM inbox_event i, db_clock
-                 WHERE consumer=:consumer AND status='PENDING_DEPENDENCY'
+                 WHERE consumer=:consumer
                    AND (CAST(:event_id AS uuid) IS NULL OR event_id=CAST(:event_id AS uuid))
-                   AND (CAST(:manual AS boolean) OR attempt_count < :attempt_limit)
-                   AND (CAST(:manual AS boolean) OR next_attempt_at IS NULL
-                        OR next_attempt_at <= db_clock.now_utc)
+                   AND (
+                       (
+                           status='PENDING_DEPENDENCY'
+                           AND (CAST(:manual AS boolean)
+                                OR attempt_count < :attempt_limit)
+                           AND (CAST(:manual AS boolean) OR next_attempt_at IS NULL
+                                OR next_attempt_at <= db_clock.now_utc)
+                       )
+                       OR (
+                           status='PROCESSING'
+                           AND lease_expires_at IS NOT NULL
+                           AND lease_expires_at <= db_clock.now_utc
+                           AND (CAST(:manual AS boolean)
+                                OR attempt_count < :attempt_limit)
+                       )
+                   )
                  ORDER BY next_attempt_at NULLS FIRST, created_at, id
                  FOR UPDATE SKIP LOCKED LIMIT 1
             )
@@ -317,23 +331,6 @@ class InboxRepository:
             return None
         event = self._map_row(row)
         return DeliveryClaim(event, attempt_id, worker_id, event["fence_generation"])
-
-    def reclaim_expired(self, *, consumer: str, now: datetime | None = None) -> int:
-        del now
-        result = self.db.execute(
-            text("""
-            WITH db_clock AS (SELECT clock_timestamp() AT TIME ZONE 'UTC' AS now_utc)
-            UPDATE inbox_event SET status='PENDING_DEPENDENCY', attempt_id=NULL,
-                worker_id=NULL, lease_expires_at=NULL, next_attempt_at=db_clock.now_utc,
-                error_detail='SYNC_WORKER_LEASE_EXPIRED'
-              FROM db_clock
-             WHERE consumer=:consumer AND status='PROCESSING'
-               AND attempt_id IS NOT NULL AND lease_expires_at IS NOT NULL
-               AND lease_expires_at <= db_clock.now_utc
-        """),
-            {"consumer": consumer},
-        )
-        return result.rowcount
 
     def acquire_operation_scope(
         self, *, delivery: DeliveryClaim

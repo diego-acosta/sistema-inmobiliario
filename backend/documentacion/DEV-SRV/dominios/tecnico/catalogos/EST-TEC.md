@@ -336,4 +336,4 @@ Incluye operaciones distribuidas, sincronización, inbox y outbox, idempotencia,
 
 ## EST-TEC-511 — Estados runtime de inbox
 
-`PENDING_DEPENDENCY -> PROCESSING -> PROCESSED | PENDING_DEPENDENCY | REJECTED | CONFLICTO`. `REJECTED` es terminal. Cada entrada a `PROCESSING` portable genera un `attempt_id` único. El agotamiento del límite automático conserva `PENDING_DEPENDENCY`; un resultado `BUSY` no consume presupuesto. La expiración habilita takeover y el attempt anterior queda fenced cuando el takeover instala un nuevo attempt y avanza la generación del operation scope.
+`PENDING_DEPENDENCY -> PROCESSING -> PROCESSED | PENDING_DEPENDENCY | REJECTED | CONFLICTO`. `REJECTED` es terminal. Cada adquisición portable genera un `attempt_id` único. El takeover de una `PROCESSING` vencida instala el nuevo attempt e incrementa el fence en una única transición `PROCESSING A -> PROCESSING B`, sin cleanup intermedio. El agotamiento del límite automático conserva la fila sin takeover; un resultado `BUSY` no consume presupuesto. La expiración sólo habilita takeover y el attempt anterior queda fenced cuando el takeover instala el sucesor.

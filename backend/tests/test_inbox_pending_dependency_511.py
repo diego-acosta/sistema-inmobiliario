@@ -483,8 +483,6 @@ def test_same_worker_takeover_genera_attempt_y_fence_nuevos():
         expire.commit()
     with Session(engine) as second_session:
         repo = InboxRepository(second_session)
-        assert repo.reclaim_expired(consumer=consumer) == 1
-        second_session.commit()
         attempt_b = _claim(
             second_session, consumer=consumer, event_id=event_id, worker_id="W"
         )
@@ -498,6 +496,170 @@ def test_same_worker_takeover_genera_attempt_y_fence_nuevos():
         InboxRepository(stale).finish_operation_scope(
             claim=operation_a.claim, terminal_status="PROCESSED"
         )
+    with Session(engine) as stale, pytest.raises(InboxOwnershipLost):
+        InboxRepository(stale).mark_as_processed(claim=attempt_a)
+
+
+def test_otra_delivery_no_revoca_owner_vencido_sin_takeover():
+    consumer = f"targeted-{uuid4()}"
+    owned_event, owned_op = _committed_delivery(consumer=consumer)
+    other_event, _ = _committed_delivery(consumer=consumer)
+    applicator_started = Event()
+    allow_owner_finish = Event()
+    owner_result = {}
+
+    def owner_worker():
+        with Session(engine) as session:
+            def applicator(_):
+                applicator_started.set()
+                assert allow_owner_finish.wait(timeout=10)
+                return InboxOutcome(InboxOutcomeKind.PROCESSED)
+
+            owner_result["outcome"] = InboxRetryProcessor(
+                session, consumer=consumer
+            ).run_once(
+                applicator, worker_id="owner", event_id=owned_event, manual=True
+            )
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(owner_worker)
+        assert applicator_started.wait(timeout=10)
+        with Session(engine) as expire:
+            before = InboxRepository(expire).get(
+                event_id=owned_event, consumer=consumer
+            )
+            _expire_delivery(expire, owned_event)
+            _expire_scope(expire, consumer=consumer, op_id=owned_op)
+            expire.commit()
+        with Session(engine) as other:
+            outcome = InboxRetryProcessor(other, consumer=consumer).run_once(
+                lambda _: InboxOutcome(InboxOutcomeKind.PROCESSED),
+                worker_id="other",
+                event_id=other_event,
+                manual=True,
+            )
+        assert outcome.kind is InboxOutcomeKind.PROCESSED
+        with Session(engine) as verify:
+            current = InboxRepository(verify).get(
+                event_id=owned_event, consumer=consumer
+            )
+            assert current["status"] == "PROCESSING"
+            assert current["attempt_id"] == before["attempt_id"]
+            assert current["fence_generation"] == before["fence_generation"]
+        allow_owner_finish.set()
+        future.result(timeout=10)
+    assert owner_result["outcome"].kind is InboxOutcomeKind.PROCESSED
+
+
+def test_dos_threads_compiten_por_takeover_y_solo_uno_adquiere():
+    consumer = f"takeover-race-{uuid4()}"
+    event_id, _ = _committed_delivery(consumer=consumer)
+    with Session(engine) as first:
+        attempt_a = _claim(first, consumer=consumer, event_id=event_id)
+        first.commit()
+    with Session(engine) as expire:
+        _expire_delivery(expire, event_id)
+        expire.commit()
+    barrier = Barrier(2)
+
+    def takeover(worker_id):
+        with Session(engine) as session:
+            barrier.wait(timeout=5)
+            claim = InboxRepository(session).claim_pending(
+                consumer=consumer,
+                worker_id=worker_id,
+                lease_duration=timedelta(minutes=5),
+                automatic_attempt_limit=8,
+                event_id=event_id,
+                manual=True,
+            )
+            session.commit()
+            return claim
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(takeover, ["B", "C"]))
+    winners = [claim for claim in results if claim is not None]
+    assert len(winners) == 1
+    assert winners[0].attempt_id != attempt_a.attempt_id
+    assert winners[0].fence_generation == attempt_a.fence_generation + 1
+
+
+def test_takeover_automatico_respeta_limite_y_manual_lo_sobrepasa():
+    consumer = f"takeover-limit-{uuid4()}"
+    event_id, _ = _committed_delivery(consumer=consumer)
+    with Session(engine) as first:
+        attempt_a = _claim(first, consumer=consumer, event_id=event_id)
+        first.commit()
+    with Session(engine) as expire:
+        _expire_delivery(expire, event_id)
+        expire.commit()
+    with Session(engine) as automatic:
+        assert (
+            InboxRepository(automatic).claim_pending(
+                consumer=consumer,
+                worker_id="automatic",
+                lease_duration=timedelta(minutes=5),
+                automatic_attempt_limit=1,
+                event_id=event_id,
+                manual=False,
+            )
+            is None
+        )
+        automatic.commit()
+    with Session(engine) as manual:
+        attempt_b = InboxRepository(manual).claim_pending(
+            consumer=consumer,
+            worker_id="manual",
+            lease_duration=timedelta(minutes=5),
+            automatic_attempt_limit=1,
+            event_id=event_id,
+            manual=True,
+        )
+        manual.commit()
+    assert attempt_b is not None
+    assert attempt_b.attempt_id != attempt_a.attempt_id
+    assert attempt_b["attempt_count"] == 2
+
+
+def test_takeover_no_expone_pending_sin_owner_entre_update_y_commit():
+    consumer = f"takeover-visible-{uuid4()}"
+    event_id, _ = _committed_delivery(consumer=consumer)
+    with Session(engine) as first:
+        attempt_a = _claim(first, consumer=consumer, event_id=event_id)
+        first.commit()
+    with Session(engine) as expire:
+        _expire_delivery(expire, event_id)
+        expire.commit()
+    update_done = Event()
+    allow_commit = Event()
+    successor = {}
+
+    def takeover():
+        with Session(engine) as session:
+            successor["claim"] = _claim(
+                session, consumer=consumer, event_id=event_id, worker_id="B"
+            )
+            update_done.set()
+            assert allow_commit.wait(timeout=10)
+            session.commit()
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(takeover)
+        assert update_done.wait(timeout=10)
+        with Session(engine) as observer:
+            visible = InboxRepository(observer).get(
+                event_id=event_id, consumer=consumer
+            )
+            assert visible["status"] == "PROCESSING"
+            assert visible["attempt_id"] == attempt_a.attempt_id
+        allow_commit.set()
+        future.result(timeout=10)
+    with Session(engine) as observer:
+        visible = InboxRepository(observer).get(event_id=event_id, consumer=consumer)
+    assert visible["status"] == "PROCESSING"
+    assert visible["attempt_id"] == successor["claim"].attempt_id
+    assert visible["attempt_id"] != attempt_a.attempt_id
+    assert visible["fence_generation"] == attempt_a.fence_generation + 1
 
 
 def test_takeover_fencea_effect_receipt_y_delivery_del_attempt_anterior():
@@ -539,8 +701,6 @@ def test_takeover_fencea_effect_receipt_y_delivery_del_attempt_anterior():
                 _expire_scope(takeover, consumer=consumer, op_id=op_id)
                 takeover.commit()
                 repo = InboxRepository(takeover)
-                assert repo.reclaim_expired(consumer=consumer) == 1
-                takeover.commit()
                 attempt_b = _claim(
                     takeover, consumer=consumer, event_id=event_id, worker_id="W"
                 )
@@ -701,7 +861,6 @@ def test_crash_despues_del_delivery_claim_es_reclaimable_por_mismo_worker():
         crashed.commit()
     with Session(engine) as recover:
         _expire_delivery(recover, event_id)
-        assert InboxRepository(recover).reclaim_expired(consumer=consumer) == 1
         recover.commit()
         attempt_b = _claim(recover, consumer=consumer, event_id=event_id, worker_id="W")
         recover.commit()

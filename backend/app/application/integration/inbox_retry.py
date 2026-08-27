@@ -104,8 +104,6 @@ class InboxRetryProcessor:
     ) -> DeliveryClaim | None:
         with self.lifecycle_session_factory() as lifecycle:
             repository = InboxRepository(lifecycle)
-            repository.reclaim_expired(consumer=self.consumer)
-            lifecycle.commit()
             delivery = repository.claim_pending(
                 consumer=self.consumer,
                 worker_id=worker_id,
