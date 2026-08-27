@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -37,9 +38,30 @@ class InboxInvalidFingerprint(RuntimeError):
     code = "SYNC_INBOX_FINGERPRINT_INVALID"
 
 
+class InboxInvalidVersion(RuntimeError):
+    code = "SYNC_INVALID_VERSION_REGISTRO"
+
+
+def canonicalize_version_registro(value: Any) -> int | None:
+    """Normaliza al integer PostgreSQL sin aceptar coerciones ambiguas."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise InboxInvalidVersion(InboxInvalidVersion.code)
+    if isinstance(value, int):
+        canonical = value
+    elif isinstance(value, str) and re.fullmatch(r"[+-]?\d+", value):
+        canonical = int(value)
+    else:
+        raise InboxInvalidVersion(InboxInvalidVersion.code)
+    if not -(2 ** 31) <= canonical <= 2 ** 31 - 1:
+        raise InboxInvalidVersion(InboxInvalidVersion.code)
+    return canonical
+
+
 def compute_retained_envelope_fingerprint(
     *, event_type: str, aggregate_type: str, aggregate_uid: Any,
-    version_registro: int | None, payload: dict[str, Any] | None,
+    version_registro: Any, payload: dict[str, Any] | None,
     provenance: dict[str, Any] | None, op_id: Any,
 ) -> str | None:
     """Recomputa la huella desde el mismo envelope canónico usado al ingresar."""
@@ -49,11 +71,12 @@ def compute_retained_envelope_fingerprint(
         canonical_uid = str(UUID(str(aggregate_uid))) if aggregate_uid is not None else None
     except (AttributeError, TypeError, ValueError):
         raise InboxInvalidPortableTarget(InboxInvalidPortableTarget.code) from None
+    canonical_version = canonicalize_version_registro(version_registro)
     return canonical_payload_hash({
         "event_type": event_type,
         "aggregate_type": aggregate_type,
         "aggregate_uid": canonical_uid,
-        "version_registro": version_registro,
+        "version_registro": canonical_version,
         "payload": payload,
         "provenance": provenance,
     })
@@ -99,7 +122,7 @@ class InboxRepository:
         payload: dict[str, Any] | None = None,
         provenance: dict[str, Any] | None = None,
         aggregate_uid: str | None = None,
-        version_registro: int | None = None,
+        version_registro: int | str | None = None,
     ) -> bool:
         if op_id is not None and aggregate_uid is None:
             raise InboxPortableTargetRequired(InboxPortableTargetRequired.code)
@@ -109,17 +132,18 @@ class InboxRepository:
             )
         except (AttributeError, TypeError, ValueError):
             raise InboxInvalidPortableTarget(InboxInvalidPortableTarget.code) from None
+        canonical_version = canonicalize_version_registro(version_registro)
         validate_retained_sync_envelope(
             event_type=event_type, aggregate_type=aggregate_type, payload=payload,
             provenance=provenance, op_id=op_id,
             aggregate_uid=canonical_aggregate_uid,
-            version_registro=version_registro,
+            version_registro=canonical_version,
         )
         fingerprint = compute_retained_envelope_fingerprint(
             event_type=event_type,
             aggregate_type=aggregate_type,
             aggregate_uid=canonical_aggregate_uid,
-            version_registro=version_registro,
+            version_registro=canonical_version,
             payload=payload,
             provenance=provenance,
             op_id=op_id,
@@ -140,7 +164,7 @@ class InboxRepository:
             "aggregate_type": aggregate_type, "aggregate_id": aggregate_id,
             "consumer": consumer, "op_id": op_id,
             "aggregate_uid": canonical_aggregate_uid,
-            "version_registro": version_registro,
+            "version_registro": canonical_version,
             "payload": json.dumps(payload) if payload is not None else None,
             "fingerprint": fingerprint,
             "provenance": json.dumps(provenance) if provenance is not None else None,
@@ -150,7 +174,7 @@ class InboxRepository:
     @staticmethod
     def _canonical_envelope_fingerprint(
         *, event_type: str, aggregate_type: str, aggregate_uid: str | None,
-        version_registro: int | None, payload: dict[str, Any] | None,
+        version_registro: Any, payload: dict[str, Any] | None,
         provenance: dict[str, Any] | None, op_id: str | None,
     ) -> str | None:
         return compute_retained_envelope_fingerprint(

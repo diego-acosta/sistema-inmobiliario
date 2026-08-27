@@ -20,8 +20,8 @@ from app.application.common.synchronization_policy import (
     UnknownSyncEvent,
 )
 from app.infrastructure.persistence.repositories.inbox_repository import (
-    InboxInvalidFingerprint, InboxInvalidPortableTarget,
-    InboxPortableTargetRequired, InboxRepository,
+    InboxInvalidFingerprint, InboxInvalidPortableTarget, InboxInvalidVersion,
+    InboxPortableTargetRequired, InboxRepository, has_valid_scoped_fingerprint,
 )
 from app.infrastructure.persistence.repositories.inbox_repository import InboxOwnershipLost
 from app.config.database import engine
@@ -606,6 +606,53 @@ def test_uuid_portable_equivalente_canonicaliza_fingerprint_y_hace_replay(db_ses
         apply, worker_id="replay", event_id=second, manual=True,
     ).kind is InboxOutcomeKind.PROCESSED
     assert calls == [first]
+
+
+def test_version_string_e_integer_comparten_fingerprint_persistido_y_retry(db_session):
+    op_id = str(uuid4())
+    aggregate_uid = str(uuid4())
+    integer_delivery = _pending(
+        db_session, op_id=op_id, aggregate_uid=aggregate_uid, version_registro=1,
+    )
+    string_delivery = _pending(
+        db_session, op_id=op_id, aggregate_uid=aggregate_uid, version_registro="1",
+    )
+    repo = InboxRepository(db_session)
+    integer_row = repo.get(event_id=integer_delivery, consumer="fixture_511")
+    string_row = repo.get(event_id=string_delivery, consumer="fixture_511")
+    assert integer_row["version_registro"] == string_row["version_registro"] == 1
+    assert integer_row["payload_fingerprint"] == string_row["payload_fingerprint"]
+    assert has_valid_scoped_fingerprint(string_row) is True
+    calls = []
+    processor = _processor(db_session, consumer="fixture_511")
+    assert processor.run_once(
+        lambda event: calls.append(event["event_id"])
+        or InboxOutcome(InboxOutcomeKind.PROCESSED),
+        worker_id="version-int", event_id=integer_delivery, manual=True,
+    ).kind is InboxOutcomeKind.PROCESSED
+    assert processor.run_once(
+        lambda event: calls.append(event["event_id"])
+        or InboxOutcome(InboxOutcomeKind.PROCESSED),
+        worker_id="version-string", event_id=string_delivery, manual=True,
+    ).kind is InboxOutcomeKind.PROCESSED
+    assert calls == [integer_delivery]
+
+
+@pytest.mark.parametrize("invalid_version", [True, False, 1.5, "1.5", "abc", ""])
+def test_version_registro_ambigua_se_rechaza_antes_del_insert(
+    db_session, invalid_version,
+):
+    event_id = str(uuid4())
+    with pytest.raises(InboxInvalidVersion, match="SYNC_INVALID_VERSION_REGISTRO"):
+        InboxRepository(db_session).claim(
+            event_id=event_id, event_type="sucursal_creada",
+            aggregate_type="sucursal", aggregate_id=1, consumer="fixture_511",
+            op_id=str(uuid4()), aggregate_uid=str(uuid4()),
+            payload={"uid_global": "target"}, version_registro=invalid_version,
+        )
+    assert InboxRepository(db_session).get(
+        event_id=event_id, consumer="fixture_511"
+    ) is None
 
 
 def test_aggregate_uid_invalido_se_rechaza_antes_de_sql(db_session):

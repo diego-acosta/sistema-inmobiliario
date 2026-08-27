@@ -395,3 +395,4 @@ Incluye operaciones distribuidas, sincronización, inbox y outbox, idempotencia,
 - `SYNC_PORTABLE_TARGET_REQUIRED`: un claim con `op_id` no declaró el `aggregate_uid` portable obligatorio; se rechaza antes de canonicalizar o persistir y nunca se usa la PK local como sustituto.
 - `SYNC_INVALID_PORTABLE_TARGET`: `aggregate_uid` no representa un UUID portable válido; se rechaza antes del fingerprint y SQL sin incluir el valor recibido en el error.
 - `SYNC_INBOX_FINGERPRINT_INVALID`: una delivery scoped no posee una huella verificable contra su envelope canónico; se rechaza sin persistir hashes ni payloads en el error.
+- `SYNC_INVALID_VERSION_REGISTRO`: `version_registro` no admite una representación integer inequívoca o excede el rango de la columna PostgreSQL; se rechaza antes del fingerprint y del `INSERT`.
