@@ -228,12 +228,16 @@ class InboxRetryProcessor:
                     )
                 self.repository.mark_as_processed(claim=delivery)
                 nested.commit()
-                return self._commit(outcome)
-            nested.rollback()
+            else:
+                nested.rollback()
         except Exception:
-            nested.rollback()
+            if nested.is_active:
+                nested.rollback()
             self.session.rollback()
             raise
+
+        if outcome.kind is InboxOutcomeKind.PROCESSED:
+            return self._commit(outcome)
 
         reason = outcome.reason_code
         if reason not in SANITIZED_REASON_CODES:
