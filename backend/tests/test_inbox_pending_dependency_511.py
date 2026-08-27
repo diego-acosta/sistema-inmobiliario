@@ -474,7 +474,7 @@ def test_claim_portable_rechaza_provenance_sensible_sin_persistir(db_session):
 
 
 def test_claim_portable_exige_payload_dict_y_valido_persiste_fingerprint(db_session):
-    with pytest.raises(SensitiveSyncPayload, match="SYNC_INVALID_PAYLOAD"):
+    with pytest.raises(SensitiveSyncPayload, match="SYNC_PAYLOAD_INVALID"):
         _claim_portable(db_session, payload=None)
     event_id = _claim_portable(
         db_session, payload={"uid_global": "portable"}, provenance=None,
@@ -818,7 +818,7 @@ def test_reason_no_allowlisted_se_sanitiza_y_rejected_es_terminal(db_session):
             {"origin": {"token": "secret"}}, "SYNC_SENSITIVE_PAYLOAD",
         ),
         (
-            "sucursal_creada", "sucursal", None, None, "SYNC_INVALID_PAYLOAD",
+            "sucursal_creada", "sucursal", None, None, "SYNC_PAYLOAD_INVALID",
         ),
     ],
 )
@@ -1353,6 +1353,43 @@ def test_claim_es_visible_desde_otra_conexion_antes_del_applicator():
     assert observed["lease_owner"] == "visible-owner"
     assert observed["lease_expires_at"] is not None
     assert observed["lease_generation"] == 1
+
+
+def test_run_once_commitea_efecto_y_receipts_antes_de_retornar():
+    consumer = f"commit-boundary-{uuid4()}"
+    event_id, op_id = _committed_pending(consumer=consumer)
+    table = f"inbox_effect_{uuid4().hex}"
+    with engine.begin() as connection:
+        connection.execute(text(f"CREATE TABLE {table} (event_id uuid PRIMARY KEY)"))
+    try:
+        with Session(engine) as functional:
+            processor = InboxRetryProcessor(functional, consumer=consumer)
+
+            def applicator(event):
+                functional.execute(text(
+                    f"INSERT INTO {table} (event_id) VALUES (CAST(:event_id AS uuid))"
+                ), {"event_id": event["event_id"]})
+                return InboxOutcome(InboxOutcomeKind.PROCESSED)
+
+            outcome = processor.run_once(
+                applicator, worker_id="commit-owner", event_id=event_id, manual=True
+            )
+            assert outcome.kind is InboxOutcomeKind.PROCESSED
+            assert functional.in_transaction() is False
+        with Session(engine) as observer:
+            assert observer.execute(text(f"SELECT count(*) FROM {table}")).scalar_one() == 1
+            assert observer.execute(text("""SELECT status FROM inbox_event
+                WHERE event_id=CAST(:event_id AS uuid) AND consumer=:consumer"""), {
+                "event_id": event_id, "consumer": consumer,
+            }).scalar_one() == "PROCESSED"
+            assert observer.execute(text("""SELECT terminal_status
+                FROM inbox_operation_scope WHERE consumer=:consumer
+                  AND op_id=CAST(:op_id AS uuid)"""), {
+                "consumer": consumer, "op_id": op_id,
+            }).scalar_one() == "PROCESSED"
+    finally:
+        with engine.begin() as cleanup:
+            cleanup.execute(text(f"DROP TABLE IF EXISTS {table}"))
 
 
 def test_lease_visible_vigente_no_reclaim_y_vencido_genera_nuevo_fence():

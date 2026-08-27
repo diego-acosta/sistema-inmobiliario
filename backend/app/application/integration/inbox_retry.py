@@ -76,6 +76,15 @@ class InboxRetryProcessor:
         """El menor delivery compatible lidera, sin importar su estado técnico."""
         return min([event["id"], *(delivery["id"] for delivery in compatible_in_flight)])
 
+    def _commit_outcome(self, outcome: InboxOutcome) -> InboxOutcome:
+        """Hace durable el intento completo antes de exponer su resultado."""
+        try:
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
+        return outcome
+
     @staticmethod
     def _classify_scope_deliveries(
         deliveries: list[dict],
@@ -137,14 +146,18 @@ class InboxRetryProcessor:
                 event_id=event["event_id"], consumer=self.consumer,
                 error_detail=reason, **ownership,
             )
-            return InboxOutcome(InboxOutcomeKind.REJECTED, reason)
+            return self._commit_outcome(
+                InboxOutcome(InboxOutcomeKind.REJECTED, reason)
+            )
         if not has_valid_scoped_fingerprint(event):
             reason = InboxInvalidFingerprint.code
             self.repository.mark_as_rejected(
                 event_id=event["event_id"], consumer=self.consumer,
                 error_detail=reason, **ownership,
             )
-            return InboxOutcome(InboxOutcomeKind.REJECTED, reason)
+            return self._commit_outcome(
+                InboxOutcome(InboxOutcomeKind.REJECTED, reason)
+            )
 
         operation_ownership = None
         operation_terminal = None
@@ -168,7 +181,7 @@ class InboxRetryProcessor:
                         event_id=event["event_id"], consumer=self.consumer,
                         reason_code=outcome.reason_code, **ownership,
                     )
-                    return outcome
+                    return self._commit_outcome(outcome)
                 operation_terminal = scope["terminal_status"]
                 if operation_terminal is None:
                     delay = retry_backoff(event["attempt_count"])
@@ -177,9 +190,11 @@ class InboxRetryProcessor:
                         reason_code="SYNC_DEPENDENCY_UNAVAILABLE", retry_delay=delay,
                         **ownership,
                     )
-                    return InboxOutcome(
-                        InboxOutcomeKind.PENDING_DEPENDENCY,
-                        "SYNC_DEPENDENCY_UNAVAILABLE",
+                    return self._commit_outcome(
+                        InboxOutcome(
+                            InboxOutcomeKind.PENDING_DEPENDENCY,
+                            "SYNC_DEPENDENCY_UNAVAILABLE",
+                        )
                     )
             else:
                 operation_ownership = {
@@ -205,7 +220,7 @@ class InboxRetryProcessor:
                 self.repository.mark_conflict(
                     event_id=event["event_id"], consumer=self.consumer, **ownership
                 )
-                return outcome
+                return self._commit_outcome(outcome)
             if operation_terminal == "PROCESSED" or any(
                 delivery["status"] == "PROCESSED"
                 for delivery in trusted_siblings
@@ -218,7 +233,7 @@ class InboxRetryProcessor:
                 self.repository.mark_as_processed(
                     event_id=event["event_id"], consumer=self.consumer, **ownership
                 )
-                return outcome
+                return self._commit_outcome(outcome)
             if operation_terminal == "CONFLICTO" or any(
                 delivery["status"] == "CONFLICTO"
                 for delivery in trusted_siblings
@@ -234,7 +249,7 @@ class InboxRetryProcessor:
                     event_id=event["event_id"], consumer=self.consumer,
                     reason_code=outcome.reason_code, **ownership,
                 )
-                return outcome
+                return self._commit_outcome(outcome)
             compatible_in_flight = [
                 delivery for delivery in trusted_siblings
                 if delivery["status"] in {"PENDING_DEPENDENCY", "PROCESSING"}
@@ -253,7 +268,7 @@ class InboxRetryProcessor:
                 self.repository.finish_operation_scope(
                     terminal_status=None, **operation_ownership
                 )
-                return outcome
+                return self._commit_outcome(outcome)
 
         nested = self.session.begin_nested()
         try:
@@ -269,10 +284,11 @@ class InboxRetryProcessor:
                     event_id=event["event_id"], consumer=self.consumer, **ownership
                 )
                 nested.commit()
-                return outcome
+                return self._commit_outcome(outcome)
             nested.rollback()  # descarta cualquier efecto funcional parcial
         except Exception:
             nested.rollback()
+            self.session.rollback()
             raise
 
         reason = outcome.reason_code
@@ -304,4 +320,4 @@ class InboxRetryProcessor:
             self.repository.mark_conflict(event_id=event["event_id"],
                                           consumer=self.consumer, reason_code=reason,
                                           **ownership)
-        return InboxOutcome(outcome.kind, reason)
+        return self._commit_outcome(InboxOutcome(outcome.kind, reason))

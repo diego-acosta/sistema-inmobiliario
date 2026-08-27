@@ -108,12 +108,12 @@ def validate_sync_event(event_type: str, aggregate_type: str, payload: Any) -> S
     if aggregate_type in PROHIBITED_SYNC_AGGREGATES or aggregate_type != policy.aggregate_type:
         raise InvalidSyncAggregate(InvalidSyncAggregate.code)
     if not isinstance(payload, dict):
-        raise SensitiveSyncPayload("SYNC_INVALID_PAYLOAD")
+        raise SensitiveSyncPayload("SYNC_PAYLOAD_INVALID")
     validate_no_sensitive_sync_data(payload)
     for field in policy.required_positive_int_fields:
         value = payload.get(field)
         if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
-            raise SensitiveSyncPayload("SYNC_INVALID_PAYLOAD")
+            raise SensitiveSyncPayload("SYNC_PAYLOAD_INVALID")
     return policy
 
 
@@ -136,13 +136,16 @@ def sanitize_sync_error(
     exc: BaseException | str, *, preserve_invalid_payload: bool = False
 ) -> str:
     if preserve_invalid_payload and (
-        exc == "SYNC_INVALID_PAYLOAD"
+        exc in {"SYNC_INVALID_PAYLOAD", "SYNC_PAYLOAD_INVALID"}
         or (
             isinstance(exc, SensitiveSyncPayload)
-            and exc.args == ("SYNC_INVALID_PAYLOAD",)
+            and exc.args in {
+                ("SYNC_INVALID_PAYLOAD",),
+                ("SYNC_PAYLOAD_INVALID",),
+            }
         )
     ):
-        return "SYNC_INVALID_PAYLOAD"
+        return "SYNC_PAYLOAD_INVALID"
     if isinstance(exc, str) and exc in {
         "SYNC_POLICY_REJECTED", "SYNC_EVENT_NOT_ALLOWED",
         "SYNC_AGGREGATE_NOT_ALLOWED", "SYNC_SENSITIVE_PAYLOAD",
