@@ -65,6 +65,14 @@ ALTER TABLE inbox_operation_scope_contract_probe_511
     ),
     ADD CONSTRAINT legacy_terminal_511 CHECK (terminal_status IS NULL);
 
+CREATE TEMP TABLE inbox_event_version_contract_probe_511
+    (version_registro integer)
+    ON COMMIT DROP;
+ALTER TABLE inbox_event_version_contract_probe_511
+    ADD CONSTRAINT expected_version_registro_511 CHECK (
+        version_registro IS NULL OR version_registro >= 1
+    );
+
 DO $scope_contract$
 DECLARE
     actual text;
@@ -178,6 +186,19 @@ BEGIN
         ALTER TABLE public.inbox_event ADD CONSTRAINT ck_inbox_event_attempt_count_511
             CHECK (attempt_count >= 0);
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE conrelid = 'public.inbox_event'::regclass
+                     AND conname = 'ck_inbox_event_version_registro_511') THEN
+        IF EXISTS (
+            SELECT 1 FROM public.inbox_event
+             WHERE version_registro IS NOT NULL AND version_registro < 1
+        ) THEN
+            RAISE EXCEPTION 'inbox_event has non-positive version_registro data';
+        END IF;
+        ALTER TABLE public.inbox_event
+            ADD CONSTRAINT ck_inbox_event_version_registro_511
+            CHECK (version_registro IS NULL OR version_registro >= 1);
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_inbox_event_fingerprint_511') THEN
         ALTER TABLE public.inbox_event ADD CONSTRAINT ck_inbox_event_fingerprint_511
             CHECK (payload_fingerprint IS NULL OR payload_fingerprint ~ '^[0-9a-f]{64}$');
@@ -210,6 +231,8 @@ $constraints$;
 DO $constraint_contract$
 DECLARE
     actual text;
+    expected text;
+    validated boolean;
 BEGIN
     SELECT pg_get_constraintdef(oid) INTO actual FROM pg_constraint
      WHERE conrelid='public.inbox_event'::regclass AND conname='ck_inbox_event_status_511';
@@ -220,6 +243,18 @@ BEGIN
      WHERE conrelid='public.inbox_event'::regclass AND conname='ck_inbox_event_attempt_count_511';
     IF actual IS NULL OR replace(actual, ' ', '') <> 'CHECK((attempt_count>=0))' THEN
         RAISE EXCEPTION 'ck_inbox_event_attempt_count_511 has an incompatible definition';
+    END IF;
+    SELECT pg_get_expr(conbin, conrelid, false), convalidated
+      INTO actual, validated
+      FROM pg_constraint
+     WHERE conrelid='public.inbox_event'::regclass
+       AND conname='ck_inbox_event_version_registro_511';
+    SELECT pg_get_expr(conbin, conrelid, false) INTO expected
+      FROM pg_constraint
+     WHERE conrelid='inbox_event_version_contract_probe_511'::regclass
+       AND conname='expected_version_registro_511';
+    IF actual IS DISTINCT FROM expected OR NOT validated THEN
+        RAISE EXCEPTION 'ck_inbox_event_version_registro_511 has an incompatible definition';
     END IF;
     SELECT pg_get_constraintdef(oid) INTO actual FROM pg_constraint
      WHERE conrelid='public.inbox_event'::regclass AND conname='ck_inbox_event_fingerprint_511';

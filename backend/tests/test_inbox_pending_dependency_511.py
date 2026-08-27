@@ -358,6 +358,8 @@ def test_envelope_canonicaliza_uuid_version_y_orden_json(db_session):
         payload={"nested": {"a": 1, "b": 2}, "uid_global": "same"},
     )
     repo = InboxRepository(db_session)
+    assert repo.get(event_id=first, consumer="canonical")["version_registro"] == 1
+    assert repo.get(event_id=second, consumer="canonical")["version_registro"] == 1
     assert (
         repo.get(event_id=first, consumer="canonical")["payload_fingerprint"]
         == repo.get(event_id=second, consumer="canonical")["payload_fingerprint"]
@@ -366,8 +368,80 @@ def test_envelope_canonicaliza_uuid_version_y_orden_json(db_session):
 
 @pytest.mark.parametrize("value", [True, 1.5, "1.5", "abc", ""])
 def test_version_ambigua_se_rechaza(value, db_session):
+    event_id = str(uuid4())
     with pytest.raises(InboxInvalidVersion):
-        _register(db_session, consumer="bad-version", version_registro=value)
+        _register(
+            db_session,
+            consumer="bad-version",
+            event_id=event_id,
+            version_registro=value,
+        )
+    assert (
+        InboxRepository(db_session).get(
+            event_id=event_id, consumer="bad-version"
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize("value", [0, -1, "0", "-1"])
+def test_version_no_positiva_no_persiste_ni_invoca_applicator(value, db_session):
+    consumer = f"non-positive-version-{uuid4()}"
+    event_id = str(uuid4())
+    with pytest.raises(InboxInvalidVersion):
+        _register(
+            db_session,
+            consumer=consumer,
+            event_id=event_id,
+            version_registro=value,
+        )
+    assert InboxRepository(db_session).get(event_id=event_id, consumer=consumer) is None
+
+    calls = []
+    outcome = InboxRetryProcessor(db_session, consumer=consumer).run_once(
+        lambda event: (
+            calls.append(event) or InboxOutcome(InboxOutcomeKind.PROCESSED)
+        ),
+        worker_id="worker",
+        event_id=event_id,
+        manual=True,
+    )
+    assert outcome is None
+    assert calls == []
+
+
+def test_constraint_rechaza_version_registro_no_positiva(db_session):
+    event_id, _ = _register(db_session, consumer="version-constraint")
+    with pytest.raises(IntegrityError), db_session.begin_nested():
+        db_session.execute(
+            text("""
+                UPDATE inbox_event
+                   SET version_registro = 0
+                 WHERE event_id = CAST(:event_id AS uuid)
+                   AND consumer = 'version-constraint'
+            """),
+            {"event_id": event_id},
+        )
+
+
+def test_sin_delivery_cierra_autobegin_sin_invocar_applicator():
+    consumer = f"no-delivery-{uuid4()}"
+    calls = []
+    with Session(engine) as session:
+        session.execute(text("SELECT 1"))
+        assert session.in_transaction()
+
+        outcome = InboxRetryProcessor(session, consumer=consumer).run_once(
+            lambda event: (
+                calls.append(event) or InboxOutcome(InboxOutcomeKind.PROCESSED)
+            ),
+            worker_id="worker",
+            manual=True,
+        )
+
+        assert outcome is None
+        assert not session.in_transaction()
+    assert calls == []
 
 
 def test_target_portable_es_obligatorio_y_uuid_valido(db_session):

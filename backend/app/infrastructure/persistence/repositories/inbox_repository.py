@@ -93,7 +93,7 @@ def canonicalize_version_registro(value: Any) -> int | None:
         canonical = int(value)
     else:
         raise InboxInvalidVersion(InboxInvalidVersion.code)
-    if not -(2**31) <= canonical <= 2**31 - 1:
+    if not 1 <= canonical <= 2**31 - 1:
         raise InboxInvalidVersion(InboxInvalidVersion.code)
     return canonical
 

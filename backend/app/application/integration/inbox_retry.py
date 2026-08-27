@@ -155,6 +155,7 @@ class InboxRetryProcessor:
             worker_id=worker_id, event_id=event_id, manual=manual
         )
         if delivery is None:
+            self.session.rollback()
             return None
 
         try:
