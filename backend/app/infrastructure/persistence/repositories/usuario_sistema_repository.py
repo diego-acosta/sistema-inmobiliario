@@ -1,9 +1,11 @@
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import text
 
 from app.api.core_ef_headers import CoreEFHeaders
 from app.infrastructure.persistence.base_repository import BaseRepository
+from app.infrastructure.persistence.repositories.outbox_repository import OutboxRepository
 
 
 class UsuarioIdempotencyConflictError(ValueError):
@@ -61,6 +63,55 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
                 return False
         return True
 
+    @staticmethod
+    def _portable_datetime(value: Any) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, (datetime,)):
+            return value.isoformat()
+        return str(value)
+
+    @classmethod
+    def portable_snapshot(cls, row: dict[str, Any]) -> dict[str, Any]:
+        """Proyección funcional portable de ``usuario``; excluye estado de auth local."""
+        return {
+            "codigo_usuario": row["codigo_usuario"],
+            "login": row["login"],
+            "email": row["email"],
+            "estado_usuario": row["estado_usuario"],
+            "usuario_sistema_interno": row["usuario_sistema_interno"],
+            "observaciones": row["observaciones"],
+            "fecha_alta": cls._portable_datetime(row["fecha_alta"]),
+            "fecha_baja": cls._portable_datetime(row["fecha_baja"]),
+            "deleted": row["deleted_at"] is not None,
+        }
+
+    @classmethod
+    def portable_outbox_payload(
+        cls, row: dict[str, Any], *, op_id: str
+    ) -> dict[str, Any]:
+        """Envelope emitible sin PK remota, credenciales, sesiones ni último acceso."""
+        return {
+            "aggregate_uid": str(row["uid_global"]),
+            "version_registro": row["version_registro"],
+            "op_id": op_id,
+            "provenance": {
+                "op_id_alta": str(row["op_id_alta"]),
+            },
+            "snapshot": cls.portable_snapshot(row),
+        }
+
+    def _emit_sync_event(
+        self, *, event_type: str, row: dict[str, Any], op_id: str
+    ) -> None:
+        OutboxRepository(self.db).add_event(
+            event_type=event_type,
+            aggregate_type="usuario",
+            aggregate_id=row["id_usuario"],
+            payload=self.portable_outbox_payload(row, op_id=op_id),
+            occurred_at=datetime.now(UTC),
+        )
+
     def get_by_op_id_alta(self, op_id: str) -> dict[str, Any] | None:
         statement = text(
             f"""
@@ -85,6 +136,17 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
         )
         return self._map(row) if row is not None else None
 
+    def get_by_login_exact(self, login: str) -> dict[str, Any] | None:
+        row = (
+            self.db.execute(
+                text(f"SELECT {_USUARIO_COLUMNS} FROM usuario WHERE login = :login"),
+                {"login": login},
+            )
+            .mappings()
+            .one_or_none()
+        )
+        return self._map(row) if row is not None else None
+
     def get_by_uid_global(self, uid_global: str) -> dict[str, Any] | None:
         """Resuelve una identidad portable a la fila local, incluidas bajas lógicas."""
         row = (
@@ -103,7 +165,8 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
         row = (
             self.db.execute(
                 text(
-                    f"SELECT {_USUARIO_COLUMNS} FROM usuario WHERE codigo_usuario = :codigo FOR UPDATE"
+                    f"SELECT {_USUARIO_COLUMNS} FROM usuario "
+                    "WHERE codigo_usuario = :codigo FOR UPDATE"
                 ),
                 {"codigo": codigo_usuario},
             )
@@ -159,9 +222,10 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
             "op_id": op_id,
         }
         try:
-            row = self.db.execute(statement, values).mappings().one()
+            row = self._map(self.db.execute(statement, values).mappings().one())
+            self._emit_sync_event(event_type="usuario_creado", row=row, op_id=op_id)
             self.db.commit()
-            return self._map(row)
+            return row
         except Exception:
             self.db.rollback()
             raise
@@ -230,24 +294,131 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
             """
         )
         try:
-            row = (
-                self.db.execute(
-                    statement,
-                    {
-                        "id_usuario": id_usuario,
-                        "if_match_version": if_match_version,
-                        "id_instalacion": core.x_instalacion_id,
-                        "op_id": op_id,
-                    },
-                )
-                .mappings()
-                .one_or_none()
-            )
-            if row is None:
+            result = self.db.execute(
+                statement,
+                {
+                    "id_usuario": id_usuario,
+                    "if_match_version": if_match_version,
+                    "id_instalacion": core.x_instalacion_id,
+                    "op_id": op_id,
+                },
+            ).mappings().one_or_none()
+            if result is None:
                 self.db.rollback()
                 raise UsuarioConcurrencyError("La versión del usuario no coincide.")
+            row = self._map(result)
+            self._emit_sync_event(
+                event_type="usuario_desactivado", row=row, op_id=op_id
+            )
             self.db.commit()
-            return self._map(row)
+            return row
         except Exception:
             self.db.rollback()
             raise
+
+    def create_remote_snapshot(
+        self,
+        *,
+        uid_global: str,
+        version_registro: int,
+        snapshot: dict[str, Any],
+        op_id_alta: str,
+        op_id_ultima_modificacion: str,
+    ) -> dict[str, Any]:
+        """Inserta snapshot remoto preservando UID/versión; no confirma transacción."""
+        statement = text(
+            f"""
+            INSERT INTO usuario (
+                uid_global,
+                codigo_usuario,
+                login,
+                email,
+                estado_usuario,
+                fecha_alta,
+                fecha_baja,
+                usuario_sistema_interno,
+                observaciones,
+                version_registro,
+                updated_at,
+                deleted_at,
+                id_instalacion_origen,
+                id_instalacion_ultima_modificacion,
+                op_id_alta,
+                op_id_ultima_modificacion
+            ) VALUES (
+                CAST(:uid_global AS uuid),
+                :codigo_usuario,
+                :login,
+                :email,
+                :estado_usuario,
+                CAST(:fecha_alta AS timestamp),
+                CAST(:fecha_baja AS timestamp),
+                :usuario_sistema_interno,
+                :observaciones,
+                :version_registro,
+                CURRENT_TIMESTAMP,
+                CASE WHEN :deleted THEN CURRENT_TIMESTAMP ELSE NULL END,
+                NULL,
+                NULL,
+                CAST(:op_id_alta AS uuid),
+                CAST(:op_id_ultima_modificacion AS uuid)
+            )
+            RETURNING {_USUARIO_COLUMNS}
+            """
+        )
+        row = self.db.execute(
+            statement,
+            {
+                "uid_global": uid_global,
+                "version_registro": version_registro,
+                "op_id_alta": op_id_alta,
+                "op_id_ultima_modificacion": op_id_ultima_modificacion,
+                **snapshot,
+            },
+        ).mappings().one()
+        return self._map(row)
+
+    def apply_remote_snapshot_cas(
+        self,
+        *,
+        uid_global: str,
+        expected_version: int,
+        incoming_version: int,
+        snapshot: dict[str, Any],
+        op_id: str,
+    ) -> dict[str, Any] | None:
+        """Aplica una versión remota mayor por CAS; no confirma ni revierte."""
+        statement = text(
+            f"""
+            UPDATE usuario
+            SET codigo_usuario = :codigo_usuario,
+                login = :login,
+                email = :email,
+                estado_usuario = :estado_usuario,
+                fecha_alta = CAST(:fecha_alta AS timestamp),
+                fecha_baja = CAST(:fecha_baja AS timestamp),
+                usuario_sistema_interno = :usuario_sistema_interno,
+                observaciones = :observaciones,
+                deleted_at = CASE
+                    WHEN :deleted THEN COALESCE(deleted_at, CURRENT_TIMESTAMP)
+                    ELSE NULL
+                END,
+                updated_at = CURRENT_TIMESTAMP,
+                op_id_ultima_modificacion = CAST(:op_id AS uuid),
+                version_registro = :incoming_version
+            WHERE uid_global = CAST(:uid_global AS uuid)
+              AND version_registro = :expected_version
+            RETURNING {_USUARIO_COLUMNS}
+            """
+        )
+        row = self.db.execute(
+            statement,
+            {
+                "uid_global": uid_global,
+                "expected_version": expected_version,
+                "incoming_version": incoming_version,
+                "op_id": op_id,
+                **snapshot,
+            },
+        ).mappings().one_or_none()
+        return self._map(row) if row is not None else None
