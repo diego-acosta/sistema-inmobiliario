@@ -330,6 +330,19 @@ def test_instantes_distintos_permanecen_materialmente_distintos():
             )
         )
     assert envelopes[0]["snapshot"] != envelopes[1]["snapshot"]
+    fingerprints = [
+        compute_retained_envelope_fingerprint(
+            event_type="usuario_creado",
+            aggregate_type="usuario",
+            aggregate_uid=item["aggregate_uid"],
+            version_registro=item["version_registro"],
+            payload=item["snapshot"],
+            provenance=item["provenance"],
+            op_id=item["op_id"],
+        )
+        for item in envelopes
+    ]
+    assert fingerprints[0] != fingerprints[1]
 
 
 def test_alta_remota_preserva_uid_y_pk_local_independiente(client, db_session):
