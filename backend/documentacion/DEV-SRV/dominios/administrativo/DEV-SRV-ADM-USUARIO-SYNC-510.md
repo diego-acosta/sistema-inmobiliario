@@ -72,12 +72,13 @@ El repository vigente ya coordinaba el commit de esos dos writes y sólo esos ca
 
 ```text
 mutación usuario
+→ resolver provenance portable de instalación
 → construir snapshot portable
 → INSERT outbox_event
 → commit
 ```
 
-Si falla el outbox:
+Si falla la resolución de provenance o el outbox:
 
 ```text
 rollback usuario + outbox
@@ -97,6 +98,7 @@ El outbox de usuario transporta únicamente:
   "version_registro": 1,
   "op_id": "<X-Op-Id original>",
   "provenance": {
+    "installation_uid": "<instalacion.uid_global del write origen>",
     "op_id_alta": "<op_id de alta o null para legacy previo>"
   },
   "snapshot": {
@@ -115,9 +117,12 @@ El outbox de usuario transporta únicamente:
 
 El `event_type` y `aggregate_type=usuario` pertenecen a la cabecera del outbox/inbox y no se duplican dentro del snapshot funcional.
 
+`provenance.installation_uid` conserva la identidad portable de la instalación que produjo el write. La PK `id_instalacion` del origen no viaja. El receptor no transforma esa procedencia en una FK local ni bloquea el usuario esperando que exista una fila de instalación equivalente: el dato queda retenido como procedencia técnica y participa del fingerprint de #512.
+
 No viajan:
 
 - `id_usuario`;
+- `id_instalacion` remoto;
 - `fecha_ultimo_acceso`;
 - password;
 - `hash_credencial`;
@@ -141,11 +146,12 @@ Para el contrato de usuario:
 - `op_id` = identidad distribuida de operación;
 - `aggregate_uid` = `usuario.uid_global`;
 - `version_registro` = versión autoritativa entrante;
+- `provenance.installation_uid` = procedencia técnica portable;
 - `consumer` = `administrativo.usuario`.
 
 El campo `aggregate_id` heredado del inbox se registra con valor neutro `0`; la PK del origen no se transporta ni se usa para resolver/aplicar el usuario.
 
-El estado técnico inicial que #512 usa para una delivery portable puede ser `PENDING_DEPENDENCY` como estado elegible de cola. El applicator de usuario **nunca** devuelve `PENDING_DEPENDENCY` por ausencia de persona, rol o sucursal: esas relaciones no son dependencia funcional del snapshot mínimo.
+El estado técnico inicial que #512 usa para una delivery portable puede ser `PENDING_DEPENDENCY` como estado elegible de cola. El applicator de usuario **nunca** devuelve `PENDING_DEPENDENCY` por ausencia de persona, rol, sucursal o instalación origen: esas relaciones no son dependencia funcional del snapshot mínimo.
 
 ## 6. Aplicación remota
 
@@ -246,6 +252,7 @@ Por lo tanto el alcance no debe describirse como "replicación automática produ
 - UID distribuido: `usuario.uid_global`.
 - `op_id`: mismo `X-Op-Id` del command origen.
 - `event_id`: delivery, no operación.
+- provenance: UID portable de la instalación productora; nunca PK remota.
 - idempotencia remota: `(administrativo.usuario, op_id)` mediante #512.
 - local mutation + outbox: una transacción.
 - remote effect + receipt + terminal delivery: commit coordinado de #512.
