@@ -453,7 +453,7 @@ Una review puede descubrir un defecto puntual o puede estar revelando una invari
 
 ### Regla de escalamiento
 
-Si aparecen **dos o más findings consecutivos materialmente relacionados con la misma dimensión conceptual**, o si un nuevo finding es una variante del anterior bajo otra combinación de estado/identidad/concurrencia, se debe detener la secuencia de fixes puntuales antes de seguir agregando parches.
+Si aparecen **dos o más findings materialmente relacionados con la misma dimensión conceptual dentro de la misma secuencia de revisión**, aunque estén intercalados con findings de otra naturaleza, o si un nuevo finding es una variante de otro ya observado bajo otra combinación de estado/identidad/concurrencia, se debe detener la secuencia de fixes puntuales antes de seguir agregando parches.
 
 Ejemplos de una misma dimensión conceptual:
 
@@ -536,7 +536,7 @@ En Técnico/Sync y en cualquier incremento distribuido, los findings relacionado
 
 ### Dimensiones mínimas a revisar
 
-Cuando un patrón de findings afecte Sync, la auditoría focal debe comprobar, según aplique:
+Cuando un patrón de findings afecte Técnico/Sync **o cualquier incremento distribuido con concurrencia, retry, leases, fencing o idempotencia**, la auditoría focal debe comprobar, según aplique:
 
 - **Delivery**: cuál es la identidad de una entrega y qué deduplica.
 - **Operation**: cuál es la identidad funcional/distribuida de la operación y qué define replay/conflicto.
