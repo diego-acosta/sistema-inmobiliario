@@ -73,6 +73,26 @@ ALTER TABLE inbox_event_version_contract_probe_511
         version_registro IS NULL OR version_registro >= 1
     );
 
+CREATE TEMP TABLE inbox_event_envelope_contract_probe_511 (
+    op_id uuid,
+    aggregate_uid uuid,
+    version_registro integer,
+    payload jsonb,
+    payload_fingerprint varchar(64),
+    provenance jsonb
+) ON COMMIT DROP;
+ALTER TABLE inbox_event_envelope_contract_probe_511
+    ADD CONSTRAINT expected_envelope_identity_511 CHECK (
+        op_id IS NOT NULL
+        OR (
+            aggregate_uid IS NULL
+            AND version_registro IS NULL
+            AND payload IS NULL
+            AND payload_fingerprint IS NULL
+            AND provenance IS NULL
+        )
+    );
+
 DO $scope_contract$
 DECLARE
     actual text;
@@ -199,6 +219,34 @@ BEGIN
             ADD CONSTRAINT ck_inbox_event_version_registro_511
             CHECK (version_registro IS NULL OR version_registro >= 1);
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE conrelid = 'public.inbox_event'::regclass
+                     AND conname = 'ck_inbox_event_envelope_identity_511') THEN
+        IF EXISTS (
+            SELECT 1 FROM public.inbox_event
+             WHERE op_id IS NULL
+               AND (
+                   aggregate_uid IS NOT NULL
+                   OR version_registro IS NOT NULL
+                   OR payload IS NOT NULL
+                   OR payload_fingerprint IS NOT NULL
+                   OR provenance IS NOT NULL
+               )
+        ) THEN
+            RAISE EXCEPTION 'inbox_event has a partial retained envelope without op_id';
+        END IF;
+        ALTER TABLE public.inbox_event
+            ADD CONSTRAINT ck_inbox_event_envelope_identity_511 CHECK (
+                op_id IS NOT NULL
+                OR (
+                    aggregate_uid IS NULL
+                    AND version_registro IS NULL
+                    AND payload IS NULL
+                    AND payload_fingerprint IS NULL
+                    AND provenance IS NULL
+                )
+            );
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_inbox_event_fingerprint_511') THEN
         ALTER TABLE public.inbox_event ADD CONSTRAINT ck_inbox_event_fingerprint_511
             CHECK (payload_fingerprint IS NULL OR payload_fingerprint ~ '^[0-9a-f]{64}$');
@@ -255,6 +303,18 @@ BEGIN
        AND conname='expected_version_registro_511';
     IF actual IS DISTINCT FROM expected OR NOT validated THEN
         RAISE EXCEPTION 'ck_inbox_event_version_registro_511 has an incompatible definition';
+    END IF;
+    SELECT pg_get_expr(conbin, conrelid, false), convalidated
+      INTO actual, validated
+      FROM pg_constraint
+     WHERE conrelid='public.inbox_event'::regclass
+       AND conname='ck_inbox_event_envelope_identity_511';
+    SELECT pg_get_expr(conbin, conrelid, false) INTO expected
+      FROM pg_constraint
+     WHERE conrelid='inbox_event_envelope_contract_probe_511'::regclass
+       AND conname='expected_envelope_identity_511';
+    IF actual IS DISTINCT FROM expected OR NOT validated THEN
+        RAISE EXCEPTION 'ck_inbox_event_envelope_identity_511 has an incompatible definition';
     END IF;
     SELECT pg_get_constraintdef(oid) INTO actual FROM pg_constraint
      WHERE conrelid='public.inbox_event'::regclass AND conname='ck_inbox_event_fingerprint_511';

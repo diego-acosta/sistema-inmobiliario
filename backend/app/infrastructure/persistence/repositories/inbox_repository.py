@@ -32,6 +32,10 @@ class InboxPortableTargetRequired(RuntimeError):
     code = "SYNC_PORTABLE_TARGET_REQUIRED"
 
 
+class InboxOperationIdRequired(RuntimeError):
+    code = "SYNC_OPERATION_ID_REQUIRED"
+
+
 class InboxInvalidPortableTarget(RuntimeError):
     code = "SYNC_INVALID_PORTABLE_TARGET"
 
@@ -179,6 +183,12 @@ class InboxRepository:
         version_registro: int | str | None = None,
     ) -> bool:
         """Registra una delivery; True no concede derecho funcional scoped."""
+        retained_envelope = any(
+            value is not None
+            for value in (payload, provenance, aggregate_uid, version_registro)
+        )
+        if op_id is None and retained_envelope:
+            raise InboxOperationIdRequired(InboxOperationIdRequired.code)
         if op_id is not None and aggregate_uid is None:
             raise InboxPortableTargetRequired(InboxPortableTargetRequired.code)
         try:

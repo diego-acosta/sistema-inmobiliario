@@ -26,6 +26,7 @@ from app.infrastructure.persistence.repositories.inbox_repository import (
     InboxInvalidFingerprint,
     InboxInvalidPortableTarget,
     InboxInvalidVersion,
+    InboxOperationIdRequired,
     InboxOwnershipLost,
     InboxPortableTargetRequired,
     InboxRepository,
@@ -333,9 +334,69 @@ def test_claim_legacy_payloadless_preserva_compatibilidad(db_session):
         aggregate_id=1,
         consumer="legacy",
     )
-    assert repo.get(event_id=event_id, consumer="legacy")["status"] == "PROCESSING"
+    row = repo.get(event_id=event_id, consumer="legacy")
+    assert row["status"] == "PROCESSING"
+    assert all(
+        row[field] is None
+        for field in (
+            "op_id",
+            "aggregate_uid",
+            "version_registro",
+            "payload",
+            "payload_fingerprint",
+            "provenance",
+        )
+    )
     repo.mark_as_processed(event_id=event_id, consumer="legacy")
     assert repo.is_processed(event_id=event_id, consumer="legacy")
+
+
+@pytest.mark.parametrize(
+    "retained",
+    [
+        {"payload": {}},
+        {"provenance": {}},
+        {"aggregate_uid": "00000000-0000-0000-0000-000000000001"},
+        {"version_registro": 1},
+        {"payload": {}, "provenance": {}},
+    ],
+)
+def test_claim_legacy_parcial_sin_op_id_se_rechaza_y_no_persiste(
+    retained, db_session
+):
+    event_id = str(uuid4())
+    with pytest.raises(InboxOperationIdRequired):
+        InboxRepository(db_session).claim(
+            event_id=event_id,
+            event_type="sucursal_creada",
+            aggregate_type="sucursal",
+            aggregate_id=1,
+            consumer="partial-legacy",
+            **retained,
+        )
+    assert (
+        InboxRepository(db_session).get(
+            event_id=event_id, consumer="partial-legacy"
+        )
+        is None
+    )
+
+
+def test_constraint_rechaza_legacy_parcial_insertado_por_sql(db_session):
+    event_id = str(uuid4())
+    with pytest.raises(IntegrityError), db_session.begin_nested():
+        db_session.execute(
+            text("""
+                INSERT INTO inbox_event (
+                    event_id, event_type, aggregate_type, aggregate_id,
+                    consumer, status, created_at, payload
+                ) VALUES (
+                    CAST(:event_id AS uuid), 'sucursal_creada', 'sucursal', 1,
+                    'partial-legacy-sql', 'PROCESSING', now(), '{}'::jsonb
+                )
+            """),
+            {"event_id": event_id},
+        )
 
 
 def test_envelope_canonicaliza_uuid_version_y_orden_json(db_session):

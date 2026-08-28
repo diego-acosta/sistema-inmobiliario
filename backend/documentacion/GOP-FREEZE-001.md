@@ -1505,10 +1505,11 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 
 ### 30.1 Alcance, clasificación y regla canónica
 
-Este incremento completa documentalmente el blocker interno **#10**. La política
-retryable transversal queda congelada por Técnico en `SRV-TEC-002`; su
-materialización runtime permanece pendiente y no pertenece a GOP. `Tarea` sigue
-siendo núcleo de
+Este incremento completa documentalmente el blocker interno **#10**. Al momento
+del cierre documental de #492, la política retryable transversal quedaba
+congelada por Técnico en `SRV-TEC-002` y su materialización runtime permanecía
+pendiente; no pertenecía ni pertenece a GOP. El estado vigente posterior a #511
+se documenta en la sección 30.6. `Tarea` sigue siendo núcleo de
 `gestion_operativa`; las identidades de usuario provistas
 por Administrativo y la resolución distribuida provista por Técnico son soporte
 transversal. `sucursal` e `instalacion` siguen bajo ownership de `operativo`:
