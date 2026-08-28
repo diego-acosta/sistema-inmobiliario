@@ -47,6 +47,7 @@ SYNC_EVENT_POLICIES: Mapping[str, SyncEventPolicy] = MappingProxyType({p.event_t
     _p("instalacion_creada", "instalacion"), _p("configuracion_local_creada", "configuracion_local"),
     _p("configuracion_local_modificada", "configuracion_local"), _p("rol_asignado_a_usuario", "usuario_rol_seguridad"),
     _p("rol_revocado_de_usuario", "usuario_rol_seguridad"), _p("usuario_asociado_a_sucursal", "usuario_sucursal"),
+    _p("usuario_creado", "usuario"), _p("usuario_desactivado", "usuario"),
     _p("caja_operativa_creada", "caja_operativa"), _p("caja_operativa_abierta", "caja_operativa_apertura"),
     _p("caja_operativa_cerrada", "caja_operativa_apertura"),
     _p("caja_operativa_movimiento_registrado", "caja_operativa_movimiento"),
