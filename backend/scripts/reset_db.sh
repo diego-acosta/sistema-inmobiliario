@@ -39,6 +39,7 @@ SQL_FILES=(
   "patch_admin_valor_global_412_20260813.sql"
   "patch_calendario_comercial_482_20260814.sql"
   "patch_usuario_uid_global_20260821.sql"
+  "patch_inbox_pending_dependency_20260822.sql"
 )
 
 DEV_SEEDS=(
@@ -162,6 +163,7 @@ apply_common_files() {
   run_sql "${db}" "patch administrativo valor global #412" "patch_admin_valor_global_412_20260813.sql"
   run_sql "${db}" "patch calendario comercial #482" "patch_calendario_comercial_482_20260814.sql"
   run_sql "${db}" "identidad portable de usuario #508" "patch_usuario_uid_global_20260821.sql"
+  run_sql "${db}" "lifecycle inbox pending dependency #511" "patch_inbox_pending_dependency_20260822.sql"
 }
 
 log "============================"

@@ -52,15 +52,18 @@ el runtime actual), rechazo terminal (`REJECTED`) y divergencia material
 cualquier consumidor; no pertenece a Gestión Operativa ni agrega semántica de
 Tarea.
 
-Esta es una **política contractual documentada, no implementada**. El SQL real de
-`inbox_event` sólo conserva identidad básica y estados libres; no conserva
-payload, `op_id`, huella, intentos ni elegibilidad. `InboxRepository.claim()`
-inserta `PROCESSING` con `ON CONFLICT (event_id, consumer) DO NOTHING`, no posee
-reclaim, y `mark_as_rejected()` documenta `REJECTED` como no retryable. Ningún
-worker auditado agenda pendientes de dependencia. Por ello ningún consumidor
-puede declarar esta capacidad hasta materializar transversalmente persistencia,
-repository, worker y tests; el contrato permite hacerlo incrementalmente sin
-cambiar la conducta de consumidores existentes.
+### Estado histórico previo a #511
+
+Antes de #511, esta política estaba congelada sólo documentalmente. El SQL
+entonces auditado de `inbox_event` conservaba identidad básica y estados libres,
+pero no payload, `op_id`, huella, intentos ni elegibilidad.
+`InboxRepository.claim()` sólo insertaba `PROCESSING` con
+`ON CONFLICT (event_id, consumer) DO NOTHING`, no poseía reclaim, y
+`mark_as_rejected()` documentaba `REJECTED` como no retryable. Ningún worker
+auditado agendaba pendientes de dependencia. Ese diagnóstico histórico quedó
+superado por la materialización transversal de #511 descrita en la sección
+«Materialización runtime de dependencias temporales»; no describe el estado
+vigente.
 
 ### Entrada, retención e idempotencia
 
@@ -289,11 +292,31 @@ la operación.
 - definición exacta de estados técnicos de operación distribuida
 - criterio final de segmentación por destino o alcance
 - relación formal entre paquete técnico y operación individual
-- materialización SQL/runtime/tests de `PENDING_DEPENDENCY`, claim/reclaim y
-  reprocesamiento conforme a la política contractual congelada
 - política de reintentos de emisión de outbox (separada del reproceso de inbox)
 - estrategia exacta de payload técnico portable
 
 ## Guardrail #455
 
 El ingreso a sincronización usa la allowlist única de aplicación y default-deny en repository, worker y dispatcher. Eventos/aggregates desconocidos y payloads sensibles fallan cerrados; credenciales y sesiones jamás son contratos permitidos. Los errores persistibles son códigos sanitizados, no `str(exc)` ni payloads.
+
+## Materialización runtime de dependencias temporales (#511)
+
+`PENDING_DEPENDENCY` es soporte transversal Técnico/Sync. `inbox_event` retiene el envelope portable, `event_id`, `consumer`, `op_id`, payload permitido, fingerprint, procedencia, intentos, elegibilidad y lease. Todo registro que declara `op_id` debe declarar también un `aggregate_uid` estable como identidad portable del target; `aggregate_id` permanece como PK local de compatibilidad y nunca la sustituye ni integra la equivalencia distribuida. Registrar una delivery sólo deduplica transporte por `(event_id, consumer)` y no concede derecho funcional. Técnico parsea una sola vez `aggregate_uid` como UUID y reutiliza su representación canónica tanto en el fingerprint como en la persistencia: representaciones textuales equivalentes del mismo UUID expresan la misma identidad y producen la misma huella cuando el resto del envelope coincide. `version_registro` se valida y canonicaliza al mismo integer que persiste PostgreSQL antes de validar el envelope y calcular su fingerprint; por eso `1` y `"1"` representan la misma versión material. La política transversal default-deny se aplica antes de persistir un envelope nuevo y nuevamente después del claim visible, antes de adquirir operation scope o invocar el applicator. Una fila histórica, writer viejo o inserción SQL no se considera confiable por estar en `inbox_event`: si la policy vigente rechaza evento, aggregate, payload o procedencia, termina `REJECTED` mediante transición fenced y nunca se expone al dominio. Legacy significa exclusivamente un claim payload-less sin envelope retenido, con `op_id`, payload, procedencia, `aggregate_uid` y `version_registro` nulos; sólo ese path conserva la compatibilidad histórica `PROCESSING -> PROCESSED | REJECTED`, sin attempt lease portable ni fingerprint. Los consumers productivos auditados de entrega y restitución locativa usan únicamente este path legacy; no existe todavía un caller productivo portable integrado. El fingerprint no es provisto ni confiado al consumer: Técnico lo calcula con la canonicalización RFC 8785 común sobre `event_type`, `aggregate_type`, `aggregate_uid`, `version_registro`, payload y procedencia material. `event_id`, `consumer`, `op_id`, PK local, intentos, timestamps y lease no integran ese hash. El consumer dueño decide mediante un resultado tipado si una referencia ausente es temporal, permanente o una divergencia material; Técnico no interpreta excepciones genéricas como dependencia.
+
+La forma física de `inbox_event` queda cerrada por lifecycle: legacy sólo admite
+`PROCESSING`, `PROCESSED` o `REJECTED`, siempre con envelope y ownership nulos;
+portable admite `PENDING_DEPENDENCY` con envelope completo y sin owner,
+`PROCESSING` con envelope completo más `attempt_id`/lease, y estados terminales
+con envelope completo, `processed_at` y sin owner ni retry pendiente. Un lease
+portable vencido sigue siendo una forma válida de `PROCESSING` porque habilita
+takeover. `CONFLICTO` requiere identidad portable de operación. Cualquier forma
+híbrida se rechaza físicamente y el worker conserva una validación defensiva antes
+del operation scope y del applicator.
+
+El claim portable usa `FOR UPDATE SKIP LOCKED` y `UPDATE ... RETURNING` dentro de una transacción Técnica corta. La misma adquisición selecciona una delivery `PENDING_DEPENDENCY` elegible o realiza takeover directo de una `PROCESSING` vencida; no existe un cleanup previo que la deje pending sin owner. Cada adquisición instala atómicamente un `attempt_id` UUID nuevo, incrementa el único `fence_generation` de la delivery y renueva el lease; dos threads, dos invocaciones o un takeover del mismo `worker_id` nunca comparten identidad de ownership. `worker_id` se conserva sólo para observabilidad. Toda transición desde una delivery portable `PROCESSING` exige el `DeliveryClaim` concreto, que contiene `attempt_id` y generación; omitirlo no habilita un modo unfenced. PostgreSQL es la única autoridad temporal mediante `clock_timestamp() AT TIME ZONE 'UTC'`: claim/takeover, backoff y elegibilidad usan ese reloj. La expiración no revoca mágicamente al attempt: lo vuelve reemplazable. Sólo el commit del takeover instala otro `attempt_id` y fencea al anterior, aunque el `worker_id` sea el mismo. El backoff exponencial está acotado, cada takeover cuenta una sola vez como intento real, el límite pausa únicamente la selección automática y el entry point manual reutiliza el mismo protocolo. Un resultado `BUSY` expresa contención y no consume presupuesto automático. `REJECTED` continúa terminal.
+
+#511 materializa el entry point/job reusable y testeable para ejecución automática una vez y reproceso manual/controlado; no incorpora un scheduler/daemon productivo definitivo ni integra automáticamente todos los consumers futuros.
+
+Cada `run_once()` posee la transacción funcional real de una `Session` dedicada al intento: puede usar savepoints internos, pero no retorna hasta ejecutar el commit exterior. El applicator usa esa Session, no hace commit propio, no confirma otra transacción DB paralela y no produce efectos externos irreversibles antes del commit coordinado. Si falla cualquier mutación fenced, applicator o commit, el processor hace rollback completo antes de propagar. `(event_id, consumer)` identifica la delivery; `(consumer, op_id)` identifica la operación; `attempt_id` identifica una adquisición concreta. `inbox_operation_scope` es la única autoridad del fingerprint, derecho funcional y receipt reusable. Su adquisición/clasificación atómica devuelve exclusivamente `ACQUIRED`, `BUSY`, `REPLAY_PROCESSED`, `REPLAY_CONFLICT` o `INCOMPATIBLE`. El scope guarda `attempt_id`, `worker_id` diagnóstico, expiración y `fence_generation`; finalizarlo exige el mismo `attempt_id` y fence. Un takeover compatible y vencido incrementa el fence e instala el nuevo attempt. No se mantiene advisory lock durante el applicator.
+
+Un resultado pendiente revierte primero el efecto funcional y luego persiste solamente el estado técnico. La misma transición fenced agenda `next_attempt_at` desde el reloj PostgreSQL al finalizar más el backoff. Un follower `BUSY` sólo reprograma su propia delivery: no libera, completa ni renueva el scope ajeno. `PROCESSED` compatible y `CONFLICTO` compatible reutilizan el receipt del scope sin applicator; fingerprint incompatible clasifica la delivery como `CONFLICTO` sin segundo efecto. Después de un `REJECTED`, el scope conserva su fingerprint material sin receipt terminal y queda libre: una entrega compatible puede reintentar y una incompatible se clasifica como conflicto. Los siblings de `inbox_event` no son autoridad de replay, conflicto, ownership ni progreso. No existe elección de leader por menor delivery ni mecanismo equivalente. Una fila inválida sólo puede ser rechazada al procesar su propia delivery y nunca contamina una operación válida. No se incorpora heartbeat automático ni scheduler productivo definitivo.

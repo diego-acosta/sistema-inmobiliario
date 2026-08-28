@@ -383,3 +383,17 @@ Incluye operaciones distribuidas, sincronización, inbox y outbox, idempotencia,
 - No reemplaza al CAT-CU maestro.
 - Los errores aquí listados se usan como apoyo a implementación, validación y manejo consistente de respuestas backend.
 - Debe mantenerse alineado con CU-TEC, RN-TEC, CORE-EF-001 y CORE-EF-VALIDACION.
+
+## Errores sanitizados #511
+
+- `SYNC_DEPENDENCY_UNAVAILABLE`: dependencia portable temporalmente ausente.
+- `SYNC_OPERATION_CONFLICT`: mismo scope de operación con envelope incompatible.
+- `SYNC_PAYLOAD_INVALID`: imposibilidad permanente por payload.
+- `SYNC_FUNCTIONAL_FAILURE`: código cerrado para fallas no clasificadas; nunca persiste excepción cruda.
+- `SYNC_WORKER_LEASE_EXPIRED`: reclaim técnico de un lease vencido.
+- `SYNC_INBOX_OWNERSHIP_LOST`: `attempt_id` o fence generation obsoletos; la transición fenced no se aplica y el efecto funcional local se revierte sin persistir token, payload ni excepción cruda. `worker_id` nunca prueba ownership.
+- `SYNC_OPERATION_ID_REQUIRED`: un claim que declara cualquier campo del envelope retenido no incluyó `op_id`; se rechaza antes de validar, canonicalizar o persistir y no se reinterpreta como legacy.
+- `SYNC_PORTABLE_TARGET_REQUIRED`: un claim con `op_id` no declaró el `aggregate_uid` portable obligatorio; se rechaza antes de canonicalizar o persistir y nunca se usa la PK local como sustituto.
+- `SYNC_INVALID_PORTABLE_TARGET`: `aggregate_uid` no representa un UUID portable válido; se rechaza antes del fingerprint y SQL sin incluir el valor recibido en el error.
+- `SYNC_INBOX_FINGERPRINT_INVALID`: una delivery scoped no posee una huella verificable contra su envelope canónico; se rechaza sin persistir hashes ni payloads en el error.
+- `SYNC_INVALID_VERSION_REGISTRO`: `version_registro` no admite una representación integer inequívoca o excede el rango de la columna PostgreSQL; se rechaza antes del fingerprint y del `INSERT`.

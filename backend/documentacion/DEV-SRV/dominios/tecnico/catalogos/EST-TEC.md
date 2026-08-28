@@ -326,10 +326,14 @@ Incluye operaciones distribuidas, sincronización, inbox y outbox, idempotencia,
 - descripcion: la operación remota es válida pero espera que una referencia portable requerida pueda resolverse localmente; conserva identidad, payload y trazabilidad para reproceso controlado.
 - estado_inicial: no
 - estado_final: no
-- observaciones: estado contractual no implementado todavía; no equivale a PROCESSING, REJECTED ni CONFLICTO.
+- observaciones: desde #511 es un estado runtime materializado por Técnico/Sync; no equivale a PROCESSING, REJECTED ni CONFLICTO. El scheduler/daemon productivo definitivo permanece fuera de alcance.
 
 ## Notas
 - Este catálogo deriva del DEV-SRV del dominio Técnico.
 - No reemplaza al CAT-CU maestro.
 - Los estados aquí listados se usan como apoyo a implementación, validación y consistencia del dominio backend.
 - Debe mantenerse alineado con CU-TEC, RN-TEC, ERR-TEC, EVT-TEC, CORE-EF-001 y CORE-EF-VALIDACION.
+
+## EST-TEC-511 — Estados runtime de inbox
+
+`PENDING_DEPENDENCY -> PROCESSING -> PROCESSED | PENDING_DEPENDENCY | REJECTED | CONFLICTO`. `REJECTED` es terminal. Cada adquisición portable genera un `attempt_id` único. El takeover de una `PROCESSING` vencida instala el nuevo attempt e incrementa el fence en una única transición `PROCESSING A -> PROCESSING B`, sin cleanup intermedio. El agotamiento del límite automático conserva la fila sin takeover; un resultado `BUSY` no consume presupuesto. La expiración sólo habilita takeover y el attempt anterior queda fenced cuando el takeover instala el sucesor.

@@ -1,9 +1,10 @@
 """Política única, default-deny, para eventos de sincronización."""
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any
 
 
 class SynchronizationPolicyError(RuntimeError):
@@ -109,16 +110,44 @@ def validate_sync_event(event_type: str, aggregate_type: str, payload: Any) -> S
     if aggregate_type in PROHIBITED_SYNC_AGGREGATES or aggregate_type != policy.aggregate_type:
         raise InvalidSyncAggregate(InvalidSyncAggregate.code)
     if not isinstance(payload, dict):
-        raise SensitiveSyncPayload("SYNC_INVALID_PAYLOAD")
+        raise SensitiveSyncPayload("SYNC_PAYLOAD_INVALID")
     validate_no_sensitive_sync_data(payload)
     for field in policy.required_positive_int_fields:
         value = payload.get(field)
         if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
-            raise SensitiveSyncPayload("SYNC_INVALID_PAYLOAD")
+            raise SensitiveSyncPayload("SYNC_PAYLOAD_INVALID")
     return policy
 
 
-def sanitize_sync_error(exc: BaseException | str) -> str:
+def validate_retained_sync_envelope(
+    *, event_type: str, aggregate_type: str, payload: Any,
+    provenance: Any, op_id: Any = None, aggregate_uid: Any = None,
+    version_registro: Any = None,
+) -> bool:
+    """Valida todo envelope retenido; preserva el claim legacy payload-less."""
+    retained = any(value is not None for value in (
+        op_id, payload, provenance, aggregate_uid, version_registro,
+    ))
+    if retained:
+        validate_sync_event(event_type, aggregate_type, payload)
+        validate_no_sensitive_sync_data(provenance)
+    return retained
+
+
+def sanitize_sync_error(
+    exc: BaseException | str, *, preserve_invalid_payload: bool = False
+) -> str:
+    if preserve_invalid_payload and (
+        exc in {"SYNC_INVALID_PAYLOAD", "SYNC_PAYLOAD_INVALID"}
+        or (
+            isinstance(exc, SensitiveSyncPayload)
+            and exc.args in {
+                ("SYNC_INVALID_PAYLOAD",),
+                ("SYNC_PAYLOAD_INVALID",),
+            }
+        )
+    ):
+        return "SYNC_PAYLOAD_INVALID"
     if isinstance(exc, str) and exc in {
         "SYNC_POLICY_REJECTED", "SYNC_EVENT_NOT_ALLOWED",
         "SYNC_AGGREGATE_NOT_ALLOWED", "SYNC_SENSITIVE_PAYLOAD",

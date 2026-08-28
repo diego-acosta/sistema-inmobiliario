@@ -3,17 +3,19 @@ from __future__ import annotations
 import pytest
 
 from app.application.common.synchronization_policy import (
-    InvalidSyncAggregate,
     PROHIBITED_SYNC_AGGREGATES,
     SYNC_EVENT_POLICIES,
+    InvalidSyncAggregate,
     SensitiveSyncPayload,
     SyncDispatchError,
     UnknownSyncEvent,
     sanitize_sync_error,
-    validate_sync_event,
     validate_no_sensitive_sync_data,
+    validate_sync_event,
 )
-from app.application.financiero.services.inbox_event_dispatcher import InboxEventDispatcher
+from app.application.financiero.services.inbox_event_dispatcher import (
+    InboxEventDispatcher,
+)
 from app.application.integration.outbox_to_inbox_worker import _validate_payload
 
 
@@ -84,6 +86,25 @@ def test_error_de_publicacion_se_sanitiza() -> None:
     raw = RuntimeError("postgresql://usuario:password@host/db SELECT sentinel")
     assert sanitize_sync_error(raw) == "SYNC_PUBLISH_FAILED"
     assert "password" not in sanitize_sync_error(raw)
+    invalid = SensitiveSyncPayload("SYNC_PAYLOAD_INVALID")
+    assert sanitize_sync_error(invalid) == "SYNC_SENSITIVE_PAYLOAD"
+    assert sanitize_sync_error(
+        invalid, preserve_invalid_payload=True
+    ) == "SYNC_PAYLOAD_INVALID"
+
+
+def test_sanitize_sync_error_normaliza_codigo_payload_legacy():
+    assert sanitize_sync_error(
+        SensitiveSyncPayload("SYNC_INVALID_PAYLOAD"),
+        preserve_invalid_payload=True,
+    ) == "SYNC_PAYLOAD_INVALID"
+
+
+@pytest.mark.parametrize("payload", [None, {}, {"id_venta": 0}])
+def test_payload_invalido_usa_unico_codigo_catalogado(payload):
+    with pytest.raises(SensitiveSyncPayload) as captured:
+        validate_sync_event("venta_confirmada", "venta", payload)
+    assert captured.value.args == ("SYNC_PAYLOAD_INVALID",)
 
 
 def test_valor_parametro_modificado_policy_contract() -> None:
