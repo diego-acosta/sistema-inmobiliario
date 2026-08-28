@@ -25,6 +25,7 @@ CORE_HEADERS = {
     "X-Sucursal-Id": "1",
     "X-Instalacion-Id": "1",
 }
+TEST_INSTALLATION_UID = str(uuid4())
 
 
 def _headers(op_id: str | None = None, *, version: int | None = None) -> dict[str, str]:
@@ -78,7 +79,10 @@ def _event(
         "version_registro": version,
         "op_id": op_id,
         "payload": snapshot or _snapshot(suffix),
-        "provenance": {"op_id_alta": op_id},
+        "provenance": {
+            "installation_uid": TEST_INSTALLATION_UID,
+            "op_id_alta": op_id,
+        },
     }
 
 
@@ -143,6 +147,7 @@ def test_alta_genera_outbox_portable_en_misma_operacion(client, db_session):
     assert envelope["aggregate_uid"] == uid
     assert envelope["version_registro"] == 1
     assert envelope["op_id"] == op_id
+    assert envelope["provenance"]["installation_uid"]
     assert "id_usuario" not in envelope
     assert "id_usuario" not in envelope["snapshot"]
     assert "fecha_ultimo_acceso" not in envelope["snapshot"]
@@ -153,6 +158,33 @@ def test_alta_genera_outbox_portable_en_misma_operacion(client, db_session):
         "token_sesion",
         "refresh_token",
     } & set(envelope["snapshot"])
+
+
+def test_baja_genera_outbox_portable_con_misma_operacion(client, db_session):
+    create = client.post(
+        "/api/v1/administrativo/usuarios",
+        json=_payload("BAJA-OUTBOX"),
+        headers=_headers(),
+    )
+    assert create.status_code == 201
+    created = create.json()["data"]
+    op_id = str(uuid4())
+
+    baja = client.patch(
+        f"/api/v1/administrativo/usuarios/{created['id_usuario']}/baja",
+        headers=_headers(op_id, version=created["version_registro"]),
+    )
+    assert baja.status_code == 200
+
+    outbox = _outbox_for_user(
+        db_session, created["id_usuario"], "usuario_desactivado"
+    )
+    envelope = outbox["payload"]
+    assert envelope["op_id"] == op_id
+    assert envelope["version_registro"] == 2
+    assert envelope["snapshot"]["estado_usuario"] == "INACTIVO"
+    assert envelope["snapshot"]["deleted"] is True
+    assert envelope["snapshot"]["fecha_baja"] is not None
 
 
 def test_fallo_outbox_revierte_alta(client, db_session, monkeypatch):
@@ -327,12 +359,13 @@ def test_registro_inbox_usa_uid_y_no_pk_remota(client, db_session):
     uid = _usuario_uid(db_session, created["id_usuario"])
     outbox = _outbox_for_user(db_session, created["id_usuario"], "usuario_creado")
     assert register_usuario_outbox_delivery(db_session, outbox_event=outbox) is True
+    assert register_usuario_outbox_delivery(db_session, outbox_event=outbox) is False
 
     inbox = db_session.execute(
         text(
             """
             SELECT aggregate_id, aggregate_uid::text AS aggregate_uid,
-                   op_id::text AS op_id, consumer
+                   op_id::text AS op_id, consumer, provenance
               FROM inbox_event
              WHERE event_id=CAST(:event_id AS uuid)
                AND consumer=:consumer
@@ -343,6 +376,7 @@ def test_registro_inbox_usa_uid_y_no_pk_remota(client, db_session):
     assert inbox["aggregate_id"] == 0
     assert inbox["aggregate_uid"] == uid
     assert inbox["op_id"] == outbox["payload"]["op_id"]
+    assert inbox["provenance"]["installation_uid"] == outbox["payload"]["provenance"]["installation_uid"]
 
 
 def _committed_register(event: dict, *, event_id: str) -> None:
