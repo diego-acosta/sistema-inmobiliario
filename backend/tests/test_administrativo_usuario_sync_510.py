@@ -82,6 +82,13 @@ def _event(
     }
 
 
+def _usuario_uid(db_session, id_usuario: int) -> str:
+    return db_session.execute(
+        text("SELECT uid_global::text FROM usuario WHERE id_usuario=:id"),
+        {"id": id_usuario},
+    ).scalar_one()
+
+
 def _outbox_for_user(db_session, id_usuario: int, event_type: str) -> dict:
     return dict(
         db_session.execute(
@@ -128,11 +135,12 @@ def test_alta_genera_outbox_portable_en_misma_operacion(client, db_session):
     )
     assert response.status_code == 201
     created = response.json()["data"]
+    uid = _usuario_uid(db_session, created["id_usuario"])
 
     outbox = _outbox_for_user(db_session, created["id_usuario"], "usuario_creado")
     envelope = outbox["payload"]
     assert outbox["aggregate_type"] == "usuario"
-    assert envelope["aggregate_uid"] == created["uid_global"]
+    assert envelope["aggregate_uid"] == uid
     assert envelope["version_registro"] == 1
     assert envelope["op_id"] == op_id
     assert "id_usuario" not in envelope
@@ -178,7 +186,9 @@ def test_alta_remota_preserva_uid_y_pk_local_independiente(client, db_session):
         json=_payload("REMOTE"),
         headers=_headers(),
     )
+    assert response.status_code == 201
     source = response.json()["data"]
+    source_uid = _usuario_uid(db_session, source["id_usuario"])
     outbox = _outbox_for_user(db_session, source["id_usuario"], "usuario_creado")
     retained = _retained_from_outbox(outbox)
 
@@ -194,9 +204,9 @@ def test_alta_remota_preserva_uid_y_pk_local_independiente(client, db_session):
             "SELECT id_usuario, uid_global::text AS uid_global "
             "FROM usuario WHERE uid_global=CAST(:uid AS uuid)"
         ),
-        {"uid": source["uid_global"]},
+        {"uid": source_uid},
     ).mappings().one()
-    assert target["uid_global"] == source["uid_global"]
+    assert target["uid_global"] == source_uid
     assert target["id_usuario"] != source["id_usuario"]
 
 
@@ -226,25 +236,29 @@ def test_version_superior_y_salto_aplican_inferior_no_revierte(db_session):
     v3 = _event("VERS", uid=uid, version=3, snapshot=v3_snapshot)
     assert applicator.apply(v3).kind == InboxOutcomeKind.PROCESSED
 
-    local = db_session.execute(
-        text(
-            "SELECT version_registro, observaciones FROM usuario "
-            "WHERE uid_global=CAST(:uid AS uuid)"
-        ),
-        {"uid": uid},
-    ).mappings().one()
+    local = dict(
+        db_session.execute(
+            text(
+                "SELECT version_registro, observaciones FROM usuario "
+                "WHERE uid_global=CAST(:uid AS uuid)"
+            ),
+            {"uid": uid},
+        ).mappings().one()
+    )
     assert local["version_registro"] == 3
     assert local["observaciones"] == v3_snapshot["observaciones"]
 
     old = _event("VERS", uid=uid, version=2)
     assert applicator.apply(old).kind == InboxOutcomeKind.PROCESSED
-    after = db_session.execute(
-        text(
-            "SELECT version_registro, observaciones FROM usuario "
-            "WHERE uid_global=CAST(:uid AS uuid)"
-        ),
-        {"uid": uid},
-    ).mappings().one()
+    after = dict(
+        db_session.execute(
+            text(
+                "SELECT version_registro, observaciones FROM usuario "
+                "WHERE uid_global=CAST(:uid AS uuid)"
+            ),
+            {"uid": uid},
+        ).mappings().one()
+    )
     assert after == local
 
 
@@ -308,7 +322,9 @@ def test_registro_inbox_usa_uid_y_no_pk_remota(client, db_session):
         json=_payload("INBOX"),
         headers=_headers(),
     )
+    assert response.status_code == 201
     created = response.json()["data"]
+    uid = _usuario_uid(db_session, created["id_usuario"])
     outbox = _outbox_for_user(db_session, created["id_usuario"], "usuario_creado")
     assert register_usuario_outbox_delivery(db_session, outbox_event=outbox) is True
 
@@ -325,7 +341,7 @@ def test_registro_inbox_usa_uid_y_no_pk_remota(client, db_session):
         {"event_id": outbox["event_id"], "consumer": USUARIO_SYNC_CONSUMER},
     ).mappings().one()
     assert inbox["aggregate_id"] == 0
-    assert inbox["aggregate_uid"] == created["uid_global"]
+    assert inbox["aggregate_uid"] == uid
     assert inbox["op_id"] == outbox["payload"]["op_id"]
 
 
@@ -348,13 +364,14 @@ def _committed_register(event: dict, *, event_id: str) -> None:
 
 def _cleanup_committed(*, uid: str, op_id: str, event_ids: list[str]) -> None:
     with engine.begin() as connection:
-        connection.execute(
-            text(
-                "DELETE FROM inbox_event WHERE consumer=:consumer "
-                "AND event_id = ANY(CAST(:ids AS uuid[]))"
-            ),
-            {"consumer": USUARIO_SYNC_CONSUMER, "ids": event_ids},
-        )
+        for event_id in event_ids:
+            connection.execute(
+                text(
+                    "DELETE FROM inbox_event WHERE consumer=:consumer "
+                    "AND event_id=CAST(:event_id AS uuid)"
+                ),
+                {"consumer": USUARIO_SYNC_CONSUMER, "event_id": event_id},
+            )
         connection.execute(
             text(
                 "DELETE FROM inbox_operation_scope "
