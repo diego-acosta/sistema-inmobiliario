@@ -86,20 +86,37 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
             "deleted": row["deleted_at"] is not None,
         }
 
-    @classmethod
+    def _installation_uid(self, id_instalacion: int | None) -> str:
+        if id_instalacion is None:
+            raise RuntimeError("SYNC_INSTALLATION_PROVENANCE_REQUIRED")
+        uid = self.db.execute(
+            text(
+                "SELECT uid_global::text FROM instalacion "
+                "WHERE id_instalacion = :id_instalacion"
+            ),
+            {"id_instalacion": id_instalacion},
+        ).scalar_one_or_none()
+        if uid is None:
+            raise RuntimeError("SYNC_INSTALLATION_PROVENANCE_REQUIRED")
+        return str(uid)
+
     def portable_outbox_payload(
-        cls, row: dict[str, Any], *, op_id: str
+        self, row: dict[str, Any], *, op_id: str
     ) -> dict[str, Any]:
         """Envelope emitible sin PK remota, credenciales, sesiones ni último acceso."""
         op_id_alta = row.get("op_id_alta")
+        installation_uid = self._installation_uid(
+            row.get("id_instalacion_ultima_modificacion")
+        )
         return {
             "aggregate_uid": str(row["uid_global"]),
             "version_registro": row["version_registro"],
             "op_id": op_id,
             "provenance": {
+                "installation_uid": installation_uid,
                 "op_id_alta": str(op_id_alta) if op_id_alta is not None else None,
             },
-            "snapshot": cls.portable_snapshot(row),
+            "snapshot": self.portable_snapshot(row),
         }
 
     def _emit_sync_event(
