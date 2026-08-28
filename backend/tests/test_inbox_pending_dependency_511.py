@@ -112,6 +112,60 @@ def _expire_scope(db, *, consumer: str, op_id: str) -> None:
     )
 
 
+def _insert_inbox_shape(
+    db,
+    *,
+    status: str,
+    portable: bool,
+    attempt_id: str | None = None,
+    worker_id: str | None = None,
+    lease_expires_at: datetime | None = None,
+    next_attempt_at: datetime | None = None,
+    processed_at: datetime | None = None,
+    payload_present: bool = True,
+) -> str:
+    event_id = str(uuid4())
+    db.execute(
+        text("""
+            INSERT INTO inbox_event (
+                event_id, event_type, aggregate_type, aggregate_id,
+                consumer, status, created_at, op_id, aggregate_uid,
+                version_registro, payload, payload_fingerprint, provenance,
+                attempt_id, worker_id, lease_expires_at, next_attempt_at,
+                processed_at
+            ) VALUES (
+                CAST(:event_id AS uuid), 'sucursal_creada', 'sucursal', 1,
+                :consumer, :status, now(), CAST(:op_id AS uuid),
+                CAST(:aggregate_uid AS uuid), :version_registro,
+                CAST(:payload AS jsonb), :fingerprint,
+                CAST(:provenance AS jsonb), CAST(:attempt_id AS uuid),
+                :worker_id, :lease_expires_at, :next_attempt_at, :processed_at
+            )
+        """),
+        {
+            "event_id": event_id,
+            "consumer": f"shape-{event_id}",
+            "status": status,
+            "op_id": str(uuid4()) if portable else None,
+            "aggregate_uid": str(uuid4()) if portable else None,
+            "version_registro": 1 if portable else None,
+            "payload": '{"uid_global":"shape-511"}'
+            if portable and payload_present
+            else None,
+            "fingerprint": "a" * 64 if portable else None,
+            "provenance": '{"installation_uid":"shape-511"}'
+            if portable
+            else None,
+            "attempt_id": attempt_id,
+            "worker_id": worker_id,
+            "lease_expires_at": lease_expires_at,
+            "next_attempt_at": next_attempt_at,
+            "processed_at": processed_at,
+        },
+    )
+    return event_id
+
+
 def test_patch_materializa_identidades_separadas(db_session):
     event_columns = set(
         db_session.execute(
@@ -151,6 +205,22 @@ def test_patch_materializa_identidades_separadas(db_session):
         "fence_generation",
         "terminal_status",
     } <= scope_columns
+    lifecycle_constraints = set(
+        db_session.execute(
+            text("""
+                SELECT conname FROM pg_constraint
+                 WHERE conrelid='inbox_event'::regclass
+            """)
+        ).scalars()
+    )
+    assert {
+        "ck_inbox_event_pending_shape_511",
+        "ck_inbox_event_processing_shape_511",
+        "ck_inbox_event_terminal_shape_511",
+        "ck_inbox_event_legacy_status_511",
+        "ck_inbox_event_portable_payload_511",
+        "ck_inbox_event_nonterminal_processed_511",
+    } <= lifecycle_constraints
 
 
 def test_patch_migra_scope_historico_y_falla_ante_constraint_desconocido():
@@ -255,6 +325,59 @@ def test_patch_migra_scope_historico_y_falla_ante_constraint_desconocido():
         assert "CONFLICTO" in definition
 
 
+def test_patch_falla_ante_delivery_estructuralmente_incompatible():
+    patch = Path("database/patch_inbox_pending_dependency_20260822.sql").read_text()
+    conninfo = engine.url.render_as_string(hide_password=False).replace(
+        "postgresql+psycopg", "postgresql"
+    )
+    event_id = str(uuid4())
+    constraints = (
+        "ck_inbox_event_pending_shape_511",
+        "ck_inbox_event_legacy_status_511",
+    )
+    with psycopg.connect(conninfo, autocommit=True) as connection:
+        connection.execute(patch)
+        try:
+            for constraint in constraints:
+                connection.execute(
+                    f"ALTER TABLE inbox_event DROP CONSTRAINT {constraint}"
+                )
+            connection.execute(
+                """
+                INSERT INTO inbox_event (
+                    event_id, event_type, aggregate_type, aggregate_id,
+                    consumer, status, created_at
+                ) VALUES (
+                    %s, 'sucursal_creada', 'sucursal', 1,
+                    'invalid-preexisting-511', 'PENDING_DEPENDENCY', now()
+                )
+                """,
+                (event_id,),
+            )
+            with pytest.raises(psycopg.Error, match="invalid PENDING_DEPENDENCY shape"):
+                connection.execute(patch)
+        finally:
+            connection.execute("ROLLBACK")
+            connection.execute(
+                "DELETE FROM inbox_event WHERE event_id=%s AND consumer=%s",
+                (event_id, "invalid-preexisting-511"),
+            )
+            connection.execute(patch)
+
+        restored = {
+            row[0]
+            for row in connection.execute(
+                """
+                SELECT conname FROM pg_constraint
+                 WHERE conrelid='inbox_event'::regclass
+                   AND conname = ANY(%s)
+                """,
+                (list(constraints),),
+            ).fetchall()
+        }
+        assert restored == set(constraints)
+
+
 def test_scope_terminal_acepta_conjunto_cerrado_y_rechaza_otro(db_session):
     for terminal in (None, "PROCESSED", "CONFLICTO"):
         db_session.execute(
@@ -349,6 +472,218 @@ def test_claim_legacy_payloadless_preserva_compatibilidad(db_session):
     )
     repo.mark_as_processed(event_id=event_id, consumer="legacy")
     assert repo.is_processed(event_id=event_id, consumer="legacy")
+
+
+@pytest.mark.parametrize(
+    ("status", "portable", "owned", "expired"),
+    [
+        ("PROCESSING", False, False, False),
+        ("PROCESSED", False, False, False),
+        ("REJECTED", False, False, False),
+        ("PENDING_DEPENDENCY", True, False, False),
+        ("PROCESSING", True, True, False),
+        ("PROCESSING", True, True, True),
+        ("PROCESSED", True, False, False),
+        ("REJECTED", True, False, False),
+        ("CONFLICTO", True, False, False),
+    ],
+)
+def test_constraint_acepta_matriz_valida_de_delivery(
+    db_session, status, portable, owned, expired
+):
+    attempt_id = str(uuid4()) if owned else None
+    lease = None
+    if owned:
+        lease = datetime.now(UTC) + timedelta(minutes=-1 if expired else 5)
+    terminal = status in {"PROCESSED", "REJECTED", "CONFLICTO"}
+    _insert_inbox_shape(
+        db_session,
+        status=status,
+        portable=portable,
+        attempt_id=attempt_id,
+        lease_expires_at=lease,
+        processed_at=datetime.now(UTC) if terminal else None,
+    )
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        {"status": "PENDING_DEPENDENCY", "portable": False},
+        {
+            "status": "PENDING_DEPENDENCY",
+            "portable": True,
+            "attempt_id": "new",
+            "worker_id": "owner",
+            "lease": "future",
+        },
+        {"status": "PROCESSING", "portable": True},
+        {
+            "status": "PROCESSING",
+            "portable": False,
+            "attempt_id": "new",
+            "worker_id": "owner",
+            "lease": "future",
+        },
+        {
+            "status": "PROCESSED",
+            "portable": True,
+            "attempt_id": "new",
+            "lease": "future",
+            "processed": True,
+        },
+        {
+            "status": "REJECTED",
+            "portable": True,
+            "attempt_id": "new",
+            "processed": True,
+        },
+        {
+            "status": "CONFLICTO",
+            "portable": True,
+            "lease": "future",
+            "processed": True,
+        },
+        {"status": "CONFLICTO", "portable": False, "processed": True},
+        {
+            "status": "PROCESSED",
+            "portable": True,
+            "payload_present": False,
+            "processed": True,
+        },
+        {
+            "status": "PROCESSED",
+            "portable": True,
+            "processed": True,
+            "next": True,
+        },
+        {"status": "PROCESSED", "portable": True},
+        {
+            "status": "PENDING_DEPENDENCY",
+            "portable": True,
+            "processed": True,
+        },
+        {
+            "status": "PROCESSING",
+            "portable": True,
+            "attempt_id": "new",
+            "lease": "future",
+            "processed": True,
+        },
+    ],
+)
+def test_constraint_rechaza_matriz_invalida_de_delivery(db_session, shape):
+    attempt_id = str(uuid4()) if shape.get("attempt_id") else None
+    lease = datetime.now(UTC) + timedelta(minutes=5) if shape.get("lease") else None
+    timestamp = datetime.now(UTC)
+    with pytest.raises(IntegrityError), db_session.begin_nested():
+        _insert_inbox_shape(
+            db_session,
+            status=shape["status"],
+            portable=shape["portable"],
+            attempt_id=attempt_id,
+            worker_id=shape.get("worker_id"),
+            lease_expires_at=lease,
+            next_attempt_at=timestamp if shape.get("next") else None,
+            processed_at=timestamp if shape.get("processed") else None,
+            payload_present=shape.get("payload_present", True),
+        )
+
+
+def test_retry_sin_envelope_se_rechaza_sin_scope_ni_applicator(
+    db_session, monkeypatch
+):
+    event_id = str(uuid4())
+    delivery = DeliveryClaim(
+        {
+            "event_id": event_id,
+            "event_type": "sucursal_creada",
+            "aggregate_type": "sucursal",
+            "aggregate_id": 1,
+            "consumer": "invalid-retained",
+            "status": "PROCESSING",
+            "op_id": None,
+            "aggregate_uid": None,
+            "version_registro": None,
+            "payload": None,
+            "payload_fingerprint": None,
+            "provenance": None,
+            "attempt_count": 1,
+        },
+        str(uuid4()),
+        "worker",
+        1,
+    )
+    processor = InboxRetryProcessor(db_session, consumer="invalid-retained")
+    rejected = []
+    calls = []
+    monkeypatch.setattr(processor, "_claim_delivery", lambda **_: delivery)
+    monkeypatch.setattr(
+        processor,
+        "_acquire_operation",
+        lambda _: pytest.fail("operation scope no debe adquirirse"),
+    )
+    monkeypatch.setattr(
+        processor.repository,
+        "mark_as_rejected",
+        lambda **kwargs: rejected.append(kwargs),
+    )
+    monkeypatch.setattr(processor, "_commit", lambda outcome: outcome)
+
+    outcome = processor.run_once(
+        lambda event: calls.append(event) or InboxOutcome(InboxOutcomeKind.PROCESSED),
+        worker_id="worker",
+        manual=True,
+    )
+
+    assert outcome == InboxOutcome(
+        InboxOutcomeKind.REJECTED, "SYNC_PAYLOAD_INVALID"
+    )
+    assert rejected == [
+        {"claim": delivery, "error_detail": "SYNC_PAYLOAD_INVALID"}
+    ]
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    ("status", "portable", "owned"),
+    [
+        ("PENDING_DEPENDENCY", True, True),
+        ("PROCESSING", True, False),
+        ("PROCESSING", False, False),
+    ],
+)
+def test_claim_pending_no_selecciona_formas_incompatibles_sin_constraints(
+    status, portable, owned
+):
+    with Session(engine) as session:
+        session.execute(
+            text("""
+                CREATE TEMP TABLE inbox_event
+                    (LIKE public.inbox_event INCLUDING DEFAULTS)
+                    ON COMMIT DROP
+            """)
+        )
+        event_id = _insert_inbox_shape(
+            session,
+            status=status,
+            portable=portable,
+            attempt_id=str(uuid4()) if owned else None,
+            worker_id="owner" if owned else None,
+            lease_expires_at=(datetime.now(UTC) + timedelta(minutes=5))
+            if owned
+            else None,
+        )
+        claim = InboxRepository(session).claim_pending(
+            consumer=f"shape-{event_id}",
+            worker_id="candidate",
+            lease_duration=timedelta(minutes=5),
+            automatic_attempt_limit=8,
+            event_id=event_id,
+            manual=True,
+        )
+        assert claim is None
+        session.rollback()
 
 
 @pytest.mark.parametrize(

@@ -93,6 +93,67 @@ ALTER TABLE inbox_event_envelope_contract_probe_511
         )
     );
 
+CREATE TEMP TABLE inbox_event_lifecycle_contract_probe_511
+    (LIKE public.inbox_event)
+    ON COMMIT DROP;
+ALTER TABLE inbox_event_lifecycle_contract_probe_511
+    ADD CONSTRAINT expected_pending_shape_511 CHECK (
+        status <> 'PENDING_DEPENDENCY'
+        OR (
+            op_id IS NOT NULL
+            AND aggregate_uid IS NOT NULL
+            AND payload IS NOT NULL
+            AND payload_fingerprint IS NOT NULL
+            AND attempt_id IS NULL
+            AND worker_id IS NULL
+            AND lease_expires_at IS NULL
+            AND processed_at IS NULL
+        )
+    ),
+    ADD CONSTRAINT expected_processing_shape_511 CHECK (
+        status <> 'PROCESSING'
+        OR (
+            op_id IS NULL
+            AND aggregate_uid IS NULL
+            AND version_registro IS NULL
+            AND payload IS NULL
+            AND payload_fingerprint IS NULL
+            AND provenance IS NULL
+            AND attempt_id IS NULL
+            AND worker_id IS NULL
+            AND lease_expires_at IS NULL
+            AND processed_at IS NULL
+        )
+        OR (
+            op_id IS NOT NULL
+            AND aggregate_uid IS NOT NULL
+            AND payload IS NOT NULL
+            AND payload_fingerprint IS NOT NULL
+            AND attempt_id IS NOT NULL
+            AND lease_expires_at IS NOT NULL
+            AND processed_at IS NULL
+        )
+    ),
+    ADD CONSTRAINT expected_terminal_shape_511 CHECK (
+        status NOT IN ('PROCESSED', 'REJECTED', 'CONFLICTO')
+        OR (
+            attempt_id IS NULL
+            AND worker_id IS NULL
+            AND lease_expires_at IS NULL
+            AND next_attempt_at IS NULL
+            AND processed_at IS NOT NULL
+        )
+    ),
+    ADD CONSTRAINT expected_legacy_status_511 CHECK (
+        op_id IS NOT NULL OR status IN ('PROCESSING', 'PROCESSED', 'REJECTED')
+    ),
+    ADD CONSTRAINT expected_portable_payload_511 CHECK (
+        op_id IS NULL OR payload IS NOT NULL
+    ),
+    ADD CONSTRAINT expected_nonterminal_processed_511 CHECK (
+        status NOT IN ('PENDING_DEPENDENCY', 'PROCESSING') OR processed_at IS NULL
+    );
+
 DO $scope_contract$
 DECLARE
     actual text;
@@ -273,6 +334,172 @@ BEGIN
             ADD CONSTRAINT ck_inbox_event_scoped_fingerprint_511
             CHECK (op_id IS NULL OR payload_fingerprint IS NOT NULL);
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE conrelid = 'public.inbox_event'::regclass
+                     AND conname = 'ck_inbox_event_pending_shape_511') THEN
+        IF EXISTS (
+            SELECT 1 FROM public.inbox_event
+             WHERE status = 'PENDING_DEPENDENCY'
+               AND NOT (
+                   op_id IS NOT NULL
+                   AND aggregate_uid IS NOT NULL
+                   AND payload IS NOT NULL
+                   AND payload_fingerprint IS NOT NULL
+                   AND attempt_id IS NULL
+                   AND worker_id IS NULL
+                   AND lease_expires_at IS NULL
+                   AND processed_at IS NULL
+               )
+        ) THEN
+            RAISE EXCEPTION 'inbox_event has an invalid PENDING_DEPENDENCY shape';
+        END IF;
+        ALTER TABLE public.inbox_event
+            ADD CONSTRAINT ck_inbox_event_pending_shape_511 CHECK (
+                status <> 'PENDING_DEPENDENCY'
+                OR (
+                    op_id IS NOT NULL
+                    AND aggregate_uid IS NOT NULL
+                    AND payload IS NOT NULL
+                    AND payload_fingerprint IS NOT NULL
+                    AND attempt_id IS NULL
+                    AND worker_id IS NULL
+                    AND lease_expires_at IS NULL
+                    AND processed_at IS NULL
+                )
+            );
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE conrelid = 'public.inbox_event'::regclass
+                     AND conname = 'ck_inbox_event_processing_shape_511') THEN
+        IF EXISTS (
+            SELECT 1 FROM public.inbox_event
+             WHERE status = 'PROCESSING'
+               AND NOT (
+                   (
+                       op_id IS NULL
+                       AND aggregate_uid IS NULL
+                       AND version_registro IS NULL
+                       AND payload IS NULL
+                       AND payload_fingerprint IS NULL
+                       AND provenance IS NULL
+                       AND attempt_id IS NULL
+                       AND worker_id IS NULL
+                       AND lease_expires_at IS NULL
+                       AND processed_at IS NULL
+                   )
+                   OR (
+                       op_id IS NOT NULL
+                       AND aggregate_uid IS NOT NULL
+                       AND payload IS NOT NULL
+                       AND payload_fingerprint IS NOT NULL
+                       AND attempt_id IS NOT NULL
+                       AND lease_expires_at IS NOT NULL
+                       AND processed_at IS NULL
+                   )
+               )
+        ) THEN
+            RAISE EXCEPTION 'inbox_event has an invalid PROCESSING shape';
+        END IF;
+        ALTER TABLE public.inbox_event
+            ADD CONSTRAINT ck_inbox_event_processing_shape_511 CHECK (
+                status <> 'PROCESSING'
+                OR (
+                    op_id IS NULL
+                    AND aggregate_uid IS NULL
+                    AND version_registro IS NULL
+                    AND payload IS NULL
+                    AND payload_fingerprint IS NULL
+                    AND provenance IS NULL
+                    AND attempt_id IS NULL
+                    AND worker_id IS NULL
+                    AND lease_expires_at IS NULL
+                    AND processed_at IS NULL
+                )
+                OR (
+                    op_id IS NOT NULL
+                    AND aggregate_uid IS NOT NULL
+                    AND payload IS NOT NULL
+                    AND payload_fingerprint IS NOT NULL
+                    AND attempt_id IS NOT NULL
+                    AND lease_expires_at IS NOT NULL
+                    AND processed_at IS NULL
+                )
+            );
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE conrelid = 'public.inbox_event'::regclass
+                     AND conname = 'ck_inbox_event_terminal_shape_511') THEN
+        IF EXISTS (
+            SELECT 1 FROM public.inbox_event
+             WHERE status IN ('PROCESSED', 'REJECTED', 'CONFLICTO')
+               AND NOT (
+                   attempt_id IS NULL
+                   AND worker_id IS NULL
+                   AND lease_expires_at IS NULL
+                   AND next_attempt_at IS NULL
+                   AND processed_at IS NOT NULL
+               )
+        ) THEN
+            RAISE EXCEPTION 'inbox_event has an invalid terminal shape';
+        END IF;
+        ALTER TABLE public.inbox_event
+            ADD CONSTRAINT ck_inbox_event_terminal_shape_511 CHECK (
+                status NOT IN ('PROCESSED', 'REJECTED', 'CONFLICTO')
+                OR (
+                    attempt_id IS NULL
+                    AND worker_id IS NULL
+                    AND lease_expires_at IS NULL
+                    AND next_attempt_at IS NULL
+                    AND processed_at IS NOT NULL
+                )
+            );
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE conrelid = 'public.inbox_event'::regclass
+                     AND conname = 'ck_inbox_event_legacy_status_511') THEN
+        IF EXISTS (
+            SELECT 1 FROM public.inbox_event
+             WHERE op_id IS NULL
+               AND status NOT IN ('PROCESSING', 'PROCESSED', 'REJECTED')
+        ) THEN
+            RAISE EXCEPTION 'inbox_event has an invalid legacy status';
+        END IF;
+        ALTER TABLE public.inbox_event
+            ADD CONSTRAINT ck_inbox_event_legacy_status_511 CHECK (
+                op_id IS NOT NULL
+                OR status IN ('PROCESSING', 'PROCESSED', 'REJECTED')
+            );
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE conrelid = 'public.inbox_event'::regclass
+                     AND conname = 'ck_inbox_event_portable_payload_511') THEN
+        IF EXISTS (
+            SELECT 1 FROM public.inbox_event
+             WHERE op_id IS NOT NULL AND payload IS NULL
+        ) THEN
+            RAISE EXCEPTION 'inbox_event has a portable envelope without payload';
+        END IF;
+        ALTER TABLE public.inbox_event
+            ADD CONSTRAINT ck_inbox_event_portable_payload_511 CHECK (
+                op_id IS NULL OR payload IS NOT NULL
+            );
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE conrelid = 'public.inbox_event'::regclass
+                     AND conname = 'ck_inbox_event_nonterminal_processed_511') THEN
+        IF EXISTS (
+            SELECT 1 FROM public.inbox_event
+             WHERE status IN ('PENDING_DEPENDENCY', 'PROCESSING')
+               AND processed_at IS NOT NULL
+        ) THEN
+            RAISE EXCEPTION 'inbox_event has processed_at in a non-terminal state';
+        END IF;
+        ALTER TABLE public.inbox_event
+            ADD CONSTRAINT ck_inbox_event_nonterminal_processed_511 CHECK (
+                status NOT IN ('PENDING_DEPENDENCY', 'PROCESSING')
+                OR processed_at IS NULL
+            );
+    END IF;
 END
 $constraints$;
 
@@ -281,6 +508,7 @@ DECLARE
     actual text;
     expected text;
     validated boolean;
+    constraint_name text;
 BEGIN
     SELECT pg_get_constraintdef(oid) INTO actual FROM pg_constraint
      WHERE conrelid='public.inbox_event'::regclass AND conname='ck_inbox_event_status_511';
@@ -342,6 +570,47 @@ BEGIN
        AND conname='ck_inbox_event_scoped_fingerprint_511';
     IF actual IS NULL OR actual !~ 'op_id IS NULL.*payload_fingerprint IS NOT NULL' THEN
         RAISE EXCEPTION 'ck_inbox_event_scoped_fingerprint_511 has an incompatible definition';
+    END IF;
+    FOR actual, expected, validated, constraint_name IN
+        SELECT a.expression, e.expression, a.validated, names.actual_name
+          FROM (VALUES
+              ('ck_inbox_event_pending_shape_511', 'expected_pending_shape_511'),
+              ('ck_inbox_event_processing_shape_511', 'expected_processing_shape_511'),
+              ('ck_inbox_event_terminal_shape_511', 'expected_terminal_shape_511'),
+              ('ck_inbox_event_legacy_status_511', 'expected_legacy_status_511'),
+              ('ck_inbox_event_portable_payload_511', 'expected_portable_payload_511'),
+              ('ck_inbox_event_nonterminal_processed_511', 'expected_nonterminal_processed_511')
+          ) AS names(actual_name, expected_name)
+          CROSS JOIN LATERAL (
+              SELECT pg_get_expr(conbin, conrelid, false) AS expression,
+                     convalidated AS validated
+                FROM pg_constraint
+               WHERE conrelid='public.inbox_event'::regclass
+                 AND conname=names.actual_name
+          ) a
+          CROSS JOIN LATERAL (
+              SELECT pg_get_expr(conbin, conrelid, false) AS expression
+                FROM pg_constraint
+               WHERE conrelid='inbox_event_lifecycle_contract_probe_511'::regclass
+                 AND conname=names.expected_name
+          ) e
+    LOOP
+        IF actual IS DISTINCT FROM expected OR NOT validated THEN
+            RAISE EXCEPTION '% has an incompatible definition or is not validated',
+                constraint_name;
+        END IF;
+    END LOOP;
+    IF (SELECT count(*) FROM pg_constraint
+         WHERE conrelid='public.inbox_event'::regclass
+           AND conname IN (
+               'ck_inbox_event_pending_shape_511',
+               'ck_inbox_event_processing_shape_511',
+               'ck_inbox_event_terminal_shape_511',
+               'ck_inbox_event_legacy_status_511',
+               'ck_inbox_event_portable_payload_511',
+               'ck_inbox_event_nonterminal_processed_511'
+           )) <> 6 THEN
+        RAISE EXCEPTION 'inbox_event lifecycle constraints are incomplete';
     END IF;
 END
 $constraint_contract$;

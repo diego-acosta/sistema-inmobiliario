@@ -159,7 +159,7 @@ class InboxRetryProcessor:
             return None
 
         try:
-            validate_retained_sync_envelope(
+            retained = validate_retained_sync_envelope(
                 event_type=delivery["event_type"],
                 aggregate_type=delivery["aggregate_type"],
                 payload=delivery.get("payload"),
@@ -173,49 +173,53 @@ class InboxRetryProcessor:
             self.repository.mark_as_rejected(claim=delivery, error_detail=reason)
             return self._commit(InboxOutcome(InboxOutcomeKind.REJECTED, reason))
 
+        if not retained or delivery.get("op_id") is None:
+            reason = "SYNC_PAYLOAD_INVALID"
+            self.repository.mark_as_rejected(claim=delivery, error_detail=reason)
+            return self._commit(InboxOutcome(InboxOutcomeKind.REJECTED, reason))
+
         if not has_valid_scoped_fingerprint(delivery):
             reason = InboxInvalidFingerprint.code
             self.repository.mark_as_rejected(claim=delivery, error_detail=reason)
             return self._commit(InboxOutcome(InboxOutcomeKind.REJECTED, reason))
 
         operation_claim: OperationClaim | None = None
-        if delivery.get("op_id") is not None:
-            scoped = self._acquire_operation(delivery)
-            if scoped.decision is OperationDecision.BUSY:
-                outcome = InboxOutcome(
-                    InboxOutcomeKind.PENDING_DEPENDENCY,
-                    "SYNC_DEPENDENCY_UNAVAILABLE",
-                )
-                self.repository.mark_pending_dependency(
-                    claim=delivery,
-                    reason_code=outcome.reason_code,
-                    retry_delay=retry_backoff(delivery["attempt_count"]),
-                    consume_attempt=False,
-                )
-                return self._commit(outcome)
-            if scoped.decision is OperationDecision.INCOMPATIBLE:
-                outcome = InboxOutcome(
-                    InboxOutcomeKind.CONFLICTO, "SYNC_OPERATION_CONFLICT"
-                )
-                self.repository.mark_conflict(
-                    claim=delivery, reason_code=outcome.reason_code
-                )
-                return self._commit(outcome)
-            if scoped.decision is OperationDecision.REPLAY_PROCESSED:
-                outcome = InboxOutcome(InboxOutcomeKind.PROCESSED)
-                self.repository.mark_as_processed(claim=delivery)
-                return self._commit(outcome)
-            if scoped.decision is OperationDecision.REPLAY_CONFLICT:
-                outcome = InboxOutcome(
-                    InboxOutcomeKind.CONFLICTO, "SYNC_OPERATION_CONFLICT"
-                )
-                self.repository.mark_conflict(
-                    claim=delivery, reason_code=outcome.reason_code
-                )
-                return self._commit(outcome)
-            operation_claim = scoped.claim
-            if operation_claim is None:
-                raise RuntimeError("SYNC_OPERATION_SCOPE_DECISION_INVALID")
+        scoped = self._acquire_operation(delivery)
+        if scoped.decision is OperationDecision.BUSY:
+            outcome = InboxOutcome(
+                InboxOutcomeKind.PENDING_DEPENDENCY,
+                "SYNC_DEPENDENCY_UNAVAILABLE",
+            )
+            self.repository.mark_pending_dependency(
+                claim=delivery,
+                reason_code=outcome.reason_code,
+                retry_delay=retry_backoff(delivery["attempt_count"]),
+                consume_attempt=False,
+            )
+            return self._commit(outcome)
+        if scoped.decision is OperationDecision.INCOMPATIBLE:
+            outcome = InboxOutcome(
+                InboxOutcomeKind.CONFLICTO, "SYNC_OPERATION_CONFLICT"
+            )
+            self.repository.mark_conflict(
+                claim=delivery, reason_code=outcome.reason_code
+            )
+            return self._commit(outcome)
+        if scoped.decision is OperationDecision.REPLAY_PROCESSED:
+            outcome = InboxOutcome(InboxOutcomeKind.PROCESSED)
+            self.repository.mark_as_processed(claim=delivery)
+            return self._commit(outcome)
+        if scoped.decision is OperationDecision.REPLAY_CONFLICT:
+            outcome = InboxOutcome(
+                InboxOutcomeKind.CONFLICTO, "SYNC_OPERATION_CONFLICT"
+            )
+            self.repository.mark_conflict(
+                claim=delivery, reason_code=outcome.reason_code
+            )
+            return self._commit(outcome)
+        operation_claim = scoped.claim
+        if operation_claim is None:
+            raise RuntimeError("SYNC_OPERATION_SCOPE_DECISION_INVALID")
 
         nested = self.session.begin_nested()
         try:

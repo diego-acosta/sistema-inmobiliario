@@ -301,6 +301,13 @@ class InboxRepository:
                    AND (
                        (
                            status='PENDING_DEPENDENCY'
+                           AND op_id IS NOT NULL
+                           AND aggregate_uid IS NOT NULL
+                           AND payload IS NOT NULL
+                           AND payload_fingerprint IS NOT NULL
+                           AND attempt_id IS NULL
+                           AND worker_id IS NULL
+                           AND lease_expires_at IS NULL
                            AND (CAST(:manual AS boolean)
                                 OR attempt_count < :attempt_limit)
                            AND (CAST(:manual AS boolean) OR next_attempt_at IS NULL
@@ -308,6 +315,8 @@ class InboxRepository:
                        )
                        OR (
                            status='PROCESSING'
+                           AND op_id IS NOT NULL
+                           AND attempt_id IS NOT NULL
                            AND lease_expires_at IS NOT NULL
                            AND lease_expires_at <= db_clock.now_utc
                            AND (CAST(:manual AS boolean)
