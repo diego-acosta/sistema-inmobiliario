@@ -84,7 +84,9 @@ Si falla la resolución de provenance o el outbox:
 rollback usuario + outbox
 ```
 
-Los replays locales por `op_id_alta` / `op_id_ultima_modificacion` no emiten un segundo evento: si la mutación original existe, su outbox fue confirmado en la misma transacción.
+Los replays locales por `op_id_alta` / `op_id_ultima_modificacion` no emiten un segundo evento. Para writes nuevos ejecutados bajo #510, si la mutación original existe, su outbox fue confirmado en la misma transacción.
+
+La garantía es prospectiva desde el despliegue de #510. Filas u operaciones históricas anteriores pueden conservar `op_id` sin un outbox de usuario asociado. Un retry histórico no repara ni reemite implícitamente ese outbox; backfill, reemisión y convergencia histórica pertenecen a un follow-up separado.
 
 Los métodos destinados a aplicación remota no hacen `commit()` ni `rollback()`. La frontera exterior pertenece al processor de #512.
 
@@ -118,6 +120,10 @@ El outbox de usuario transporta únicamente:
 El `event_type` y `aggregate_type=usuario` pertenecen a la cabecera del outbox/inbox y no se duplican dentro del snapshot funcional.
 
 `provenance.installation_uid` conserva la identidad portable de la instalación que produjo el write. La PK `id_instalacion` del origen no viaja. El receptor no transforma esa procedencia en una FK local ni bloquea el usuario esperando que exista una fila de instalación equivalente: el dato queda retenido como procedencia técnica y participa del fingerprint de #512.
+
+`provenance.op_id_alta` conserva exclusivamente la operación distribuida que creó la identidad. Si el origen legacy no la conoce, viaja y se persiste `null`; nunca se sustituye por el `op_id` de una baja u operación posterior. `op_id_ultima_modificacion` conserva el `op_id` del evento aplicado.
+
+Los timestamps portables usan una representación única compatible con las columnas `timestamp without time zone`: una entrada con timezone u offset se convierte al instante UTC, se elimina `tzinfo` después de esa conversión y se serializa como ISO UTC-naive. Una entrada naive se interpreta como ya expresada en esa convención. La canonicalización ocurre antes de claim, fingerprint y comparación de snapshots; no usa el reloj local del worker.
 
 No viajan:
 
@@ -170,8 +176,8 @@ El applicator Administrativo:
 Contrato congelado por #510:
 
 ```text
-UID ausente
-→ crear preservando uid_global
+UID ausente + snapshot completo aplicable
+→ crear preservando uid_global, incluso para `usuario_desactivado` fuera de orden
 → PK local independiente
 → conservar incoming version_registro
 
@@ -195,7 +201,7 @@ No se usa timestamp como LWW y no existe merge automático.
 
 ### Saltos de versión
 
-#510 acepta un salto remoto, por ejemplo `V1 → V3`, cuando el snapshot entrante es completo y su versión es mayor.
+#510 adopta `version_registro` como versión autoritativa comparable de un snapshot completo y acepta un salto remoto, por ejemplo `V1 → V3`, cuando la versión entrante es mayor. Toda mutación local continúa incrementando exactamente `+1`; la recepción remota no exige `local_version + 1`.
 
 Fundamento: CORE-EF exige que cada mutación **local** incremente en uno y que la comparación remota use `version_registro` como criterio primario, pero no exige recepción secuencial de todas las versiones intermedias. Rechazar saltos haría depender la convergencia de una entrega ordenada que el contrato de consistencia eventual no garantiza.
 
@@ -212,6 +218,8 @@ deleted = true
 ```
 
 Una versión superior desactiva por UID y conserva la baja lógica.
+
+Si `usuario_desactivado` V2 o superior llega antes del alta y el UID no existe, el snapshot completo y coherente materializa una fila local ya inactiva, con el UID recibido, PK local propia e `incoming version_registro`. No es `PENDING_DEPENDENCY`. Un snapshot de baja exige `estado_usuario = INACTIVO`, `fecha_baja != null` y `deleted = true`; cualquier incoherencia termina `REJECTED`.
 
 No existe command runtime de reactivación al momento de #510. Por lo tanto:
 

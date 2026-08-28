@@ -1,11 +1,12 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import text
-
 from app.api.core_ef_headers import CoreEFHeaders
 from app.infrastructure.persistence.base_repository import BaseRepository
-from app.infrastructure.persistence.repositories.outbox_repository import OutboxRepository
+from app.infrastructure.persistence.repositories.outbox_repository import (
+    OutboxRepository,
+)
+from sqlalchemy import text
 
 
 class UsuarioIdempotencyConflictError(ValueError):
@@ -68,6 +69,8 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
         if value is None:
             return None
         if isinstance(value, datetime):
+            if value.tzinfo is not None:
+                value = value.astimezone(UTC).replace(tzinfo=None)
             return value.isoformat()
         return str(value)
 
@@ -340,7 +343,7 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
         uid_global: str,
         version_registro: int,
         snapshot: dict[str, Any],
-        op_id_alta: str,
+        op_id_alta: str | None,
         op_id_ultima_modificacion: str,
     ) -> dict[str, Any]:
         """Inserta snapshot remoto preservando UID/versión; no confirma transacción."""

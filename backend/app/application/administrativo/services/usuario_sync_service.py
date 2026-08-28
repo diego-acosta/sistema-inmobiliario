@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
-
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
 
 from app.application.common.synchronization_policy import validate_sync_event
 from app.application.integration.inbox_retry import (
@@ -17,6 +14,8 @@ from app.infrastructure.persistence.repositories.inbox_repository import InboxRe
 from app.infrastructure.persistence.repositories.usuario_sistema_repository import (
     UsuarioSistemaRepository,
 )
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 USUARIO_SYNC_CONSUMER = "administrativo.usuario"
 USUARIO_SYNC_EVENTS = frozenset({"usuario_creado", "usuario_desactivado"})
@@ -57,10 +56,12 @@ def _validate_portable_datetime(value: Any, *, nullable: bool) -> str | None:
     if not isinstance(value, str) or not value.strip():
         raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code)
     try:
-        datetime.fromisoformat(value)
+        parsed = datetime.fromisoformat(value)
     except ValueError:
         raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code) from None
-    return value
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(UTC).replace(tzinfo=None)
+    return parsed.isoformat()
 
 
 def _validate_event_version(event_type: str, version: Any) -> int:
@@ -227,8 +228,7 @@ class UsuarioSyncApplicator:
                 uid_global=envelope["aggregate_uid"],
                 version_registro=envelope["version_registro"],
                 snapshot=envelope["snapshot"],
-                op_id_alta=envelope["provenance"]["op_id_alta"]
-                or envelope["op_id"],
+                op_id_alta=envelope["provenance"]["op_id_alta"],
                 op_id_ultima_modificacion=envelope["op_id"],
             )
             nested.commit()
@@ -263,9 +263,11 @@ class UsuarioSyncApplicator:
         current = self.repository.get_by_uid_global(envelope["aggregate_uid"])
         if current is None:
             return self._conflict()
-        if current["version_registro"] == envelope["version_registro"]:
-            if self.repository.portable_snapshot(current) == envelope["snapshot"]:
-                return self._processed()
+        if (
+            current["version_registro"] == envelope["version_registro"]
+            and self.repository.portable_snapshot(current) == envelope["snapshot"]
+        ):
+            return self._processed()
         return self._conflict()
 
     def apply(self, event: dict[str, Any]) -> InboxOutcome:
