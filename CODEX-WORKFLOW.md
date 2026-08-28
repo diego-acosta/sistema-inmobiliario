@@ -446,3 +446,135 @@ Al preparar un PR, el entregable final de Codex debe incluir esta tabla:
 | Estados GitHub verificados | PASS/FAIL/NO APLICA |
 | Decisión incluida en body del PR | PASS/FAIL |
 | Decisión de impacto única y no ambigua | PASS/FAIL |
+
+## 14. Escalamiento obligatorio cuando los findings revelan un patrón
+
+Una review puede descubrir un defecto puntual o puede estar revelando una invariante incompleta. No se deben tratar ambos casos de la misma forma.
+
+### Regla de escalamiento
+
+Si aparecen **dos o más findings materialmente relacionados con la misma dimensión conceptual dentro de la misma secuencia de revisión**, aunque estén intercalados con findings de otra naturaleza, o si un nuevo finding es una variante de otro ya observado bajo otra combinación de estado/identidad/concurrencia, se debe detener la secuencia de fixes puntuales antes de seguir agregando parches.
+
+Ejemplos de una misma dimensión conceptual:
+
+- identidad, canonicalización y fingerprint de una operación;
+- estados y transiciones de una máquina de estados;
+- ownership, lease, fencing y takeover;
+- idempotencia, replay y conflicto;
+- atomicidad, savepoints y frontera de commit;
+- autorización/identidad humana o técnica;
+- invariantes SQL cruzadas entre varias columnas.
+
+En ese punto el flujo obligatorio es:
+
+```text
+findings relacionados
+→ detener fixes puntuales
+→ auditoría focal de la clase completa de problema
+→ construir la invariante/matriz completa
+→ clasificar el resultado
+→ recién entonces implementar
+```
+
+La auditoría debe concluir explícitamente en una de estas categorías:
+
+```text
+A. FINDING_PUNTUAL
+B. INVARIANTE_ESTRUCTURAL_INCOMPLETA
+C. REDISENO_NECESARIO
+```
+
+### A. `FINDING_PUNTUAL`
+
+El defecto está aislado y las invariantes vecinas ya están cerradas por arquitectura, SQL/runtime y tests. Corresponde un fix pequeño.
+
+### B. `INVARIANTE_ESTRUCTURAL_INCOMPLETA`
+
+Varios casos inválidos pertenecen a la misma regla faltante. Corresponde un incremento focal que cierre la clase completa sin ampliar innecesariamente el diseño.
+
+Antes de implementar se debe dejar explícito:
+
+- matriz o conjunto completo de estados/casos válidos;
+- casos inválidos hoy permitidos;
+- qué debe garantizar SQL;
+- qué debe validar runtime defensivamente;
+- qué tests cubren la matriz;
+- qué compatibilidad heredada debe preservarse;
+- qué partes del diseño vigente quedan expresamente fuera de revisión.
+
+### C. `REDISENO_NECESARIO`
+
+Las responsabilidades o autoridades del modelo se superponen o contradicen y los fixes locales no pueden cerrar la clase de fallos. Sólo entonces se justifica rediseñar el núcleo afectado.
+
+No elegir `C` por la cantidad de comentarios ni por complejidad aparente: requiere evidencia de inconsistencia conceptual.
+
+### Regla de review posterior
+
+Después de una corrección estructural `B` o un rediseño acotado `C`:
+
+1. ejecutar validación focal y regresión relacionada;
+2. validar PostgreSQL real cuando corresponda;
+3. revisar el diff completo;
+4. solicitar una nueva review sobre el **head exacto** corregido;
+5. no resolver findings históricos como cerrados hasta que el nuevo diseño o invariante haya sido validado y la review final no encuentre un problema equivalente vigente.
+
+El objetivo es evitar el ciclo:
+
+```text
+finding
+→ parche local
+→ finding equivalente
+→ parche local
+→ finding equivalente
+```
+
+cuando la causa real es una invariante no congelada.
+
+## 15. Regla reforzada para trabajos de Sync, concurrencia e idempotencia
+
+En Técnico/Sync y en cualquier incremento distribuido, los findings relacionados con concurrencia, retry o idempotencia deben analizarse primero por **autoridad e invariante**, no sólo por la línea comentada.
+
+### Dimensiones mínimas a revisar
+
+Cuando un patrón de findings afecte Técnico/Sync **o cualquier incremento distribuido con concurrencia, retry, leases, fencing o idempotencia**, la auditoría focal debe comprobar, según aplique:
+
+- **Delivery**: cuál es la identidad de una entrega y qué deduplica.
+- **Operation**: cuál es la identidad funcional/distribuida de la operación y qué define replay/conflicto.
+- **Attempt**: cuál es la identidad de una adquisición concreta y qué demuestra ownership actual.
+- **Ownership**: qué dato es autoridad y qué campos son sólo observabilidad.
+- **Lease / takeover**: qué significa expiry, cuándo se habilita takeover y qué evento revoca efectivamente un intento anterior.
+- **Fencing**: qué mutaciones exigen prueba de ownership y hasta qué frontera debe llegar esa prueba.
+- **Atomicidad**: dónde empieza y termina la transacción que contiene efecto, receipt y transición técnica.
+- **Máquina física de estados**: qué combinaciones `status × envelope × ownership × retry metadata` son válidas y cuáles deben ser físicamente imposibles.
+- **Identidad portable**: PK local vs `uid_global`, canonicalización y target estable.
+- **Fingerprint**: qué envelope semántico completo se canonicaliza antes de hashear.
+- **Default-deny**: validación al ingreso y revalidación antes de aplicar datos retenidos cuando corresponda.
+- **Compatibilidad heredada**: qué paths legacy siguen productivos y qué invariantes deben conservar para no romper callers existentes.
+
+### Reglas específicas
+
+- `worker_id` u otro identificador de proceso no debe asumirse como ownership si varias ejecuciones pueden compartirlo.
+- Un timeout o lease vencido sólo implica lo que el protocolo materialice; no asumir revocación mágica por el paso del tiempo.
+- La deduplicación de `event_id` no debe confundirse con idempotencia de una operación si existe `op_id` u otra identidad funcional distinta.
+- El ledger transversal no debe fingirse como receipt universal cuando varios consumers poseen efectos independientes.
+- Los valores deben canonicalizarse **antes** de fingerprint/persistencia cuando PostgreSQL o adapters puedan normalizarlos después.
+- Las invariantes críticas deben existir en SQL cuando un older writer, SQL manual o corrupción pueda producir una combinación que el runtime normal no genera.
+- La defensa runtime no reemplaza constraints físicos, y los constraints físicos no eliminan la necesidad de defensa runtime frente a schemas desalineados o datos heredados.
+- En máquinas de estados complejas, preferir constraints ortogonales y testeables a un único `CHECK` monolítico cuando eso mejore diagnóstico, reejecución y fail-fast.
+
+### Criterio para volver a implementar
+
+No retomar la implementación hasta poder responder con evidencia:
+
+```text
+qué es válido
+qué es inválido
+quién tiene autoridad
+cómo se adquiere y pierde esa autoridad
+qué garantiza SQL
+qué garantiza runtime
+qué garantiza la transacción
+qué compatibilidad debe preservarse
+```
+
+Esta regla no obliga a rediseñar Sync ante cada finding. Obliga a dejar de parchear síntomas cuando la evidencia muestra que varios findings son manifestaciones de la misma invariante faltante.
