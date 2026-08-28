@@ -37,7 +37,7 @@ _SNAPSHOT_FIELDS = frozenset(
         "deleted",
     }
 )
-_PROVENANCE_FIELDS = frozenset({"op_id_alta"})
+_PROVENANCE_FIELDS = frozenset({"installation_uid", "op_id_alta"})
 
 
 class UsuarioSyncPayloadError(ValueError):
@@ -109,7 +109,8 @@ def _validate_provenance(value: Any) -> dict[str, Any]:
         raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code)
     op_id_alta = value.get("op_id_alta")
     return {
-        "op_id_alta": _canonical_uuid(op_id_alta) if op_id_alta is not None else None
+        "installation_uid": _canonical_uuid(value.get("installation_uid")),
+        "op_id_alta": _canonical_uuid(op_id_alta) if op_id_alta is not None else None,
     }
 
 
