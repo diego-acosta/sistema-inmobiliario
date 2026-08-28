@@ -63,6 +63,16 @@ def _validate_portable_datetime(value: Any, *, nullable: bool) -> str | None:
     return value
 
 
+def _validate_event_version(event_type: str, version: Any) -> int:
+    if not isinstance(version, int) or isinstance(version, bool) or version < 1:
+        raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code)
+    if event_type == "usuario_creado" and version != 1:
+        raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code)
+    if event_type == "usuario_desactivado" and version < 2:
+        raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code)
+    return version
+
+
 def _validate_snapshot(event_type: str, value: Any) -> dict[str, Any]:
     if not isinstance(value, dict) or set(value) != _SNAPSHOT_FIELDS:
         raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code)
@@ -122,10 +132,7 @@ def parse_usuario_outbox_envelope(
     if not isinstance(value, dict) or set(value) != _OUTBOX_ENVELOPE_FIELDS:
         raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code)
 
-    version = value["version_registro"]
-    if not isinstance(version, int) or isinstance(version, bool) or version < 1:
-        raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code)
-
+    version = _validate_event_version(event_type, value["version_registro"])
     snapshot = _validate_snapshot(event_type, value["snapshot"])
     return {
         "aggregate_uid": _canonical_uuid(value["aggregate_uid"]),
@@ -168,9 +175,7 @@ def _parse_retained_event(event: dict[str, Any]) -> dict[str, Any]:
     if event_type not in USUARIO_SYNC_EVENTS or event.get("aggregate_type") != "usuario":
         raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code)
 
-    version = event.get("version_registro")
-    if not isinstance(version, int) or isinstance(version, bool) or version < 1:
-        raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code)
+    version = _validate_event_version(event_type, event.get("version_registro"))
     snapshot = _validate_snapshot(event_type, event.get("payload"))
     provenance = _validate_provenance(event.get("provenance"))
     return {
@@ -212,6 +217,10 @@ class UsuarioSyncApplicator:
         return not self._same_uid(by_login, uid_global)
 
     def _create_missing(self, envelope: dict[str, Any]) -> InboxOutcome:
+        if self._has_identity_collision(
+            uid_global=envelope["aggregate_uid"], snapshot=envelope["snapshot"]
+        ):
+            return self._conflict()
         nested = self.session.begin_nested()
         try:
             self.repository.create_remote_snapshot(
@@ -231,13 +240,10 @@ class UsuarioSyncApplicator:
     def _apply_higher(
         self, *, local: dict[str, Any], envelope: dict[str, Any]
     ) -> InboxOutcome:
-        if (
-            envelope["event_type"] == "usuario_creado"
-            and local["deleted_at"] is not None
+        if self._has_identity_collision(
+            uid_global=envelope["aggregate_uid"], snapshot=envelope["snapshot"]
         ):
-            # Sin lifecycle real de reactivación, un evento de creación no puede revivir.
             return self._conflict()
-
         nested = self.session.begin_nested()
         try:
             updated = self.repository.apply_remote_snapshot_cas(
@@ -273,9 +279,6 @@ class UsuarioSyncApplicator:
         uid_global = envelope["aggregate_uid"]
         snapshot = envelope["snapshot"]
         local = self.repository.get_by_uid_global(uid_global)
-
-        if self._has_identity_collision(uid_global=uid_global, snapshot=snapshot):
-            return self._conflict()
 
         if local is None:
             return self._create_missing(envelope)
