@@ -67,7 +67,7 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
     def _portable_datetime(value: Any) -> str | None:
         if value is None:
             return None
-        if isinstance(value, (datetime,)):
+        if isinstance(value, datetime):
             return value.isoformat()
         return str(value)
 
@@ -91,12 +91,13 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
         cls, row: dict[str, Any], *, op_id: str
     ) -> dict[str, Any]:
         """Envelope emitible sin PK remota, credenciales, sesiones ni último acceso."""
+        op_id_alta = row.get("op_id_alta")
         return {
             "aggregate_uid": str(row["uid_global"]),
             "version_registro": row["version_registro"],
             "op_id": op_id,
             "provenance": {
-                "op_id_alta": str(row["op_id_alta"]),
+                "op_id_alta": str(op_id_alta) if op_id_alta is not None else None,
             },
             "snapshot": cls.portable_snapshot(row),
         }
