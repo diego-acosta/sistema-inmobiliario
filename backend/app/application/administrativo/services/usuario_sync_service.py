@@ -84,13 +84,25 @@ def _validate_snapshot(event_type: str, value: Any) -> dict[str, Any]:
     if not isinstance(value, dict) or set(value) != _SNAPSHOT_FIELDS:
         raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code)
 
-    for field in ("codigo_usuario", "login", "estado_usuario"):
-        if (
-            not isinstance(value[field], str)
-            or not value[field].strip()
-            or len(value[field]) > _SNAPSHOT_STRING_LIMITS[field]
-        ):
+    snapshot = dict(value)
+    for field in ("codigo_usuario", "login"):
+        if not isinstance(value[field], str):
             raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code)
+        normalized = value[field].strip()
+        if not normalized or len(normalized) > _SNAPSHOT_STRING_LIMITS[field]:
+            raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code)
+        snapshot[field] = normalized
+
+    if not isinstance(value["estado_usuario"], str):
+        raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code)
+    estado_usuario = value["estado_usuario"].strip().upper()
+    if (
+        estado_usuario not in {"ACTIVO", "INACTIVO"}
+        or len(estado_usuario) > _SNAPSHOT_STRING_LIMITS["estado_usuario"]
+    ):
+        raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code)
+    snapshot["estado_usuario"] = estado_usuario
+
     if value["email"] is not None and (
         not isinstance(value["email"], str)
         or len(value["email"]) > _SNAPSHOT_STRING_LIMITS["email"]
@@ -103,7 +115,6 @@ def _validate_snapshot(event_type: str, value: Any) -> dict[str, Any]:
     if not isinstance(value["deleted"], bool):
         raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code)
 
-    snapshot = dict(value)
     snapshot["fecha_alta"] = _validate_portable_datetime(
         value["fecha_alta"], nullable=False
     )
@@ -138,6 +149,13 @@ def _validate_provenance(value: Any) -> dict[str, Any]:
     }
 
 
+def _validate_operation_provenance(
+    *, event_type: str, op_id: str, provenance: dict[str, Any]
+) -> None:
+    if event_type == "usuario_creado" and provenance["op_id_alta"] != op_id:
+        raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code)
+
+
 def parse_usuario_outbox_envelope(
     *, event_type: str, aggregate_type: str, value: Any
 ) -> dict[str, Any]:
@@ -148,11 +166,16 @@ def parse_usuario_outbox_envelope(
 
     version = _validate_event_version(event_type, value["version_registro"])
     snapshot = _validate_snapshot(event_type, value["snapshot"])
+    op_id = _canonical_uuid(value["op_id"])
+    provenance = _validate_provenance(value["provenance"])
+    _validate_operation_provenance(
+        event_type=event_type, op_id=op_id, provenance=provenance
+    )
     return {
         "aggregate_uid": _canonical_uuid(value["aggregate_uid"]),
         "version_registro": version,
-        "op_id": _canonical_uuid(value["op_id"]),
-        "provenance": _validate_provenance(value["provenance"]),
+        "op_id": op_id,
+        "provenance": provenance,
         "snapshot": snapshot,
     }
 
@@ -192,11 +215,15 @@ def _parse_retained_event(event: dict[str, Any]) -> dict[str, Any]:
     version = _validate_event_version(event_type, event.get("version_registro"))
     snapshot = _validate_snapshot(event_type, event.get("payload"))
     provenance = _validate_provenance(event.get("provenance"))
+    op_id = _canonical_uuid(event.get("op_id"))
+    _validate_operation_provenance(
+        event_type=event_type, op_id=op_id, provenance=provenance
+    )
     return {
         "event_type": event_type,
         "aggregate_uid": _canonical_uuid(event.get("aggregate_uid")),
         "version_registro": version,
-        "op_id": _canonical_uuid(event.get("op_id")),
+        "op_id": op_id,
         "provenance": provenance,
         "snapshot": snapshot,
     }

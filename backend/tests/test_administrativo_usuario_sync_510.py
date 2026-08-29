@@ -385,6 +385,27 @@ def test_estado_portable_sobredimensionado_es_rechazado():
         )
 
 
+def test_textos_portables_canonicalizan_como_el_request_local():
+    event = _event("TEXT-CANON")
+    event["payload"]["codigo_usuario"] = "  USR-TEXT-CANON  "
+    event["payload"]["login"] = "  usr.text.canon  "
+    event["payload"]["estado_usuario"] = "  inactivo  "
+    parsed = parse_usuario_outbox_envelope(
+        event_type=event["event_type"],
+        aggregate_type=event["aggregate_type"],
+        value={
+            "aggregate_uid": event["aggregate_uid"],
+            "version_registro": event["version_registro"],
+            "op_id": event["op_id"],
+            "provenance": event["provenance"],
+            "snapshot": event["payload"],
+        },
+    )
+    assert parsed["snapshot"]["codigo_usuario"] == "USR-TEXT-CANON"
+    assert parsed["snapshot"]["login"] == "usr.text.canon"
+    assert parsed["snapshot"]["estado_usuario"] == "INACTIVO"
+
+
 def test_timestamps_equivalentes_canonicalizan_snapshot_y_fingerprint():
     base = _event("TIME")
     zulu = deepcopy(base)
@@ -500,12 +521,44 @@ def test_misma_version_mismo_snapshot_es_replay_y_distinto_es_conflicto(db_sessi
 
     same = deepcopy(first)
     same["op_id"] = str(uuid4())
+    same["provenance"]["op_id_alta"] = same["op_id"]
     assert applicator.apply(same).kind == InboxOutcomeKind.PROCESSED
 
     different = deepcopy(same)
     different["op_id"] = str(uuid4())
+    different["provenance"]["op_id_alta"] = different["op_id"]
     different["payload"]["observaciones"] = "snapshot material distinto"
     assert applicator.apply(different).kind == InboxOutcomeKind.CONFLICTO
+
+
+@pytest.mark.parametrize("estado_usuario", ["ACTIVO", "INACTIVO"])
+def test_usuario_creado_acepta_estados_del_request_local(db_session, estado_usuario):
+    event = _event(f"CREATE-{estado_usuario}")
+    event["payload"]["estado_usuario"] = estado_usuario
+    outcome = UsuarioSyncApplicator(db_session).apply(event)
+    assert outcome.kind == InboxOutcomeKind.PROCESSED
+    row = db_session.execute(
+        text(
+            "SELECT estado_usuario, fecha_baja, deleted_at FROM usuario "
+            "WHERE uid_global=CAST(:uid AS uuid)"
+        ),
+        {"uid": event["aggregate_uid"]},
+    ).mappings().one()
+    assert row["estado_usuario"] == estado_usuario
+    assert row["fecha_baja"] is None
+    assert row["deleted_at"] is None
+
+
+def test_usuario_creado_rechaza_estado_fuera_del_request_local(db_session):
+    event = _event("CREATE-CORRUPTO")
+    event["payload"]["estado_usuario"] = "CORRUPTO"
+    outcome = UsuarioSyncApplicator(db_session).apply(event)
+    assert outcome.kind == InboxOutcomeKind.REJECTED
+    assert outcome.reason_code == "SYNC_PAYLOAD_INVALID"
+    assert db_session.execute(
+        text("SELECT count(*) FROM usuario WHERE uid_global=CAST(:uid AS uuid)"),
+        {"uid": event["aggregate_uid"]},
+    ).scalar_one() == 0
 
 
 def test_version_superior_y_salto_aplican_inferior_no_revierte(db_session):
@@ -566,7 +619,8 @@ def test_version_superior_y_salto_aplican_inferior_no_revierte(db_session):
 def test_baja_remota_aplica_snapshot_logico(db_session):
     uid = str(uuid4())
     applicator = UsuarioSyncApplicator(db_session)
-    assert applicator.apply(_event("BAJA", uid=uid)).kind == InboxOutcomeKind.PROCESSED
+    alta = _event("BAJA", uid=uid)
+    assert applicator.apply(alta).kind == InboxOutcomeKind.PROCESSED
 
     baja = _event(
         "BAJA",
@@ -575,6 +629,8 @@ def test_baja_remota_aplica_snapshot_logico(db_session):
         event_type="usuario_desactivado",
         snapshot=_snapshot("BAJA", deleted=True),
     )
+    assert baja["op_id"] != alta["op_id"]
+    baja["provenance"]["op_id_alta"] = alta["op_id"]
     assert applicator.apply(baja).kind == InboxOutcomeKind.PROCESSED
     row = db_session.execute(
         text(
@@ -635,10 +691,8 @@ def test_baja_uid_inexistente_materializa_inactivo_sin_inventar_op_id_alta(db_se
     assert row["op_ultima"] == event["op_id"]
 
 
-def test_alta_remota_conserva_op_id_alta_de_provenance(db_session):
+def test_alta_remota_conserva_op_id_alta_igual_al_op_id(db_session):
     event = _event("PROVENANCE")
-    provenance_op = str(uuid4())
-    event["provenance"]["op_id_alta"] = provenance_op
     assert (
         UsuarioSyncApplicator(db_session).apply(event).kind
         == InboxOutcomeKind.PROCESSED
@@ -651,7 +705,7 @@ def test_alta_remota_conserva_op_id_alta_de_provenance(db_session):
         ),
         {"uid": event["aggregate_uid"]},
     ).mappings().one()
-    assert row["op_alta"] == provenance_op
+    assert row["op_alta"] == event["op_id"]
     assert row["op_ultima"] == event["op_id"]
 
 
@@ -797,6 +851,53 @@ def test_processor_rechaza_email_sobredimensionado_sin_materializar_usuario():
             outcome = run_usuario_inbox_once(
                 session,
                 worker_id="usuario-oversized",
+                event_id=event_id,
+                manual=True,
+            )
+        assert outcome is not None
+        assert outcome.kind == InboxOutcomeKind.REJECTED
+        assert outcome.reason_code == "SYNC_PAYLOAD_INVALID"
+
+        with Session(engine) as verify:
+            assert verify.execute(
+                text(
+                    "SELECT count(*) FROM usuario "
+                    "WHERE uid_global=CAST(:uid AS uuid)"
+                ),
+                {"uid": event["aggregate_uid"]},
+            ).scalar_one() == 0
+            delivery = verify.execute(
+                text(
+                    "SELECT status, error_detail FROM inbox_event "
+                    "WHERE event_id=CAST(:event_id AS uuid) AND consumer=:consumer"
+                ),
+                {"event_id": event_id, "consumer": USUARIO_SYNC_CONSUMER},
+            ).mappings().one()
+            assert dict(delivery) == {
+                "status": "REJECTED",
+                "error_detail": "SYNC_PAYLOAD_INVALID",
+            }
+    finally:
+        _cleanup_committed(
+            uid=event["aggregate_uid"],
+            op_id=event["op_id"],
+            event_ids=[event_id],
+        )
+
+
+@pytest.mark.parametrize("provenance_kind", ["NULL", "DISTINCT"])
+def test_processor_rechaza_alta_con_provenance_incompatible(provenance_kind):
+    event = _event("INVALID-PROVENANCE-" + uuid4().hex[:8])
+    op_id_alta = None if provenance_kind == "NULL" else str(uuid4())
+    assert op_id_alta != event["op_id"]
+    event["provenance"]["op_id_alta"] = op_id_alta
+    event_id = str(uuid4())
+    _committed_register(event, event_id=event_id)
+    try:
+        with Session(engine) as session:
+            outcome = run_usuario_inbox_once(
+                session,
+                worker_id="usuario-invalid-provenance",
                 event_id=event_id,
                 manual=True,
             )

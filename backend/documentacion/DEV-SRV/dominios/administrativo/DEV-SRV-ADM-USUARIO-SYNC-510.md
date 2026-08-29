@@ -101,7 +101,7 @@ El outbox de usuario transporta únicamente:
   "op_id": "<X-Op-Id original>",
   "provenance": {
     "installation_uid": "<instalacion.uid_global del write origen>",
-    "op_id_alta": "<op_id de alta o null para legacy previo>"
+    "op_id_alta": "<mismo op_id del usuario_creado>"
   },
   "snapshot": {
     "codigo_usuario": "...",
@@ -119,9 +119,13 @@ El outbox de usuario transporta únicamente:
 
 El `event_type` y `aggregate_type=usuario` pertenecen a la cabecera del outbox/inbox y no se duplican dentro del snapshot funcional.
 
+Para `usuario_creado`, `estado_usuario` admite exactamente `ACTIVO` o `INACTIVO`, igual que `UsuarioSistemaCreateRequest`, con `deleted=false`, `fecha_baja=null` y versión 1. Para `usuario_desactivado`, exige `INACTIVO`, `deleted=true`, `fecha_baja` no nula y versión 2 o superior.
+
+`codigo_usuario` y `login` se recortan con la misma normalización del request local; `estado_usuario` además se canonicaliza a mayúsculas antes de validar el conjunto permitido. Esta canonicalización y la de timestamps ocurren antes del claim, fingerprint y comparación material.
+
 `provenance.installation_uid` conserva la identidad portable de la instalación que produjo el write. La PK `id_instalacion` del origen no viaja. El receptor no transforma esa procedencia en una FK local ni bloquea el usuario esperando que exista una fila de instalación equivalente: el dato queda retenido como procedencia técnica y participa del fingerprint de #512.
 
-`provenance.op_id_alta` conserva exclusivamente la operación distribuida que creó la identidad. Si el origen legacy no la conoce, viaja y se persiste `null`; nunca se sustituye por el `op_id` de una baja u operación posterior. `op_id_ultima_modificacion` conserva el `op_id` del evento aplicado.
+`provenance.op_id_alta` conserva exclusivamente la operación distribuida que creó la identidad. En `usuario_creado` es obligatorio, debe ser UUID válido y coincidir exactamente con el `op_id` del envelope. En `usuario_desactivado` puede ser distinto del `op_id` de baja o `null` cuando el origen no conoce la operación histórica de creación; nunca se sustituye por el `op_id` de una baja u operación posterior. `op_id_ultima_modificacion` conserva el `op_id` del evento aplicado.
 
 Los timestamps portables usan una representación única compatible con las columnas `timestamp without time zone`: una entrada con timezone u offset se convierte al instante UTC, se elimina `tzinfo` después de esa conversión y se serializa como ISO UTC-naive. Una entrada naive se interpreta como ya expresada en esa convención. La canonicalización ocurre antes de claim, fingerprint y comparación de snapshots; no usa el reloj local del worker.
 

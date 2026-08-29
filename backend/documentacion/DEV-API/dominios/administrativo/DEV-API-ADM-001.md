@@ -90,9 +90,9 @@ Criterios explícitos:
   - mismo `X-Op-Id` + payload distinto: `409 IDEMPOTENT_DUPLICATE`.
   - retry post-error: solo se considera idempotente si existe registro persistido con ese `op_id_alta`.
 - Versionado: crea con `version_registro = 1`.
-- Outbox: conceptualmente sincronizable según `SRV-ADM-001`/`EVT-ADM`; en la implementación vigente de usuario base no se evidencia evento outbox persistido en tests/repositorio, por lo que queda `NO CONFIRMADO` para esta operación.
+- Outbox: APLICA; emite `usuario_creado` antes del mismo commit que persiste el usuario. El replay local compatible por el mismo `X-Op-Id` no emite un segundo evento.
 - Lock lógico: NO APLICA; no hay lock lógico implementado para alta de usuario.
-- Frontera transaccional: inserción de `usuario` y metadatos CORE-EF del alta.
+- Frontera transaccional: inserción de `usuario`, metadatos CORE-EF y outbox comparten transacción y commit. Un fallo al resolver provenance o persistir el outbox revierte el alta completa.
 
 Request principal:
 
@@ -184,12 +184,13 @@ Errores esperados:
   - `If-Match-Version`
 - Idempotencia: aplica por `X-Op-Id` / `op_id_ultima_modificacion` para retry de baja ya aplicada.
   - mismo `X-Op-Id` sobre la misma baja ya persistida: devuelve el estado ya dado de baja sin incrementar dos veces `version_registro`.
+  - reutilización del `X-Op-Id` del alta u otra operación incompatible: `409 IDEMPOTENT_DUPLICATE` antes de mutar o emitir outbox.
   - versión distinta sin baja previa por ese `X-Op-Id`: `409 CONCURRENCY_ERROR`.
 - Versionado: requiere `If-Match-Version`; al aplicar baja incrementa `version_registro + 1`.
 - Baja lógica: establece `estado_usuario = INACTIVO`, `fecha_baja` y `deleted_at`.
-- Outbox: conceptualmente sincronizable según `SRV-ADM-001`/`EVT-ADM` (`usuario_desactivado`); en la implementación vigente no se evidencia evento outbox persistido en tests/repositorio, por lo que queda `NO CONFIRMADO` para esta operación.
+- Outbox: APLICA; emite `usuario_desactivado` antes del mismo commit que persiste la baja. El retry legítimo de esa misma baja no emite un segundo evento.
 - Lock lógico: NO APLICA; no hay lock lógico implementado.
-- Frontera transaccional: actualización del usuario y metadatos CORE-EF de modificación.
+- Frontera transaccional: baja, incremento de versión, metadatos CORE-EF y outbox comparten transacción y commit. Un fallo al resolver provenance o persistir el outbox revierte la baja y la versión.
 
 Response principal (`200`): envelope `{ "ok": true, "data": UsuarioSistemaData }` con `fecha_baja`, `estado_usuario = INACTIVO`, `deleted_at` persistido y `version_registro` incrementado.
 
@@ -197,6 +198,7 @@ Errores esperados:
 
 - `400 VALIDATION_ERROR`: headers CORE-EF faltantes/inválidos o `If-Match-Version` faltante/inválido.
 - `404 NOT_FOUND`: usuario inexistente.
+- `409 IDEMPOTENT_DUPLICATE`: `X-Op-Id` reutilizado por una operación incompatible.
 - `409 CONCURRENCY_ERROR`: mismatch real de versión.
 - `500 TECHNICAL_INCONSISTENCY`.
 
