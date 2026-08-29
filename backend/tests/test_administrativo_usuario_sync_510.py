@@ -1296,53 +1296,142 @@ def test_op_id_global_rechaza_alta_y_baja_de_usuarios_distintos(client, db_sessi
     assert row["deleted_at"] is None
 
 
-def test_op_id_global_serializa_bajas_concurrentes_de_usuarios_distintos(client):
-    created = []
-    for suffix in ("A", "B"):
-        response = client.post(
-            "/api/v1/administrativo/usuarios",
-            json=_payload(f"GLOBAL-BAJA-{suffix}-" + uuid4().hex[:6]),
-            headers=_headers(),
-        )
-        assert response.status_code == 201
-        created.append(response.json()["data"])
+def _create_committed_usuario(payload: dict, *, op_id: str) -> dict:
+    with Session(engine) as session:
+        return UsuarioSistemaRepository(session).create(payload, _core(op_id))
 
-    op_id = str(uuid4())
-    start = threading.Barrier(2)
 
-    def deactivate(row: dict) -> tuple[int, str]:
-        with Session(engine) as session:
-            start.wait(timeout=5)
-            try:
-                result = UsuarioSistemaRepository(session).baja_logica(
-                    row["id_usuario"],
-                    core=_core(op_id, version=row["version_registro"]),
-                    if_match_version=row["version_registro"],
-                )
-                assert result is not None
-                return row["id_usuario"], "PROCESSED"
-            except UsuarioIdempotencyConflictError:
-                session.rollback()
-                return row["id_usuario"], "CONFLICTO"
-
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        results = list(pool.map(deactivate, created))
-    assert sorted(result for _, result in results) == ["CONFLICTO", "PROCESSED"]
-
-    with Session(engine) as verify:
-        states = {
-            row["id_usuario"]: UsuarioSistemaRepository(verify).get(row["id_usuario"])
-            for row in created
-        }
-        assert sum(
-            state is not None and state["deleted_at"] is not None
-            for state in states.values()
-        ) == 1
-        assert verify.execute(
+def _cleanup_committed_usuarios(*, user_ids: list[int], op_ids: list[str]) -> None:
+    with engine.begin() as connection:
+        connection.execute(
             text(
-                "SELECT count(*) FROM outbox_event "
-                "WHERE event_type='usuario_desactivado' "
-                "AND payload->>'op_id'=:op_id"
+                "DELETE FROM outbox_event WHERE aggregate_type='usuario' "
+                "AND aggregate_id=ANY(:user_ids)"
             ),
-            {"op_id": op_id},
-        ).scalar_one() == 1
+            {"user_ids": user_ids},
+        )
+        for trigger_name in (
+            "trg_bud_operacion_idempotente_inmutable",
+            "trg_bt_operacion_idempotente_inmutable",
+        ):
+            connection.execute(
+                text(
+                    "ALTER TABLE operacion_idempotente DISABLE TRIGGER "
+                    f"{trigger_name}"
+                )
+            )
+        try:
+            connection.execute(
+                text("DELETE FROM operacion_idempotente WHERE op_id=ANY(:op_ids)"),
+                {"op_ids": [UUID(value) for value in op_ids]},
+            )
+        finally:
+            for trigger_name in (
+                "trg_bud_operacion_idempotente_inmutable",
+                "trg_bt_operacion_idempotente_inmutable",
+            ):
+                connection.execute(
+                    text(
+                        "ALTER TABLE operacion_idempotente ENABLE ALWAYS TRIGGER "
+                        f"{trigger_name}"
+                    )
+                )
+        connection.execute(
+            text("DELETE FROM usuario WHERE id_usuario=ANY(:user_ids)"),
+            {"user_ids": user_ids},
+        )
+
+
+def test_op_id_global_serializa_bajas_concurrentes_de_usuarios_distintos():
+    created = []
+    create_op_ids = []
+    op_id = str(uuid4())
+    try:
+        for suffix in ("A", "B"):
+            create_op_id = str(uuid4())
+            create_op_ids.append(create_op_id)
+            created.append(
+                _create_committed_usuario(
+                    _payload(f"GLOBAL-BAJA-{suffix}-" + uuid4().hex[:6]),
+                    op_id=create_op_id,
+                )
+            )
+
+        with Session(engine) as visible_session:
+            assert all(
+                UsuarioSistemaRepository(visible_session).get(row["id_usuario"])
+                is not None
+                for row in created
+            )
+
+        start = threading.Barrier(2)
+
+        def deactivate(row: dict) -> tuple[int, str]:
+            with Session(engine) as session:
+                start.wait(timeout=5)
+                try:
+                    result = UsuarioSistemaRepository(session).baja_logica(
+                        row["id_usuario"],
+                        core=_core(op_id, version=row["version_registro"]),
+                        if_match_version=row["version_registro"],
+                    )
+                    assert result is not None
+                    return row["id_usuario"], "PROCESSED"
+                except UsuarioIdempotencyConflictError:
+                    session.rollback()
+                    return row["id_usuario"], "CONFLICTO"
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(deactivate, created))
+        assert sorted(result for _, result in results) == ["CONFLICTO", "PROCESSED"]
+        processed_id = next(
+            id_usuario for id_usuario, result in results if result == "PROCESSED"
+        )
+        conflict_id = next(
+            id_usuario for id_usuario, result in results if result == "CONFLICTO"
+        )
+
+        with Session(engine) as verify:
+            states = {
+                row["id_usuario"]: UsuarioSistemaRepository(verify).get(
+                    row["id_usuario"]
+                )
+                for row in created
+            }
+            assert states[processed_id] is not None
+            assert states[processed_id]["deleted_at"] is not None
+            assert states[processed_id]["estado_usuario"] == "INACTIVO"
+            assert states[conflict_id] is not None
+            assert states[conflict_id]["deleted_at"] is None
+            assert states[conflict_id]["estado_usuario"] == "ACTIVO"
+
+            outbox = verify.execute(
+                text(
+                    "SELECT aggregate_id FROM outbox_event "
+                    "WHERE event_type='usuario_desactivado' "
+                    "AND payload->>'op_id'=:op_id"
+                ),
+                {"op_id": op_id},
+            ).mappings().one()
+            assert outbox["aggregate_id"] == processed_id
+
+            receipt = verify.execute(
+                text(
+                    "SELECT command_code, target_type, target_key, "
+                    "result_target_uid::text AS result_target_uid, result_version "
+                    "FROM operacion_idempotente WHERE op_id=CAST(:op_id AS uuid)"
+                ),
+                {"op_id": op_id},
+            ).mappings().one()
+            assert receipt["command_code"] == "ADMIN.USUARIO.DEACTIVATE"
+            assert receipt["target_type"] == "USUARIO"
+            assert receipt["target_key"] == str(processed_id)
+            assert receipt["result_target_uid"] == str(
+                states[processed_id]["uid_global"]
+            )
+            assert receipt["result_version"] == 2
+    finally:
+        _cleanup_committed_usuarios(
+            user_ids=[row["id_usuario"] for row in created],
+            op_ids=[*create_op_ids, op_id],
+        )
