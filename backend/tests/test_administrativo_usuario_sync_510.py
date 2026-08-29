@@ -396,29 +396,48 @@ def test_version_superior_y_salto_aplican_inferior_no_revierte(db_session):
     applicator = UsuarioSyncApplicator(db_session)
     assert applicator.apply(_event("VERS", uid=uid)).kind == InboxOutcomeKind.PROCESSED
 
-    v3_snapshot = _snapshot("VERS")
+    v3_snapshot = _snapshot("VERS", deleted=True)
     v3_snapshot["observaciones"] = "versión 3 aceptada por snapshot autoritativo"
-    v3 = _event("VERS", uid=uid, version=3, snapshot=v3_snapshot)
+    v3 = _event(
+        "VERS",
+        uid=uid,
+        version=3,
+        event_type="usuario_desactivado",
+        snapshot=v3_snapshot,
+    )
     assert applicator.apply(v3).kind == InboxOutcomeKind.PROCESSED
 
     local = dict(
         db_session.execute(
             text(
-                "SELECT version_registro, observaciones FROM usuario "
+                "SELECT version_registro, estado_usuario, fecha_baja, deleted_at, "
+                "observaciones FROM usuario "
                 "WHERE uid_global=CAST(:uid AS uuid)"
             ),
             {"uid": uid},
         ).mappings().one()
     )
     assert local["version_registro"] == 3
+    assert local["estado_usuario"] == "INACTIVO"
+    assert local["fecha_baja"] is not None
+    assert local["deleted_at"] is not None
     assert local["observaciones"] == v3_snapshot["observaciones"]
 
-    old = _event("VERS", uid=uid, version=2)
+    v2_snapshot = _snapshot("VERS", deleted=True)
+    v2_snapshot["observaciones"] = "versión 2 obsoleta no debe reemplazar V3"
+    old = _event(
+        "VERS",
+        uid=uid,
+        version=2,
+        event_type="usuario_desactivado",
+        snapshot=v2_snapshot,
+    )
     assert applicator.apply(old).kind == InboxOutcomeKind.PROCESSED
     after = dict(
         db_session.execute(
             text(
-                "SELECT version_registro, observaciones FROM usuario "
+                "SELECT version_registro, estado_usuario, fecha_baja, deleted_at, "
+                "observaciones FROM usuario "
                 "WHERE uid_global=CAST(:uid AS uuid)"
             ),
             {"uid": uid},
