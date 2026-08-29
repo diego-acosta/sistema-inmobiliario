@@ -1,7 +1,17 @@
 from datetime import UTC, datetime
 from typing import Any
+from uuid import UUID
 
 from app.api.core_ef_headers import CoreEFHeaders
+from app.application.common.idempotency import (
+    CANONICALIZATION_VERSION,
+    ClaimDecision,
+    OperationClaim,
+    OperationCompletion,
+    canonical_payload_hash,
+    claim_operation,
+    complete_operation,
+)
 from app.infrastructure.persistence.base_repository import BaseRepository
 from app.infrastructure.persistence.repositories.outbox_repository import (
     OutboxRepository,
@@ -47,6 +57,10 @@ _PAYLOAD_FIELDS = (
     "observaciones",
 )
 
+_CREATE_COMMAND = "ADMIN.USUARIO.CREATE"
+_DEACTIVATE_COMMAND = "ADMIN.USUARIO.DEACTIVATE"
+_IDEMPOTENCY_TARGET_TYPE = "USUARIO"
+
 
 class UsuarioSistemaRepository(BaseRepository[Any]):
     def __init__(self, session) -> None:
@@ -63,6 +77,74 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
             if row.get(field) != payload.get(field):
                 return False
         return True
+
+    @classmethod
+    def _idempotency_snapshot(cls, row: dict[str, Any]) -> dict[str, Any]:
+        snapshot = dict(row)
+        for field in (
+            "fecha_alta",
+            "fecha_baja",
+            "fecha_ultimo_acceso",
+            "updated_at",
+            "deleted_at",
+        ):
+            snapshot[field] = cls._portable_datetime(snapshot.get(field))
+        for field in ("uid_global", "op_id_alta", "op_id_ultima_modificacion"):
+            if snapshot.get(field) is not None:
+                snapshot[field] = str(snapshot[field])
+        return snapshot
+
+    @staticmethod
+    def _replay_snapshot(value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            raise TypeError("IDEMPOTENCY_TECHNICAL_ERROR")
+        return dict(value)
+
+    @staticmethod
+    def _raise_claim_conflict() -> None:
+        raise UsuarioIdempotencyConflictError(
+            "El X-Op-Id ya fue usado por una operación incompatible."
+        )
+
+    def _rows_by_any_op_id(self, op_id: str) -> list[dict[str, Any]]:
+        rows = self.db.execute(
+            text(
+                f"SELECT {_USUARIO_COLUMNS} FROM usuario "
+                "WHERE op_id_alta=:op_id OR op_id_ultima_modificacion=:op_id"
+            ),
+            {"op_id": op_id},
+        ).mappings().all()
+        return [self._map(row) for row in rows]
+
+    def _complete_operation(
+        self,
+        *,
+        claim: OperationClaim,
+        row: dict[str, Any],
+        result_code: str,
+        result_http_status: int,
+        core: CoreEFHeaders,
+    ) -> None:
+        complete_operation(
+            self.db,
+            OperationCompletion(
+                op_id=claim.op_id,
+                command_code=claim.command_code,
+                target_type=claim.target_type,
+                target_uid=claim.target_uid,
+                target_key=claim.target_key,
+                payload_hash=claim.payload_hash,
+                canonicalization_version=claim.canonicalization_version,
+                result_code=result_code,
+                result_http_status=result_http_status,
+                result_target_uid=UUID(str(row["uid_global"])),
+                result_version=row["version_registro"],
+                response_snapshot=self._idempotency_snapshot(row),
+                id_usuario=core.x_usuario_id,
+                id_sucursal=core.x_sucursal_id,
+                id_instalacion=core.x_instalacion_id,
+            ),
+        )
 
     @staticmethod
     def _portable_datetime(value: Any) -> str | None:
@@ -198,13 +280,30 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
 
     def create(self, payload: dict[str, Any], core: CoreEFHeaders) -> dict[str, Any]:
         op_id = str(core.x_op_id)
-        existing = self.get_by_op_id_alta(op_id)
-        if existing is not None:
-            if not self._payload_matches(existing, payload):
-                raise UsuarioIdempotencyConflictError(
-                    "El X-Op-Id ya fue usado con un payload incompatible."
-                )
-            return existing
+        claim = OperationClaim(
+            op_id=core.x_op_id,
+            command_code=_CREATE_COMMAND,
+            target_type=_IDEMPOTENCY_TARGET_TYPE,
+            target_uid=None,
+            target_key=None,
+            payload_hash=canonical_payload_hash(payload),
+            canonicalization_version=CANONICALIZATION_VERSION,
+        )
+        decision = claim_operation(self.db, claim)
+        if decision.decision is ClaimDecision.REPLAY:
+            return self._replay_snapshot(decision.replay.response_snapshot)
+        if decision.decision is ClaimDecision.CONFLICT:
+            self._raise_claim_conflict()
+
+        used_rows = self._rows_by_any_op_id(op_id)
+        if used_rows:
+            if (
+                len(used_rows) == 1
+                and str(used_rows[0].get("op_id_alta")) == op_id
+                and self._payload_matches(used_rows[0], payload)
+            ):
+                return used_rows[0]
+            self._raise_claim_conflict()
 
         statement = text(
             f"""
@@ -245,6 +344,13 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
         try:
             row = self._map(self.db.execute(statement, values).mappings().one())
             self._emit_sync_event(event_type="usuario_creado", row=row, op_id=op_id)
+            self._complete_operation(
+                claim=claim,
+                row=row,
+                result_code="USUARIO_CREADO",
+                result_http_status=201,
+                core=core,
+            )
             self.db.commit()
             return row
         except Exception:
@@ -286,28 +392,35 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
         if_match_version: int,
     ) -> dict[str, Any] | None:
         op_id = str(core.x_op_id)
+        claim = OperationClaim(
+            op_id=core.x_op_id,
+            command_code=_DEACTIVATE_COMMAND,
+            target_type=_IDEMPOTENCY_TARGET_TYPE,
+            target_uid=None,
+            target_key=str(id_usuario),
+            payload_hash=canonical_payload_hash(
+                {"id_usuario": id_usuario, "if_match_version": if_match_version}
+            ),
+            canonicalization_version=CANONICALIZATION_VERSION,
+        )
+        decision = claim_operation(self.db, claim)
+        if decision.decision is ClaimDecision.REPLAY:
+            return self._replay_snapshot(decision.replay.response_snapshot)
+        if decision.decision is ClaimDecision.CONFLICT:
+            self._raise_claim_conflict()
+
         actual = self.get(id_usuario)
         if actual is None:
             return None
 
+        used_rows = self._rows_by_any_op_id(op_id)
         if (
             str(actual.get("op_id_ultima_modificacion")) == op_id
             and actual.get("deleted_at") is not None
         ):
             return actual
-
-        used_op_ids = {
-            str(value)
-            for value in (
-                actual.get("op_id_alta"),
-                actual.get("op_id_ultima_modificacion"),
-            )
-            if value is not None
-        }
-        if op_id in used_op_ids:
-            raise UsuarioIdempotencyConflictError(
-                "El X-Op-Id ya fue usado por una operación incompatible."
-            )
+        if used_rows:
+            self._raise_claim_conflict()
 
         if actual["version_registro"] != if_match_version:
             raise UsuarioConcurrencyError("La versión del usuario no coincide.")
@@ -343,6 +456,13 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
             row = self._map(result)
             self._emit_sync_event(
                 event_type="usuario_desactivado", row=row, op_id=op_id
+            )
+            self._complete_operation(
+                claim=claim,
+                row=row,
+                result_code="USUARIO_DESACTIVADO",
+                result_http_status=200,
+                core=core,
             )
             self.db.commit()
             return row

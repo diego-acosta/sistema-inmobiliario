@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
+from app.api.core_ef_headers import CoreEFHeaders
 from app.application.administrativo.services.usuario_sync_service import (
     USUARIO_SYNC_CONSUMER,
     UsuarioSyncApplicator,
@@ -20,6 +23,10 @@ from app.infrastructure.persistence.repositories.inbox_repository import (
     InboxRepository,
     compute_retained_envelope_fingerprint,
 )
+from app.infrastructure.persistence.repositories.usuario_sistema_repository import (
+    UsuarioIdempotencyConflictError,
+    UsuarioSistemaRepository,
+)
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -30,6 +37,16 @@ CORE_HEADERS = {
     "X-Instalacion-Id": "1",
 }
 TEST_INSTALLATION_UID = str(uuid4())
+
+
+def _core(op_id: str, *, version: int | None = None) -> CoreEFHeaders:
+    return CoreEFHeaders(
+        x_op_id=UUID(op_id),
+        x_usuario_id=1,
+        x_sucursal_id=1,
+        x_instalacion_id=1,
+        if_match_version=version,
+    )
 
 
 def _headers(op_id: str | None = None, *, version: int | None = None) -> dict[str, str]:
@@ -1081,3 +1098,251 @@ def test_operation_scope_usuario_replay_y_conflicto_postgresql_real():
             op_id=op_id,
             event_ids=[first_id, replay_id, conflict_id],
         )
+
+
+def _run_applicator_race(
+    events: dict[str, dict], *, winner: str, delayed_method: str
+) -> dict[str, InboxOutcomeKind]:
+    initial_reads = threading.Barrier(2)
+    winner_committed = threading.Event()
+    outcomes: dict[str, InboxOutcomeKind] = {}
+    result_lock = threading.Lock()
+
+    def worker(name: str) -> None:
+        try:
+            with Session(engine) as session:
+                applicator = UsuarioSyncApplicator(session)
+                real_get = applicator.repository.get_by_uid_global
+                first_read = True
+
+                def synchronized_get(uid_global: str):
+                    nonlocal first_read
+                    current = real_get(uid_global)
+                    if first_read:
+                        first_read = False
+                        initial_reads.wait(timeout=5)
+                    return current
+
+                applicator.repository.get_by_uid_global = synchronized_get
+                if name != winner:
+                    real_write = getattr(applicator.repository, delayed_method)
+
+                    def delayed_write(**kwargs):
+                        assert winner_committed.wait(timeout=5)
+                        return real_write(**kwargs)
+
+                    setattr(applicator.repository, delayed_method, delayed_write)
+
+                outcome = applicator.apply(events[name])
+                session.commit()
+                with result_lock:
+                    outcomes[name] = outcome.kind
+        finally:
+            if name == winner:
+                winner_committed.set()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(worker, name) for name in events]
+        for future in futures:
+            future.result(timeout=10)
+    return outcomes
+
+
+@pytest.mark.parametrize("winner", ["v1", "v2"])
+def test_insert_race_v1_v2_mismo_uid_converge_a_baja_v2(winner):
+    uid = str(uuid4())
+    suffix = "INSERT-RACE-" + uuid4().hex[:8]
+    v1 = _event(suffix, uid=uid)
+    v2_snapshot = deepcopy(v1["payload"])
+    v2_snapshot.update(
+        {
+            "estado_usuario": "INACTIVO",
+            "fecha_baja": "2026-08-29T10:00:02",
+            "deleted": True,
+            "observaciones": "baja V2 ganadora",
+        }
+    )
+    v2 = _event(
+        suffix,
+        uid=uid,
+        version=2,
+        event_type="usuario_desactivado",
+        snapshot=v2_snapshot,
+    )
+    try:
+        outcomes = _run_applicator_race(
+            {"v1": v1, "v2": v2},
+            winner=winner,
+            delayed_method="create_remote_snapshot",
+        )
+        assert outcomes == {
+            "v1": InboxOutcomeKind.PROCESSED,
+            "v2": InboxOutcomeKind.PROCESSED,
+        }
+        with Session(engine) as verify:
+            row = UsuarioSistemaRepository(verify).get_by_uid_global(uid)
+            assert row is not None
+            assert row["version_registro"] == 2
+            assert row["estado_usuario"] == "INACTIVO"
+            assert row["deleted_at"] is not None
+            assert row["observaciones"] == "baja V2 ganadora"
+    finally:
+        with engine.begin() as connection:
+            connection.execute(
+                text("DELETE FROM usuario WHERE uid_global=CAST(:uid AS uuid)"),
+                {"uid": uid},
+            )
+
+
+@pytest.mark.parametrize("winner", ["v2", "v3"])
+def test_cas_race_v2_v3_desde_v1_converge_a_v3(winner):
+    uid = str(uuid4())
+    suffix = "CAS-RACE-" + uuid4().hex[:8]
+    v1 = _event(suffix, uid=uid)
+    with Session(engine) as seed_session:
+        assert UsuarioSyncApplicator(seed_session).apply(v1).kind == (
+            InboxOutcomeKind.PROCESSED
+        )
+        seed_session.commit()
+
+    def deactivation(version: int) -> dict:
+        snapshot = deepcopy(v1["payload"])
+        snapshot.update(
+            {
+                "estado_usuario": "INACTIVO",
+                "fecha_baja": f"2026-08-29T10:00:0{version}",
+                "deleted": True,
+                "observaciones": f"snapshot V{version}",
+            }
+        )
+        return _event(
+            suffix,
+            uid=uid,
+            version=version,
+            event_type="usuario_desactivado",
+            snapshot=snapshot,
+        )
+
+    try:
+        outcomes = _run_applicator_race(
+            {"v2": deactivation(2), "v3": deactivation(3)},
+            winner=winner,
+            delayed_method="apply_remote_snapshot_cas",
+        )
+        assert outcomes == {
+            "v2": InboxOutcomeKind.PROCESSED,
+            "v3": InboxOutcomeKind.PROCESSED,
+        }
+        with Session(engine) as verify:
+            row = UsuarioSistemaRepository(verify).get_by_uid_global(uid)
+            assert row is not None
+            assert row["version_registro"] == 3
+            assert row["observaciones"] == "snapshot V3"
+            assert row["deleted_at"] is not None
+    finally:
+        with engine.begin() as connection:
+            connection.execute(
+                text("DELETE FROM usuario WHERE uid_global=CAST(:uid AS uuid)"),
+                {"uid": uid},
+            )
+
+
+def test_op_id_global_rechaza_altas_de_usuarios_distintos(client, db_session):
+    op_id = str(uuid4())
+    first = client.post(
+        "/api/v1/administrativo/usuarios",
+        json=_payload("GLOBAL-ALTA-A-" + uuid4().hex[:6]),
+        headers=_headers(op_id),
+    )
+    second = client.post(
+        "/api/v1/administrativo/usuarios",
+        json=_payload("GLOBAL-ALTA-B-" + uuid4().hex[:6]),
+        headers=_headers(op_id),
+    )
+    assert first.status_code == 201
+    assert second.status_code == 409
+    assert second.json()["error_code"] == "IDEMPOTENT_DUPLICATE"
+    assert db_session.execute(
+        text("SELECT count(*) FROM outbox_event WHERE payload->>'op_id'=:op_id"),
+        {"op_id": op_id},
+    ).scalar_one() == 1
+
+
+def test_op_id_global_rechaza_alta_y_baja_de_usuarios_distintos(client, db_session):
+    op_id = str(uuid4())
+    first = client.post(
+        "/api/v1/administrativo/usuarios",
+        json=_payload("GLOBAL-CROSS-A-" + uuid4().hex[:6]),
+        headers=_headers(op_id),
+    )
+    target = client.post(
+        "/api/v1/administrativo/usuarios",
+        json=_payload("GLOBAL-CROSS-B-" + uuid4().hex[:6]),
+        headers=_headers(),
+    )
+    assert first.status_code == target.status_code == 201
+    target_row = target.json()["data"]
+
+    rejected = client.patch(
+        f"/api/v1/administrativo/usuarios/{target_row['id_usuario']}/baja",
+        headers=_headers(op_id, version=target_row["version_registro"]),
+    )
+    assert rejected.status_code == 409
+    assert rejected.json()["error_code"] == "IDEMPOTENT_DUPLICATE"
+    row = UsuarioSistemaRepository(db_session).get(target_row["id_usuario"])
+    assert row is not None
+    assert row["estado_usuario"] == "ACTIVO"
+    assert row["version_registro"] == 1
+    assert row["deleted_at"] is None
+
+
+def test_op_id_global_serializa_bajas_concurrentes_de_usuarios_distintos(client):
+    created = []
+    for suffix in ("A", "B"):
+        response = client.post(
+            "/api/v1/administrativo/usuarios",
+            json=_payload(f"GLOBAL-BAJA-{suffix}-" + uuid4().hex[:6]),
+            headers=_headers(),
+        )
+        assert response.status_code == 201
+        created.append(response.json()["data"])
+
+    op_id = str(uuid4())
+    start = threading.Barrier(2)
+
+    def deactivate(row: dict) -> tuple[int, str]:
+        with Session(engine) as session:
+            start.wait(timeout=5)
+            try:
+                result = UsuarioSistemaRepository(session).baja_logica(
+                    row["id_usuario"],
+                    core=_core(op_id, version=row["version_registro"]),
+                    if_match_version=row["version_registro"],
+                )
+                assert result is not None
+                return row["id_usuario"], "PROCESSED"
+            except UsuarioIdempotencyConflictError:
+                session.rollback()
+                return row["id_usuario"], "CONFLICTO"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(deactivate, created))
+    assert sorted(result for _, result in results) == ["CONFLICTO", "PROCESSED"]
+
+    with Session(engine) as verify:
+        states = {
+            row["id_usuario"]: UsuarioSistemaRepository(verify).get(row["id_usuario"])
+            for row in created
+        }
+        assert sum(
+            state is not None and state["deleted_at"] is not None
+            for state in states.values()
+        ) == 1
+        assert verify.execute(
+            text(
+                "SELECT count(*) FROM outbox_event "
+                "WHERE event_type='usuario_desactivado' "
+                "AND payload->>'op_id'=:op_id"
+            ),
+            {"op_id": op_id},
+        ).scalar_one() == 1

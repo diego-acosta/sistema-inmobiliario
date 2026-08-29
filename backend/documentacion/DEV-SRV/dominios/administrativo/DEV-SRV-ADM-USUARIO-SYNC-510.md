@@ -68,23 +68,25 @@ POST  /api/v1/administrativo/usuarios
 PATCH /api/v1/administrativo/usuarios/{id_usuario}/baja
 ```
 
-El repository vigente ya coordinaba el commit de esos dos writes y sólo esos callers reales fueron encontrados para el lifecycle de usuario. #510 incorpora el `outbox_event` antes de ese mismo commit:
+El repository coordina el commit de esos dos writes y sólo esos callers reales fueron encontrados para el lifecycle de usuario. Los commands consumen el claim/receipt global de `operacion_idempotente` materializado por #469/#470; el lock transaccional estable del claim serializa un mismo `op_id` incluso entre usuarios y commands distintos. #510 incorpora el `outbox_event` y el receipt antes de ese mismo commit:
 
 ```text
+claim global de op_id
 mutación usuario
 → resolver provenance portable de instalación
 → construir snapshot portable
 → INSERT outbox_event
+→ complete_operation
 → commit
 ```
 
 Si falla la resolución de provenance o el outbox:
 
 ```text
-rollback usuario + outbox
+rollback usuario + outbox + receipt
 ```
 
-Los replays locales por `op_id_alta` / `op_id_ultima_modificacion` no emiten un segundo evento. Para writes nuevos ejecutados bajo #510, si la mutación original existe, su outbox fue confirmado en la misma transacción.
+Los replays locales nuevos se resuelven por el receipt global y no emiten un segundo evento. Un mismo `op_id` no puede identificar dos operaciones funcionales distintas, aunque apunten a usuarios diferentes. `op_id_alta` y `op_id_ultima_modificacion` conservan provenance row-local y sirven como evidencia compatible para datos legacy, pero no son la autoridad concurrente global. Para writes nuevos ejecutados bajo #510, si la mutación original existe, su outbox y receipt fueron confirmados en la misma transacción.
 
 La garantía es prospectiva desde el despliegue de #510. Filas u operaciones históricas anteriores pueden conservar `op_id` sin un outbox de usuario asociado. Un retry histórico no repara ni reemite implícitamente ese outbox; backfill, reemisión y convergencia histórica pertenecen a un follow-up separado.
 
@@ -266,12 +268,13 @@ Por lo tanto el alcance no debe describirse como "replicación automática produ
 - `event_id`: delivery, no operación.
 - provenance: UID portable de la instalación productora; nunca PK remota.
 - idempotencia remota: `(administrativo.usuario, op_id)` mediante #512.
+- idempotencia local: `operacion_idempotente.op_id` global mediante #469/#470; el claim precede la mutación.
 - local mutation + outbox: una transacción.
 - remote effect + receipt + terminal delivery: commit coordinado de #512.
 - optimistic remote apply: CAS por `uid_global + version_registro`.
 - conflicto: divergencia material o colisión funcional; no merge.
 - PENDING_DEPENDENCY funcional: no aplica al snapshot mínimo de usuario.
-- locks/advisory locks adicionales: no aplica.
+- locks/advisory locks adicionales al runtime de idempotencia #470 y al protocolo #512: no aplica.
 
 ## 12. Compatibilidad legacy
 
@@ -281,7 +284,7 @@ Se preservan:
 
 - paths HTTP locales por `id_usuario`;
 - response HTTP existente, que no se amplía sólo para exponer UID;
-- idempotencia local vigente por op IDs;
+- receipts globales para writes nuevos y evidencia row-local legacy por op IDs;
 - `aggregate_id` legacy del inbox como campo técnico neutro, sin autoridad distribuida.
 
 La migración transversal de identidad HTTP sigue perteneciendo a #461.

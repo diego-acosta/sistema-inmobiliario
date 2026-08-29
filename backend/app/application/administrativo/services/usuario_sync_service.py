@@ -49,6 +49,10 @@ class UsuarioSyncPayloadError(ValueError):
     code = "SYNC_PAYLOAD_INVALID"
 
 
+class UsuarioSyncConcurrentApplyRetry(RuntimeError):
+    """La identidad avanzó durante el CAS y requiere reproceso exterior."""
+
+
 def _canonical_uuid(value: Any) -> str:
     try:
         return str(UUID(str(value)))
@@ -257,6 +261,48 @@ class UsuarioSyncApplicator:
         by_login = self.repository.get_by_login_exact(snapshot["login"])
         return not self._same_uid(by_login, uid_global)
 
+    def _reconcile_current(
+        self,
+        *,
+        current: dict[str, Any],
+        envelope: dict[str, Any],
+        cas_attempts_remaining: int,
+    ) -> InboxOutcome:
+        local_version = current["version_registro"]
+        incoming_version = envelope["version_registro"]
+        if incoming_version < local_version:
+            return self._processed()
+        if incoming_version == local_version:
+            if self.repository.portable_snapshot(current) == envelope["snapshot"]:
+                return self._processed()
+            return self._conflict()
+        if self._has_identity_collision(
+            uid_global=envelope["aggregate_uid"], snapshot=envelope["snapshot"]
+        ):
+            return self._conflict()
+        if cas_attempts_remaining <= 0:
+            raise UsuarioSyncConcurrentApplyRetry("SYNC_CONCURRENT_APPLY_RETRY")
+        return self._apply_higher(
+            local=current,
+            envelope=envelope,
+            cas_attempts_remaining=cas_attempts_remaining,
+        )
+
+    def _reconcile_after_write_race(
+        self,
+        *,
+        envelope: dict[str, Any],
+        cas_attempts_remaining: int,
+    ) -> InboxOutcome:
+        current = self.repository.get_by_uid_global(envelope["aggregate_uid"])
+        if current is None:
+            return self._conflict()
+        return self._reconcile_current(
+            current=current,
+            envelope=envelope,
+            cas_attempts_remaining=cas_attempts_remaining,
+        )
+
     def _create_missing(self, envelope: dict[str, Any]) -> InboxOutcome:
         if self._has_identity_collision(
             uid_global=envelope["aggregate_uid"], snapshot=envelope["snapshot"]
@@ -274,11 +320,18 @@ class UsuarioSyncApplicator:
             nested.commit()
         except IntegrityError:
             nested.rollback()
-            return self._conflict()
+            return self._reconcile_after_write_race(
+                envelope=envelope,
+                cas_attempts_remaining=2,
+            )
         return self._processed()
 
     def _apply_higher(
-        self, *, local: dict[str, Any], envelope: dict[str, Any]
+        self,
+        *,
+        local: dict[str, Any],
+        envelope: dict[str, Any],
+        cas_attempts_remaining: int,
     ) -> InboxOutcome:
         if self._has_identity_collision(
             uid_global=envelope["aggregate_uid"], snapshot=envelope["snapshot"]
@@ -296,19 +349,17 @@ class UsuarioSyncApplicator:
             nested.commit()
         except IntegrityError:
             nested.rollback()
-            return self._conflict()
+            return self._reconcile_after_write_race(
+                envelope=envelope,
+                cas_attempts_remaining=cas_attempts_remaining - 1,
+            )
         if updated is not None:
             return self._processed()
 
-        current = self.repository.get_by_uid_global(envelope["aggregate_uid"])
-        if current is None:
-            return self._conflict()
-        if (
-            current["version_registro"] == envelope["version_registro"]
-            and self.repository.portable_snapshot(current) == envelope["snapshot"]
-        ):
-            return self._processed()
-        return self._conflict()
+        return self._reconcile_after_write_race(
+            envelope=envelope,
+            cas_attempts_remaining=cas_attempts_remaining - 1,
+        )
 
     def apply(self, event: dict[str, Any]) -> InboxOutcome:
         try:
@@ -319,21 +370,16 @@ class UsuarioSyncApplicator:
             )
 
         uid_global = envelope["aggregate_uid"]
-        snapshot = envelope["snapshot"]
         local = self.repository.get_by_uid_global(uid_global)
 
         if local is None:
             return self._create_missing(envelope)
 
-        local_version = local["version_registro"]
-        incoming_version = envelope["version_registro"]
-        if incoming_version < local_version:
-            return self._processed()
-        if incoming_version == local_version:
-            if self.repository.portable_snapshot(local) == snapshot:
-                return self._processed()
-            return self._conflict()
-        return self._apply_higher(local=local, envelope=envelope)
+        return self._reconcile_current(
+            current=local,
+            envelope=envelope,
+            cas_attempts_remaining=2,
+        )
 
 
 def run_usuario_inbox_once(
