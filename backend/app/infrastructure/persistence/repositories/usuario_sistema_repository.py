@@ -296,6 +296,19 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
         ):
             return actual
 
+        used_op_ids = {
+            str(value)
+            for value in (
+                actual.get("op_id_alta"),
+                actual.get("op_id_ultima_modificacion"),
+            )
+            if value is not None
+        }
+        if op_id in used_op_ids:
+            raise UsuarioIdempotencyConflictError(
+                "El X-Op-Id ya fue usado por una operación incompatible."
+            )
+
         if actual["version_registro"] != if_match_version:
             raise UsuarioConcurrencyError("La versión del usuario no coincide.")
 

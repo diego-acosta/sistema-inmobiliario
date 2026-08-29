@@ -37,6 +37,12 @@ _SNAPSHOT_FIELDS = frozenset(
     }
 )
 _PROVENANCE_FIELDS = frozenset({"installation_uid", "op_id_alta"})
+_SNAPSHOT_STRING_LIMITS = {
+    "codigo_usuario": 50,
+    "login": 100,
+    "email": 150,
+    "estado_usuario": 30,
+}
 
 
 class UsuarioSyncPayloadError(ValueError):
@@ -79,10 +85,18 @@ def _validate_snapshot(event_type: str, value: Any) -> dict[str, Any]:
         raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code)
 
     for field in ("codigo_usuario", "login", "estado_usuario"):
-        if not isinstance(value[field], str) or not value[field].strip():
+        if (
+            not isinstance(value[field], str)
+            or not value[field].strip()
+            or len(value[field]) > _SNAPSHOT_STRING_LIMITS[field]
+        ):
             raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code)
-    if value["email"] is not None and not isinstance(value["email"], str):
-        raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code)
+    if value["email"] is not None:
+        if (
+            not isinstance(value["email"], str)
+            or len(value["email"]) > _SNAPSHOT_STRING_LIMITS["email"]
+        ):
+            raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code)
     if value["observaciones"] is not None and not isinstance(value["observaciones"], str):
         raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code)
     if not isinstance(value["usuario_sistema_interno"], bool):

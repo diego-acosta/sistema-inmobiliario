@@ -8,6 +8,7 @@ import pytest
 from app.application.administrativo.services.usuario_sync_service import (
     USUARIO_SYNC_CONSUMER,
     UsuarioSyncApplicator,
+    UsuarioSyncPayloadError,
     parse_usuario_outbox_envelope,
     register_usuario_outbox_delivery,
     run_usuario_inbox_once,
@@ -266,6 +267,122 @@ def test_retry_nuevo_mismo_op_id_no_duplica_outbox(client, db_session):
         ),
         {"id": id_usuario},
     ).scalar_one() == 1
+
+
+def test_op_id_de_alta_no_puede_reutilizarse_para_baja(client, db_session):
+    op_id = str(uuid4())
+    created = client.post(
+        "/api/v1/administrativo/usuarios",
+        json=_payload("OP-ALTA-BAJA"),
+        headers=_headers(op_id),
+    ).json()["data"]
+
+    response = client.patch(
+        f"/api/v1/administrativo/usuarios/{created['id_usuario']}/baja",
+        headers=_headers(op_id, version=created["version_registro"]),
+    )
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "IDEMPOTENT_DUPLICATE"
+
+    row = db_session.execute(
+        text(
+            "SELECT estado_usuario, version_registro, deleted_at FROM usuario "
+            "WHERE id_usuario=:id"
+        ),
+        {"id": created["id_usuario"]},
+    ).mappings().one()
+    assert row["estado_usuario"] == "ACTIVO"
+    assert row["version_registro"] == created["version_registro"]
+    assert row["deleted_at"] is None
+    counts = dict(
+        db_session.execute(
+            text(
+                "SELECT count(*) FILTER (WHERE event_type='usuario_creado') AS altas, "
+                "count(*) FILTER (WHERE event_type='usuario_desactivado') AS bajas "
+                "FROM outbox_event WHERE aggregate_type='usuario' AND aggregate_id=:id"
+            ),
+            {"id": created["id_usuario"]},
+        ).mappings().one()
+    )
+    assert counts == {"altas": 1, "bajas": 0}
+
+
+def test_retry_de_misma_baja_no_duplica_outbox(client, db_session):
+    created = client.post(
+        "/api/v1/administrativo/usuarios",
+        json=_payload("RETRY-BAJA-OUTBOX"),
+        headers=_headers(),
+    ).json()["data"]
+    op_id = str(uuid4())
+    headers = _headers(op_id, version=created["version_registro"])
+
+    first = client.patch(
+        f"/api/v1/administrativo/usuarios/{created['id_usuario']}/baja",
+        headers=headers,
+    )
+    retry = client.patch(
+        f"/api/v1/administrativo/usuarios/{created['id_usuario']}/baja",
+        headers=headers,
+    )
+    assert first.status_code == retry.status_code == 200
+    assert first.json()["data"] == retry.json()["data"]
+    assert db_session.execute(
+        text(
+            "SELECT count(*) FROM outbox_event WHERE aggregate_type='usuario' "
+            "AND aggregate_id=:id AND event_type='usuario_desactivado'"
+        ),
+        {"id": created["id_usuario"]},
+    ).scalar_one() == 1
+
+
+@pytest.mark.parametrize(
+    ("field", "maximum"),
+    [("codigo_usuario", 50), ("login", 100), ("email", 150)],
+)
+def test_limites_fisicos_portables_aceptan_maximo_y_rechazan_exceso(
+    field, maximum
+):
+    event = _event(f"LIMIT-{field}")
+    event["payload"][field] = "x" * maximum
+    envelope = {
+        "aggregate_uid": event["aggregate_uid"],
+        "version_registro": event["version_registro"],
+        "op_id": event["op_id"],
+        "provenance": event["provenance"],
+        "snapshot": event["payload"],
+    }
+    parsed = parse_usuario_outbox_envelope(
+        event_type=event["event_type"],
+        aggregate_type=event["aggregate_type"],
+        value=envelope,
+    )
+    assert parsed["snapshot"][field] == "x" * maximum
+
+    oversized = deepcopy(envelope)
+    oversized["snapshot"][field] = "x" * (maximum + 1)
+    with pytest.raises(UsuarioSyncPayloadError, match="SYNC_PAYLOAD_INVALID"):
+        parse_usuario_outbox_envelope(
+            event_type=event["event_type"],
+            aggregate_type=event["aggregate_type"],
+            value=oversized,
+        )
+
+
+def test_estado_portable_sobredimensionado_es_rechazado():
+    event = _event("LIMIT-ESTADO")
+    event["payload"]["estado_usuario"] = "x" * 31
+    with pytest.raises(UsuarioSyncPayloadError, match="SYNC_PAYLOAD_INVALID"):
+        parse_usuario_outbox_envelope(
+            event_type=event["event_type"],
+            aggregate_type=event["aggregate_type"],
+            value={
+                "aggregate_uid": event["aggregate_uid"],
+                "version_registro": event["version_registro"],
+                "op_id": event["op_id"],
+                "provenance": event["provenance"],
+                "snapshot": event["payload"],
+            },
+        )
 
 
 def test_timestamps_equivalentes_canonicalizan_snapshot_y_fingerprint():
@@ -667,6 +784,50 @@ def _cleanup_committed(*, uid: str, op_id: str, event_ids: list[str]) -> None:
         connection.execute(
             text("DELETE FROM usuario WHERE uid_global=CAST(:uid AS uuid)"),
             {"uid": uid},
+        )
+
+
+def test_processor_rechaza_email_sobredimensionado_sin_materializar_usuario():
+    event = _event("OVERSIZED-EMAIL-" + uuid4().hex[:8])
+    event["payload"]["email"] = "x" * 151
+    event_id = str(uuid4())
+    _committed_register(event, event_id=event_id)
+    try:
+        with Session(engine) as session:
+            outcome = run_usuario_inbox_once(
+                session,
+                worker_id="usuario-oversized",
+                event_id=event_id,
+                manual=True,
+            )
+        assert outcome is not None
+        assert outcome.kind == InboxOutcomeKind.REJECTED
+        assert outcome.reason_code == "SYNC_PAYLOAD_INVALID"
+
+        with Session(engine) as verify:
+            assert verify.execute(
+                text(
+                    "SELECT count(*) FROM usuario "
+                    "WHERE uid_global=CAST(:uid AS uuid)"
+                ),
+                {"uid": event["aggregate_uid"]},
+            ).scalar_one() == 0
+            delivery = verify.execute(
+                text(
+                    "SELECT status, error_detail FROM inbox_event "
+                    "WHERE event_id=CAST(:event_id AS uuid) AND consumer=:consumer"
+                ),
+                {"event_id": event_id, "consumer": USUARIO_SYNC_CONSUMER},
+            ).mappings().one()
+            assert dict(delivery) == {
+                "status": "REJECTED",
+                "error_detail": "SYNC_PAYLOAD_INVALID",
+            }
+    finally:
+        _cleanup_committed(
+            uid=event["aggregate_uid"],
+            op_id=event["op_id"],
+            event_ids=[event_id],
         )
 
 
