@@ -67,10 +67,10 @@ def _validate_portable_datetime(value: Any, *, nullable: bool) -> str | None:
         raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code)
     try:
         parsed = datetime.fromisoformat(value)
-    except ValueError:
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone(UTC).replace(tzinfo=None)
+    except (OverflowError, ValueError):
         raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code) from None
-    if parsed.tzinfo is not None:
-        parsed = parsed.astimezone(UTC).replace(tzinfo=None)
     return parsed.isoformat()
 
 
@@ -157,6 +157,8 @@ def _validate_operation_provenance(
     *, event_type: str, op_id: str, provenance: dict[str, Any]
 ) -> None:
     if event_type == "usuario_creado" and provenance["op_id_alta"] != op_id:
+        raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code)
+    if event_type == "usuario_desactivado" and provenance["op_id_alta"] == op_id:
         raise UsuarioSyncPayloadError(UsuarioSyncPayloadError.code)
 
 

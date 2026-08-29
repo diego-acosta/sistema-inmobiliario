@@ -312,9 +312,11 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
                 login,
                 email,
                 estado_usuario,
+                fecha_alta,
                 usuario_sistema_interno,
                 observaciones,
                 version_registro,
+                updated_at,
                 id_instalacion_origen,
                 id_instalacion_ultima_modificacion,
                 op_id_alta,
@@ -325,9 +327,11 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
                 :login,
                 :email,
                 :estado_usuario,
+                CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
                 :usuario_sistema_interno,
                 :observaciones,
                 1,
+                CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
                 :id_instalacion,
                 :id_instalacion,
                 :op_id,
@@ -429,9 +433,13 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
             f"""
             UPDATE usuario
             SET estado_usuario = 'INACTIVO',
-                fecha_baja = COALESCE(fecha_baja, CURRENT_TIMESTAMP),
-                deleted_at = COALESCE(deleted_at, CURRENT_TIMESTAMP),
-                updated_at = CURRENT_TIMESTAMP,
+                fecha_baja = COALESCE(
+                    fecha_baja, CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+                ),
+                deleted_at = COALESCE(
+                    deleted_at, CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+                ),
+                updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
                 id_instalacion_ultima_modificacion = :id_instalacion,
                 op_id_ultima_modificacion = :op_id,
                 version_registro = version_registro + 1

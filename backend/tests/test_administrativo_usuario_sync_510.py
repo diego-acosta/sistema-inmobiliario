@@ -37,6 +37,7 @@ CORE_HEADERS = {
     "X-Instalacion-Id": "1",
 }
 TEST_INSTALLATION_UID = str(uuid4())
+_DEFAULT_OP_ID_ALTA = object()
 
 
 def _core(op_id: str, *, version: int | None = None) -> CoreEFHeaders:
@@ -91,8 +92,11 @@ def _event(
     version: int = 1,
     event_type: str = "usuario_creado",
     snapshot: dict | None = None,
+    op_id_alta: object = _DEFAULT_OP_ID_ALTA,
 ) -> dict:
     op_id = op_id or str(uuid4())
+    if op_id_alta is _DEFAULT_OP_ID_ALTA:
+        op_id_alta = op_id if event_type == "usuario_creado" else str(uuid4())
     return {
         "event_type": event_type,
         "aggregate_type": "usuario",
@@ -102,7 +106,7 @@ def _event(
         "payload": snapshot or _snapshot(suffix),
         "provenance": {
             "installation_uid": TEST_INSTALLATION_UID,
-            "op_id_alta": op_id,
+            "op_id_alta": op_id_alta,
         },
     }
 
@@ -688,8 +692,8 @@ def test_baja_uid_inexistente_materializa_inactivo_sin_inventar_op_id_alta(db_se
         version=4,
         event_type="usuario_desactivado",
         snapshot=_snapshot("BAJA-FIRST", deleted=True),
+        op_id_alta=None,
     )
-    event["provenance"]["op_id_alta"] = None
     outcome = UsuarioSyncApplicator(db_session).apply(event)
     assert outcome.kind == InboxOutcomeKind.PROCESSED
     row = db_session.execute(
@@ -706,6 +710,48 @@ def test_baja_uid_inexistente_materializa_inactivo_sin_inventar_op_id_alta(db_se
     assert row["version_registro"] == 4
     assert row["op_id_alta"] is None
     assert row["op_ultima"] == event["op_id"]
+
+
+@pytest.mark.parametrize("existing_uid", [False, True])
+def test_baja_rechaza_su_op_id_como_provenance_de_alta(db_session, existing_uid):
+    uid = str(uuid4())
+    applicator = UsuarioSyncApplicator(db_session)
+    if existing_uid:
+        assert applicator.apply(_event("BAJA-SELF-OP", uid=uid)).kind == (
+            InboxOutcomeKind.PROCESSED
+        )
+
+    baja_op_id = str(uuid4())
+    event = _event(
+        "BAJA-SELF-OP",
+        uid=uid,
+        op_id=baja_op_id,
+        version=2,
+        event_type="usuario_desactivado",
+        snapshot=_snapshot("BAJA-SELF-OP", deleted=True),
+        op_id_alta=baja_op_id,
+    )
+    outcome = applicator.apply(event)
+    assert outcome.kind == InboxOutcomeKind.REJECTED
+    assert outcome.reason_code == "SYNC_PAYLOAD_INVALID"
+
+    rows = db_session.execute(
+        text(
+            "SELECT version_registro, estado_usuario, deleted_at FROM usuario "
+            "WHERE uid_global=CAST(:uid AS uuid)"
+        ),
+        {"uid": uid},
+    ).mappings().all()
+    if existing_uid:
+        assert [dict(row) for row in rows] == [
+            {
+                "version_registro": 1,
+                "estado_usuario": "ACTIVO",
+                "deleted_at": None,
+            }
+        ]
+    else:
+        assert rows == []
 
 
 def test_alta_remota_conserva_op_id_alta_igual_al_op_id(db_session):
@@ -868,6 +914,50 @@ def test_processor_rechaza_email_sobredimensionado_sin_materializar_usuario():
             outcome = run_usuario_inbox_once(
                 session,
                 worker_id="usuario-oversized",
+                event_id=event_id,
+                manual=True,
+            )
+        assert outcome is not None
+        assert outcome.kind == InboxOutcomeKind.REJECTED
+        assert outcome.reason_code == "SYNC_PAYLOAD_INVALID"
+
+        with Session(engine) as verify:
+            assert verify.execute(
+                text(
+                    "SELECT count(*) FROM usuario "
+                    "WHERE uid_global=CAST(:uid AS uuid)"
+                ),
+                {"uid": event["aggregate_uid"]},
+            ).scalar_one() == 0
+            delivery = verify.execute(
+                text(
+                    "SELECT status, error_detail FROM inbox_event "
+                    "WHERE event_id=CAST(:event_id AS uuid) AND consumer=:consumer"
+                ),
+                {"event_id": event_id, "consumer": USUARIO_SYNC_CONSUMER},
+            ).mappings().one()
+            assert dict(delivery) == {
+                "status": "REJECTED",
+                "error_detail": "SYNC_PAYLOAD_INVALID",
+            }
+    finally:
+        _cleanup_committed(
+            uid=event["aggregate_uid"],
+            op_id=event["op_id"],
+            event_ids=[event_id],
+        )
+
+
+def test_processor_rechaza_overflow_temporal_y_terminaliza_delivery():
+    event = _event("DATETIME-OVERFLOW-" + uuid4().hex[:8])
+    event["payload"]["fecha_alta"] = "0001-01-01T00:00:00+14:00"
+    event_id = str(uuid4())
+    _committed_register(event, event_id=event_id)
+    try:
+        with Session(engine) as session:
+            outcome = run_usuario_inbox_once(
+                session,
+                worker_id="usuario-datetime-overflow",
                 event_id=event_id,
                 manual=True,
             )
@@ -1339,6 +1429,70 @@ def _cleanup_committed_usuarios(*, user_ids: list[int], op_ids: list[str]) -> No
         connection.execute(
             text("DELETE FROM usuario WHERE id_usuario=ANY(:user_ids)"),
             {"user_ids": user_ids},
+        )
+
+
+def test_producer_escribe_timestamps_utc_naive_con_timezone_no_utc():
+    create_op_id = str(uuid4())
+    baja_op_id = str(uuid4())
+    created = []
+    try:
+        with Session(engine) as create_session:
+            create_session.execute(
+                text("SET LOCAL TIME ZONE 'America/Argentina/Buenos_Aires'")
+            )
+            clock = create_session.execute(
+                text(
+                    "SELECT CURRENT_TIMESTAMP::timestamp AS wall_time, "
+                    "CURRENT_TIMESTAMP AT TIME ZONE 'UTC' AS utc_naive"
+                )
+            ).mappings().one()
+            assert clock["wall_time"] != clock["utc_naive"]
+            row = UsuarioSistemaRepository(create_session).create(
+                _payload("TZ-UTC-" + uuid4().hex[:8]),
+                _core(create_op_id),
+            )
+            created.append(row)
+            assert row["fecha_alta"] == clock["utc_naive"]
+            assert row["updated_at"] == clock["utc_naive"]
+
+        with Session(engine) as baja_session:
+            baja_session.execute(
+                text("SET LOCAL TIME ZONE 'America/Argentina/Buenos_Aires'")
+            )
+            baja_clock = baja_session.execute(
+                text("SELECT CURRENT_TIMESTAMP AT TIME ZONE 'UTC'")
+            ).scalar_one()
+            baja = UsuarioSistemaRepository(baja_session).baja_logica(
+                row["id_usuario"],
+                core=_core(baja_op_id, version=row["version_registro"]),
+                if_match_version=row["version_registro"],
+            )
+            assert baja is not None
+            assert baja["fecha_baja"] == baja_clock
+            assert baja["deleted_at"] == baja_clock
+            assert baja["updated_at"] == baja_clock
+
+        with Session(engine) as verify:
+            alta_outbox = _outbox_for_user(
+                verify, row["id_usuario"], "usuario_creado"
+            )
+            baja_outbox = _outbox_for_user(
+                verify, row["id_usuario"], "usuario_desactivado"
+            )
+            assert alta_outbox["payload"]["snapshot"]["fecha_alta"] == (
+                clock["utc_naive"].isoformat()
+            )
+            assert baja_outbox["payload"]["snapshot"]["fecha_alta"] == (
+                clock["utc_naive"].isoformat()
+            )
+            assert baja_outbox["payload"]["snapshot"]["fecha_baja"] == (
+                baja_clock.isoformat()
+            )
+    finally:
+        _cleanup_committed_usuarios(
+            user_ids=[row["id_usuario"] for row in created],
+            op_ids=[create_op_id, baja_op_id],
         )
 
 
