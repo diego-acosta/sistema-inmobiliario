@@ -666,6 +666,158 @@ def test_baja_remota_aplica_snapshot_logico(db_session):
     assert row["version_registro"] == 2
 
 
+@pytest.mark.parametrize("incoming_provenance", ["MATCH", "NULL"])
+def test_baja_remota_acepta_provenance_compatible_o_desconocida(
+    db_session, incoming_provenance
+):
+    uid = str(uuid4())
+    applicator = UsuarioSyncApplicator(db_session)
+    alta = _event("BAJA-PROVENANCE-OK", uid=uid)
+    assert applicator.apply(alta).kind == InboxOutcomeKind.PROCESSED
+
+    baja = _event(
+        "BAJA-PROVENANCE-OK",
+        uid=uid,
+        version=2,
+        event_type="usuario_desactivado",
+        snapshot=_snapshot("BAJA-PROVENANCE-OK", deleted=True),
+        op_id_alta=alta["op_id"] if incoming_provenance == "MATCH" else None,
+    )
+    assert applicator.apply(baja).kind == InboxOutcomeKind.PROCESSED
+    row = db_session.execute(
+        text(
+            "SELECT version_registro, estado_usuario, op_id_alta::text AS op_alta "
+            "FROM usuario WHERE uid_global=CAST(:uid AS uuid)"
+        ),
+        {"uid": uid},
+    ).mappings().one()
+    assert row["version_registro"] == 2
+    assert row["estado_usuario"] == "INACTIVO"
+    assert row["op_alta"] == alta["op_id"]
+
+
+def test_baja_remota_rechaza_provenance_de_alta_contradictoria(db_session):
+    uid = str(uuid4())
+    applicator = UsuarioSyncApplicator(db_session)
+    alta = _event("BAJA-PROVENANCE-CONFLICT", uid=uid)
+    assert applicator.apply(alta).kind == InboxOutcomeKind.PROCESSED
+    before = dict(
+        db_session.execute(
+            text(
+                "SELECT version_registro, estado_usuario, fecha_baja, deleted_at, "
+                "op_id_alta::text AS op_alta, "
+                "op_id_ultima_modificacion::text AS op_ultima FROM usuario "
+                "WHERE uid_global=CAST(:uid AS uuid)"
+            ),
+            {"uid": uid},
+        ).mappings().one()
+    )
+
+    baja = _event(
+        "BAJA-PROVENANCE-CONFLICT",
+        uid=uid,
+        version=3,
+        event_type="usuario_desactivado",
+        snapshot=_snapshot("BAJA-PROVENANCE-CONFLICT", deleted=True),
+        op_id_alta=str(uuid4()),
+    )
+    assert applicator.apply(baja).kind == InboxOutcomeKind.CONFLICTO
+    after = dict(
+        db_session.execute(
+            text(
+                "SELECT version_registro, estado_usuario, fecha_baja, deleted_at, "
+                "op_id_alta::text AS op_alta, "
+                "op_id_ultima_modificacion::text AS op_ultima FROM usuario "
+                "WHERE uid_global=CAST(:uid AS uuid)"
+            ),
+            {"uid": uid},
+        ).mappings().one()
+    )
+    assert after == before
+
+
+def test_baja_obsoleta_ignora_provenance_de_alta_contradictoria(db_session):
+    uid = str(uuid4())
+    applicator = UsuarioSyncApplicator(db_session)
+    alta = _event("BAJA-PROVENANCE-OBSOLETE", uid=uid)
+    assert applicator.apply(alta).kind == InboxOutcomeKind.PROCESSED
+    current = _event(
+        "BAJA-PROVENANCE-OBSOLETE",
+        uid=uid,
+        version=3,
+        event_type="usuario_desactivado",
+        snapshot=_snapshot("BAJA-PROVENANCE-OBSOLETE", deleted=True),
+        op_id_alta=alta["op_id"],
+    )
+    assert applicator.apply(current).kind == InboxOutcomeKind.PROCESSED
+    before = dict(
+        db_session.execute(
+            text(
+                "SELECT version_registro, estado_usuario, op_id_alta::text AS op_alta, "
+                "op_id_ultima_modificacion::text AS op_ultima FROM usuario "
+                "WHERE uid_global=CAST(:uid AS uuid)"
+            ),
+            {"uid": uid},
+        ).mappings().one()
+    )
+
+    obsolete = _event(
+        "BAJA-PROVENANCE-OBSOLETE",
+        uid=uid,
+        version=2,
+        event_type="usuario_desactivado",
+        snapshot=_snapshot("BAJA-PROVENANCE-OBSOLETE", deleted=True),
+        op_id_alta=str(uuid4()),
+    )
+    assert applicator.apply(obsolete).kind == InboxOutcomeKind.PROCESSED
+    after = dict(
+        db_session.execute(
+            text(
+                "SELECT version_registro, estado_usuario, op_id_alta::text AS op_alta, "
+                "op_id_ultima_modificacion::text AS op_ultima FROM usuario "
+                "WHERE uid_global=CAST(:uid AS uuid)"
+            ),
+            {"uid": uid},
+        ).mappings().one()
+    )
+    assert after == before
+
+
+def test_cas_remoto_no_inventa_provenance_de_alta_legacy(db_session):
+    uid = str(uuid4())
+    applicator = UsuarioSyncApplicator(db_session)
+    first = _event(
+        "BAJA-PROVENANCE-LEGACY",
+        uid=uid,
+        version=2,
+        event_type="usuario_desactivado",
+        snapshot=_snapshot("BAJA-PROVENANCE-LEGACY", deleted=True),
+        op_id_alta=None,
+    )
+    assert applicator.apply(first).kind == InboxOutcomeKind.PROCESSED
+
+    higher = _event(
+        "BAJA-PROVENANCE-LEGACY",
+        uid=uid,
+        version=3,
+        event_type="usuario_desactivado",
+        snapshot=_snapshot("BAJA-PROVENANCE-LEGACY", deleted=True),
+        op_id_alta=str(uuid4()),
+    )
+    assert applicator.apply(higher).kind == InboxOutcomeKind.PROCESSED
+    row = db_session.execute(
+        text(
+            "SELECT version_registro, op_id_alta, "
+            "op_id_ultima_modificacion::text AS op_ultima FROM usuario "
+            "WHERE uid_global=CAST(:uid AS uuid)"
+        ),
+        {"uid": uid},
+    ).mappings().one()
+    assert row["version_registro"] == 3
+    assert row["op_id_alta"] is None
+    assert row["op_ultima"] == higher["op_id"]
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [("deleted", False), ("fecha_baja", None), ("estado_usuario", "ACTIVO")],

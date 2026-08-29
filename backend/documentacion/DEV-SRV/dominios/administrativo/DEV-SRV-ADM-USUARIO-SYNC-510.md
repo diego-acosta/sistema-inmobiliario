@@ -199,9 +199,19 @@ misma versión + snapshot funcional distinto
 incoming_version < local_version
 → operación obsoleta; no revertir estado
 
+UID presente + provenance.op_id_alta local y entrante no-null distintos
+→ CONFLICTO antes de replay o CAS
+
 UID distinto + codigo_usuario/login en uso
 → CONFLICTO
 ```
+
+Para un UID ya materializado, un `provenance.op_id_alta` entrante no-null debe
+coincidir con el `op_id_alta` local cuando ambos son conocidos. Un valor `null`
+en cualquiera de los lados expresa provenance histórica desconocida: no
+contradice la evidencia conocida, no completa retrospectivamente la columna
+local y no se sobrescribe durante CAS. Los eventos obsoletos se descartan antes
+de esta comparación porque su snapshot y provenance no serán aplicados.
 
 No se usa timestamp como LWW y no existe merge automático.
 

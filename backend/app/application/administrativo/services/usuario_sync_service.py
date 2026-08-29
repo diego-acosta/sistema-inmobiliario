@@ -263,6 +263,18 @@ class UsuarioSyncApplicator:
         by_login = self.repository.get_by_login_exact(snapshot["login"])
         return not self._same_uid(by_login, uid_global)
 
+    @staticmethod
+    def _has_creation_provenance_conflict(
+        *, current: dict[str, Any], envelope: dict[str, Any]
+    ) -> bool:
+        local_op_id_alta = current.get("op_id_alta")
+        incoming_op_id_alta = envelope["provenance"]["op_id_alta"]
+        return (
+            local_op_id_alta is not None
+            and incoming_op_id_alta is not None
+            and str(local_op_id_alta) != incoming_op_id_alta
+        )
+
     def _reconcile_current(
         self,
         *,
@@ -274,6 +286,10 @@ class UsuarioSyncApplicator:
         incoming_version = envelope["version_registro"]
         if incoming_version < local_version:
             return self._processed()
+        if self._has_creation_provenance_conflict(
+            current=current, envelope=envelope
+        ):
+            return self._conflict()
         if incoming_version == local_version:
             if self.repository.portable_snapshot(current) == envelope["snapshot"]:
                 return self._processed()
