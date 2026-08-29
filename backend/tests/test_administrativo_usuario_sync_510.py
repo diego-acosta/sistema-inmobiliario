@@ -124,7 +124,7 @@ def _outbox_for_user(db_session, id_usuario: int, event_type: str) -> dict:
             text(
                 """
                 SELECT event_id::text AS event_id, event_type, aggregate_type,
-                       aggregate_id, payload
+                       aggregate_id, payload, occurred_at
                   FROM outbox_event
                  WHERE aggregate_type = 'usuario'
                    AND aggregate_id = :id_usuario
@@ -1474,6 +1474,9 @@ def test_producer_escribe_timestamps_utc_naive_con_timezone_no_utc():
             assert baja["updated_at"] == baja_clock
 
         with Session(engine) as verify:
+            utc_after = verify.execute(
+                text("SELECT clock_timestamp() AT TIME ZONE 'UTC'")
+            ).scalar_one()
             alta_outbox = _outbox_for_user(
                 verify, row["id_usuario"], "usuario_creado"
             )
@@ -1489,11 +1492,114 @@ def test_producer_escribe_timestamps_utc_naive_con_timezone_no_utc():
             assert baja_outbox["payload"]["snapshot"]["fecha_baja"] == (
                 baja_clock.isoformat()
             )
+            assert alta_outbox["occurred_at"].tzinfo is None
+            assert baja_outbox["occurred_at"].tzinfo is None
+            assert clock["utc_naive"] <= alta_outbox["occurred_at"] <= utc_after
+            assert baja_clock <= baja_outbox["occurred_at"] <= utc_after
     finally:
         _cleanup_committed_usuarios(
             user_ids=[row["id_usuario"] for row in created],
             op_ids=[create_op_id, baja_op_id],
         )
+
+
+@pytest.mark.parametrize(
+    ("event_type", "version", "deleted"),
+    [
+        ("usuario_creado", 1, False),
+        ("usuario_desactivado", 4, True),
+    ],
+)
+def test_apply_remoto_inserta_metadata_utc_naive_con_timezone_no_utc(
+    db_session, event_type, version, deleted
+):
+    db_session.execute(text("SET LOCAL TIME ZONE 'America/Argentina/Buenos_Aires'"))
+    clock = db_session.execute(
+        text(
+            "SELECT CURRENT_TIMESTAMP::timestamp AS wall_time, "
+            "CURRENT_TIMESTAMP AT TIME ZONE 'UTC' AS utc_naive"
+        )
+    ).mappings().one()
+    assert clock["wall_time"] != clock["utc_naive"]
+
+    event = _event(
+        f"REMOTE-TZ-{event_type}",
+        version=version,
+        event_type=event_type,
+        snapshot=_snapshot(f"REMOTE-TZ-{event_type}", deleted=deleted),
+        op_id_alta=None if deleted else _DEFAULT_OP_ID_ALTA,
+    )
+    expected_fecha_baja = event["payload"]["fecha_baja"]
+    outcome = UsuarioSyncApplicator(db_session).apply(event)
+    assert outcome.kind == InboxOutcomeKind.PROCESSED
+
+    row = db_session.execute(
+        text(
+            "SELECT fecha_alta, fecha_baja, updated_at, deleted_at, "
+            "id_instalacion_origen, id_instalacion_ultima_modificacion "
+            "FROM usuario WHERE uid_global=CAST(:uid AS uuid)"
+        ),
+        {"uid": event["aggregate_uid"]},
+    ).mappings().one()
+    assert row["fecha_alta"].isoformat() == event["payload"]["fecha_alta"]
+    assert (
+        row["fecha_baja"].isoformat() if row["fecha_baja"] is not None else None
+    ) == expected_fecha_baja
+    assert row["updated_at"] == clock["utc_naive"]
+    assert row["deleted_at"] == (clock["utc_naive"] if deleted else None)
+    assert row["id_instalacion_origen"] is None
+    assert row["id_instalacion_ultima_modificacion"] is None
+
+
+def test_cas_remoto_neutraliza_provenance_local_y_usa_metadata_utc_naive(db_session):
+    local = UsuarioSistemaRepository(db_session).create(
+        _payload("REMOTE-CAS-TZ-" + uuid4().hex[:6]),
+        _core(str(uuid4())),
+    )
+    assert local["id_instalacion_origen"] == 1
+    assert local["id_instalacion_ultima_modificacion"] == 1
+
+    db_session.execute(text("SET LOCAL TIME ZONE 'America/Argentina/Buenos_Aires'"))
+    clock = db_session.execute(
+        text(
+            "SELECT CURRENT_TIMESTAMP::timestamp AS wall_time, "
+            "CURRENT_TIMESTAMP AT TIME ZONE 'UTC' AS utc_naive"
+        )
+    ).mappings().one()
+    assert clock["wall_time"] != clock["utc_naive"]
+
+    remote_op_id = str(uuid4())
+    snapshot = _snapshot("REMOTE-CAS-TZ", deleted=True)
+    event = _event(
+        "REMOTE-CAS-TZ",
+        uid=str(local["uid_global"]),
+        op_id=remote_op_id,
+        version=3,
+        event_type="usuario_desactivado",
+        snapshot=snapshot,
+        op_id_alta=str(local["op_id_alta"]),
+    )
+    assert event["provenance"]["installation_uid"] == TEST_INSTALLATION_UID
+    outcome = UsuarioSyncApplicator(db_session).apply(event)
+    assert outcome.kind == InboxOutcomeKind.PROCESSED
+
+    row = db_session.execute(
+        text(
+            "SELECT version_registro, fecha_alta, fecha_baja, updated_at, deleted_at, "
+            "id_instalacion_origen, id_instalacion_ultima_modificacion, "
+            "op_id_ultima_modificacion::text AS op_id_ultima_modificacion "
+            "FROM usuario WHERE uid_global=CAST(:uid AS uuid)"
+        ),
+        {"uid": event["aggregate_uid"]},
+    ).mappings().one()
+    assert row["version_registro"] == 3
+    assert row["fecha_alta"].isoformat() == snapshot["fecha_alta"]
+    assert row["fecha_baja"].isoformat() == snapshot["fecha_baja"]
+    assert row["updated_at"] == clock["utc_naive"]
+    assert row["deleted_at"] == clock["utc_naive"]
+    assert row["id_instalacion_origen"] == 1
+    assert row["id_instalacion_ultima_modificacion"] is None
+    assert row["op_id_ultima_modificacion"] == remote_op_id
 
 
 def test_op_id_global_serializa_bajas_concurrentes_de_usuarios_distintos():

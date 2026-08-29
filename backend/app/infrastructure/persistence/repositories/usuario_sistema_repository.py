@@ -212,7 +212,7 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
             aggregate_type="usuario",
             aggregate_id=row["id_usuario"],
             payload=self.portable_outbox_payload(row, op_id=op_id),
-            occurred_at=datetime.now(UTC),
+            occurred_at=datetime.now(UTC).replace(tzinfo=None),
         )
 
     def get_by_op_id_alta(self, op_id: str) -> dict[str, Any] | None:
@@ -518,8 +518,11 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
                 :usuario_sistema_interno,
                 :observaciones,
                 :version_registro,
-                CURRENT_TIMESTAMP,
-                CASE WHEN :deleted THEN CURRENT_TIMESTAMP ELSE NULL END,
+                CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
+                CASE
+                    WHEN :deleted THEN CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+                    ELSE NULL
+                END,
                 NULL,
                 NULL,
                 CAST(:op_id_alta AS uuid),
@@ -562,10 +565,13 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
                 usuario_sistema_interno = :usuario_sistema_interno,
                 observaciones = :observaciones,
                 deleted_at = CASE
-                    WHEN :deleted THEN COALESCE(deleted_at, CURRENT_TIMESTAMP)
+                    WHEN :deleted THEN COALESCE(
+                        deleted_at, CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+                    )
                     ELSE NULL
                 END,
-                updated_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
+                id_instalacion_ultima_modificacion = NULL,
                 op_id_ultima_modificacion = CAST(:op_id AS uuid),
                 version_registro = :incoming_version
             WHERE uid_global = CAST(:uid_global AS uuid)
