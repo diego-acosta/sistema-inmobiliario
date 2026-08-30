@@ -142,7 +142,10 @@ def test_venta_confirmada_no_es_bloqueada_por_eventos_usuario_pending(
                 END,
                 'usuario',
                 -series,
-                jsonb_build_object('fairness_marker', :marker, 'sequence', series),
+                jsonb_build_object(
+                    'fairness_marker', CAST(:marker AS text),
+                    'sequence', series
+                ),
                 TIMESTAMP '2026-01-01 00:00:00' + series * INTERVAL '1 second',
                 'PENDING'
             FROM generate_series(1, 101) AS series
