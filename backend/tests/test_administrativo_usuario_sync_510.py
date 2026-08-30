@@ -541,13 +541,9 @@ def test_misma_version_mismo_snapshot_es_replay_y_distinto_es_conflicto(db_sessi
     assert applicator.apply(first).kind == InboxOutcomeKind.PROCESSED
 
     same = deepcopy(first)
-    same["op_id"] = str(uuid4())
-    same["provenance"]["op_id_alta"] = same["op_id"]
     assert applicator.apply(same).kind == InboxOutcomeKind.PROCESSED
 
     different = deepcopy(same)
-    different["op_id"] = str(uuid4())
-    different["provenance"]["op_id_alta"] = different["op_id"]
     different["payload"]["observaciones"] = "snapshot material distinto"
     assert applicator.apply(different).kind == InboxOutcomeKind.CONFLICTO
 
@@ -585,7 +581,8 @@ def test_usuario_creado_rechaza_estado_fuera_del_request_local(db_session):
 def test_version_superior_y_salto_aplican_inferior_no_revierte(db_session):
     uid = str(uuid4())
     applicator = UsuarioSyncApplicator(db_session)
-    assert applicator.apply(_event("VERS", uid=uid)).kind == InboxOutcomeKind.PROCESSED
+    alta = _event("VERS", uid=uid)
+    assert applicator.apply(alta).kind == InboxOutcomeKind.PROCESSED
 
     v3_snapshot = _snapshot("VERS", deleted=True)
     v3_snapshot["observaciones"] = "versión 3 aceptada por snapshot autoritativo"
@@ -595,6 +592,7 @@ def test_version_superior_y_salto_aplican_inferior_no_revierte(db_session):
         version=3,
         event_type="usuario_desactivado",
         snapshot=v3_snapshot,
+        op_id_alta=alta["op_id"],
     )
     assert applicator.apply(v3).kind == InboxOutcomeKind.PROCESSED
 
@@ -622,6 +620,7 @@ def test_version_superior_y_salto_aplican_inferior_no_revierte(db_session):
         version=2,
         event_type="usuario_desactivado",
         snapshot=v2_snapshot,
+        op_id_alta=alta["op_id"],
     )
     assert applicator.apply(old).kind == InboxOutcomeKind.PROCESSED
     after = dict(
@@ -948,6 +947,7 @@ def test_evento_obsoleto_no_evalua_colision_que_no_aplicara(db_session):
         version=3,
         event_type="usuario_desactivado",
         snapshot=_snapshot("OBSOLETE-TARGET", deleted=True),
+        op_id_alta=target["op_id"],
     )
     assert applicator.apply(v3).kind == InboxOutcomeKind.PROCESSED
 
@@ -959,7 +959,9 @@ def test_evento_obsoleto_no_evalua_colision_que_no_aplicara(db_session):
         version=2,
         event_type="usuario_desactivado",
         snapshot=_snapshot("OBSOLETE-OTHER", deleted=True),
+        op_id_alta=str(uuid4()),
     )
+    assert obsolete["provenance"]["op_id_alta"] != target["op_id"]
     assert applicator.apply(obsolete).kind == InboxOutcomeKind.PROCESSED
     current = db_session.execute(
         text(
@@ -1410,7 +1412,9 @@ def test_insert_race_v1_v2_mismo_uid_converge_a_baja_v2(winner):
         version=2,
         event_type="usuario_desactivado",
         snapshot=v2_snapshot,
+        op_id_alta=v1["op_id"],
     )
+    assert v2["op_id"] != v1["op_id"]
     try:
         outcomes = _run_applicator_race(
             {"v1": v1, "v2": v2},
@@ -1463,11 +1467,16 @@ def test_cas_race_v2_v3_desde_v1_converge_a_v3(winner):
             version=version,
             event_type="usuario_desactivado",
             snapshot=snapshot,
+            op_id_alta=v1["op_id"],
         )
 
     try:
+        v2 = deactivation(2)
+        v3 = deactivation(3)
+        assert v1["op_id"] not in {v2["op_id"], v3["op_id"]}
+        assert v2["op_id"] != v3["op_id"]
         outcomes = _run_applicator_race(
-            {"v2": deactivation(2), "v3": deactivation(3)},
+            {"v2": v2, "v3": v3},
             winner=winner,
             delayed_method="apply_remote_snapshot_cas",
         )
