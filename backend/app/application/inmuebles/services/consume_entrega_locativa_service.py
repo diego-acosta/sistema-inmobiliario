@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any, Protocol
@@ -98,7 +99,12 @@ class InmuebleRepository(Protocol):
 
 
 class OutboxRepository(Protocol):
-    def get_pending_events(self, *, limit: int = 100) -> list[dict[str, Any]]: ...
+    def get_pending_events(
+        self,
+        *,
+        limit: int = 100,
+        event_types: Collection[str] | None = None,
+    ) -> list[dict[str, Any]]: ...
 
     def mark_as_published(
         self,
@@ -157,8 +163,10 @@ class ConsumeEntregaLocativaService:
         self.uuid_generator = uuid_generator or uuid4
 
     def execute(self, *, limit: int = 100) -> AppResult[dict[str, Any]]:
-        pending_events = self.outbox_repository.get_pending_events(limit=limit)
-        entrega_events = [e for e in pending_events if e["event_type"] == EVENT_TYPE]
+        entrega_events = self.outbox_repository.get_pending_events(
+            limit=limit,
+            event_types=(EVENT_TYPE,),
+        )
 
         processed: list[dict[str, Any]] = []
         for event in entrega_events:

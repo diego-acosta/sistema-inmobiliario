@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 
 INTERNAL_CONSUMER_MANAGED_EVENT_TYPES = {"escrituracion_registrada"}
+PORTABLE_TRANSPORT_PENDING_EVENT_TYPES = {"usuario_creado", "usuario_desactivado"}
 
 MAX_RETRIES = 5
 
@@ -21,17 +22,28 @@ def main() -> int:
     args = parse_args()
     os.environ["ENV"] = args.env
 
+    from app.application.common.synchronization_policy import (
+        SYNC_EVENT_POLICIES,
+        sanitize_sync_error,
+    )
     from app.config.database import SessionLocal
     from app.infrastructure.persistence.repositories.outbox_repository import (
         OutboxRepository,
     )
-    from app.application.common.synchronization_policy import sanitize_sync_error
 
     db = SessionLocal()
     repository = OutboxRepository(db)
 
     try:
-        events = repository.get_pending_events(limit=args.limit)
+        supported_event_types = (
+            SYNC_EVENT_POLICIES.keys()
+            - INTERNAL_CONSUMER_MANAGED_EVENT_TYPES
+            - PORTABLE_TRANSPORT_PENDING_EVENT_TYPES
+        )
+        events = repository.get_pending_events(
+            limit=args.limit,
+            event_types=supported_event_types,
+        )
         if not events:
             print("No hay eventos PENDING.")
             return 0
@@ -43,14 +55,6 @@ def main() -> int:
         for event in events:
             event_db_id = event["id"]
             event_type = event["event_type"]
-
-            if event_type in INTERNAL_CONSUMER_MANAGED_EVENT_TYPES:
-                print(
-                    f"Skipping consumer-managed event id={event_db_id} "
-                    f"type={event_type}"
-                )
-                skipped_count += 1
-                continue
 
             if event["retry_count"] >= MAX_RETRIES:
                 print(

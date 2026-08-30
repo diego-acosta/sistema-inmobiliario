@@ -27,11 +27,13 @@ def test_publisher_real_no_imprime_payload_ni_error_crudo(monkeypatch, capsys, c
 
     class FakeRepository:
         failed_error = None
+        requested_event_types = None
 
         def __init__(self, db) -> None:
             pass
 
-        def get_pending_events(self, *, limit):
+        def get_pending_events(self, *, limit, event_types=None):
+            type(self).requested_event_types = set(event_types or ())
             return [{
                 "id": 455,
                 "event_id": "00000000-0000-0000-0000-000000000455",
@@ -67,4 +69,8 @@ def test_publisher_real_no_imprime_payload_ni_error_crudo(monkeypatch, capsys, c
         assert sentinel not in caplog.text
     assert "postgresql://" not in captured.out
     assert FakeRepository.failed_error is raw_error
+    assert "sucursal_creada" in FakeRepository.requested_event_types
+    assert "escrituracion_registrada" not in FakeRepository.requested_event_types
+    assert "usuario_creado" not in FakeRepository.requested_event_types
+    assert "usuario_desactivado" not in FakeRepository.requested_event_types
     assert "SYNC_PUBLISH_FAILED" in captured.out
