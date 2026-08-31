@@ -45,12 +45,15 @@ Quedan preservadas las desigualdades USUARIO ≠ PERSONA, USUARIO ≠ INSTALACIO
 
 ## 5. Alcance del MVP
 
-El MVP permite crear y operar Tareas humanas, asignarlas, priorizarlas, fijar fecha objetivo, transicionar su lifecycle, comentar y consultar historial. La creación cumple:
+El MVP permite crear y operar Tareas humanas, asignarlas, priorizarlas, fijar fecha objetivo, transicionar su lifecycle, comentar y consultar historial. La creación manual cumple:
 
+- autenticación Bearer resuelta a un AuthenticatedPrincipal vigente;
 - origen = USUARIO;
-- id_usuario_creador derivado de AuthenticatedPrincipal.id_usuario;
-- generador_sistema = NULL.
-
+- id_usuario_creador derivado exclusivamente de AuthenticatedPrincipal.id_usuario;
+- generador_sistema = NULL;
+- si propone una sucursal, requiere administración vigente sobre esa sucursal y autorización efectiva de Administrativo;
+- si propone scope global, requiere alcance global administrativo vigente y autorización efectiva de Administrativo.
+  
 No se habilita origen SISTEMA, baja lógica pública, alertas, automatización, scheduler, notificaciones ni infraestructura transversal nueva.
 
 ## 6. Modelo conceptual
