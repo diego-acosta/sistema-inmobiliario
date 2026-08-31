@@ -85,14 +85,16 @@ Criterios explícitos:
   - `X-Sucursal-Id`
   - `X-Instalacion-Id`
 - `If-Match-Version`: NO APLICA; es alta de entidad nueva.
-- Idempotencia: aplica por `X-Op-Id` / `op_id_alta`.
+- Idempotencia: aplica por `X-Op-Id` mediante el claim/receipt global de `operacion_idempotente` (#469/#470); `op_id_alta` conserva provenance row-local, pero no es la autoridad concurrente.
   - mismo `X-Op-Id` + mismo payload: devuelve el mismo resultado sin duplicar usuario.
   - mismo `X-Op-Id` + payload distinto: `409 IDEMPOTENT_DUPLICATE`.
-  - retry post-error: solo se considera idempotente si existe registro persistido con ese `op_id_alta`.
+  - mismo `X-Op-Id` reutilizado por otro usuario o command incompatible: `409 IDEMPOTENT_DUPLICATE`.
+  - el claim usa la exclusión transaccional estable de #470 y precede cualquier mutación.
+  - compatibilidad prospectiva: los writes nuevos completan receipt; la evidencia histórica por `op_id_alta` no repara outbox ni receipt ausentes.
 - Versionado: crea con `version_registro = 1`.
-- Outbox: conceptualmente sincronizable según `SRV-ADM-001`/`EVT-ADM`; en la implementación vigente de usuario base no se evidencia evento outbox persistido en tests/repositorio, por lo que queda `NO CONFIRMADO` para esta operación.
-- Lock lógico: NO APLICA; no hay lock lógico implementado para alta de usuario.
-- Frontera transaccional: inserción de `usuario` y metadatos CORE-EF del alta.
+- Outbox: APLICA; emite `usuario_creado` antes del mismo commit que persiste el usuario. El replay local compatible por el mismo `X-Op-Id` no emite un segundo evento.
+- Lock lógico: aplica únicamente el lock transaccional estable del claim idempotente #470; no se agrega lock de negocio ni protocolo paralelo.
+- Frontera transaccional: inserción de `usuario`, metadatos CORE-EF, outbox y receipt global comparten transacción y commit. Un fallo al resolver provenance, persistir el outbox o completar el receipt revierte el alta completa.
 
 Request principal:
 
@@ -182,14 +184,15 @@ Errores esperados:
   - `X-Sucursal-Id`
   - `X-Instalacion-Id`
   - `If-Match-Version`
-- Idempotencia: aplica por `X-Op-Id` / `op_id_ultima_modificacion` para retry de baja ya aplicada.
+- Idempotencia: aplica por `X-Op-Id` mediante el claim/receipt global de `operacion_idempotente`; `op_id_ultima_modificacion` conserva evidencia row-local.
   - mismo `X-Op-Id` sobre la misma baja ya persistida: devuelve el estado ya dado de baja sin incrementar dos veces `version_registro`.
+  - reutilización del `X-Op-Id` del alta, de otro usuario u otra operación incompatible: `409 IDEMPOTENT_DUPLICATE` antes de mutar o emitir outbox.
   - versión distinta sin baja previa por ese `X-Op-Id`: `409 CONCURRENCY_ERROR`.
 - Versionado: requiere `If-Match-Version`; al aplicar baja incrementa `version_registro + 1`.
 - Baja lógica: establece `estado_usuario = INACTIVO`, `fecha_baja` y `deleted_at`.
-- Outbox: conceptualmente sincronizable según `SRV-ADM-001`/`EVT-ADM` (`usuario_desactivado`); en la implementación vigente no se evidencia evento outbox persistido en tests/repositorio, por lo que queda `NO CONFIRMADO` para esta operación.
-- Lock lógico: NO APLICA; no hay lock lógico implementado.
-- Frontera transaccional: actualización del usuario y metadatos CORE-EF de modificación.
+- Outbox: APLICA; emite `usuario_desactivado` antes del mismo commit que persiste la baja. El retry legítimo de esa misma baja no emite un segundo evento.
+- Lock lógico: aplica únicamente el lock transaccional estable del claim idempotente #470; no se agrega lock de negocio ni protocolo paralelo.
+- Frontera transaccional: baja, incremento de versión, metadatos CORE-EF, outbox y receipt global comparten transacción y commit. Un fallo al resolver provenance, persistir el outbox o completar el receipt revierte la baja y la versión.
 
 Response principal (`200`): envelope `{ "ok": true, "data": UsuarioSistemaData }` con `fecha_baja`, `estado_usuario = INACTIVO`, `deleted_at` persistido y `version_registro` incrementado.
 
@@ -197,6 +200,7 @@ Errores esperados:
 
 - `400 VALIDATION_ERROR`: headers CORE-EF faltantes/inválidos o `If-Match-Version` faltante/inválido.
 - `404 NOT_FOUND`: usuario inexistente.
+- `409 IDEMPOTENT_DUPLICATE`: `X-Op-Id` reutilizado por una operación incompatible.
 - `409 CONCURRENCY_ERROR`: mismatch real de versión.
 - `500 TECHNICAL_INCONSISTENCY`.
 

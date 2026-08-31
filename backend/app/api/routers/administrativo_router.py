@@ -1727,6 +1727,8 @@ def baja_usuario_sistema(
             core=core,
             if_match_version=core.if_match_version or 0,
         )
+    except UsuarioIdempotencyConflictError as exc:
+        return _error(409, "IDEMPOTENT_DUPLICATE", str(exc))
     except UsuarioConcurrencyError as exc:
         return _error(409, "CONCURRENCY_ERROR", str(exc))
     except Exception as exc:

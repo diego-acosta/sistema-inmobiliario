@@ -18,8 +18,11 @@ incluidas las bajas lógicas, sin fallback por login, email o PK remota.
 Esta materialización no cambia Bearer ni `AuthenticatedPrincipal.id_usuario`, que
 continúa siendo identidad autenticada local. Tampoco habilita sincronización de
 `credencial_usuario` o `sesion_usuario`: ambas siguen locales y prohibidas por la
-política #455. Los eventos de lifecycle de usuario permanecen sólo documentados en
-`EVT-ADM`; producer/outbox, consumer/inbox y aplicación remota no están implementados.
+política #455. #508 / PR #509 materializó `usuario.uid_global` y su resolver;
+#510 materializa producer/outbox, consumer/inbox y aplicación remota de
+`usuario_creado` y `usuario_desactivado` sobre la infraestructura Técnico/Sync
+existente. Los demás eventos de lifecycle continúan sin runtime productivo y este
+incremento no incorpora scheduler/broker transversal.
 
 | Concepto | Clasificación | Decisión |
 | --- | --- | --- |

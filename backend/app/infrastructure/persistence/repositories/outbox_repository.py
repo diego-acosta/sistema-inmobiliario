@@ -1,4 +1,5 @@
 import json
+from collections.abc import Collection
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -98,18 +99,35 @@ class OutboxRepository:
         ).mappings().one()
         return self._map_row(row)
 
-    def get_pending_events(self, *, limit: int = 100) -> list[dict[str, Any]]:
+    def get_pending_events(
+        self,
+        *,
+        limit: int = 100,
+        event_types: Collection[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        event_type_filter = ""
+        parameters: dict[str, Any] = {"limit": limit}
+        if event_types is not None:
+            selected_event_types = list(dict.fromkeys(event_types))
+            if not selected_event_types:
+                return []
+            event_type_filter = (
+                "AND event_type = ANY(CAST(:event_types AS varchar[]))"
+            )
+            parameters["event_types"] = selected_event_types
+
         statement = text(
             f"""
             SELECT {self._RETURNING}
             FROM outbox_event
             WHERE status = 'PENDING'
               AND published_at IS NULL
+              {event_type_filter}
             ORDER BY occurred_at, id
             LIMIT :limit
             """
         )
-        rows = self.db.execute(statement, {"limit": limit}).mappings().all()
+        rows = self.db.execute(statement, parameters).mappings().all()
         return [self._map_row(row) for row in rows]
 
     def mark_as_published(

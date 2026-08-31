@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from sqlalchemy import text
 
 from app.application.inmuebles.services.consume_venta_confirmada_service import (
@@ -120,6 +122,61 @@ def test_consume_venta_confirmada_es_no_op_explicito_y_publica_evento(
         {"id_inmueble": venta["id_inmueble"]},
     ).mappings().one()
     assert ocupaciones["total"] == 0
+
+
+def test_venta_confirmada_no_es_bloqueada_por_eventos_usuario_pending(
+    client, db_session
+) -> None:
+    marker = uuid4().hex
+    db_session.execute(
+        text(
+            """
+            INSERT INTO outbox_event (
+                event_type, aggregate_type, aggregate_id, payload,
+                occurred_at, status
+            )
+            SELECT
+                CASE WHEN series % 2 = 0
+                    THEN 'usuario_creado'
+                    ELSE 'usuario_desactivado'
+                END,
+                'usuario',
+                -series,
+                jsonb_build_object(
+                    'fairness_marker', CAST(:marker AS text),
+                    'sequence', series
+                ),
+                TIMESTAMP '2026-01-01 00:00:00' + series * INTERVAL '1 second',
+                'PENDING'
+            FROM generate_series(1, 101) AS series
+            """
+        ),
+        {"marker": marker},
+    )
+    db_session.commit()
+    venta = _confirmar_venta_publica(client, db_session)
+
+    result = _build_service(db_session).execute(limit=100)
+
+    assert result.success is True
+    assert result.data is not None
+    assert result.data["processed_events"] == 1
+    assert result.data["events"][0]["id_venta"] == venta["id_venta"]
+    user_events = db_session.execute(
+        text(
+            """
+            SELECT status, published_at
+            FROM outbox_event
+            WHERE payload->>'fairness_marker' = :marker
+            """
+        ),
+        {"marker": marker},
+    ).mappings().all()
+    assert len(user_events) == 101
+    assert all(
+        event["status"] == "PENDING" and event["published_at"] is None
+        for event in user_events
+    )
 
 
 def test_consume_venta_confirmada_es_idempotente_sin_generar_writes(

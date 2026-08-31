@@ -9,10 +9,13 @@ Cubre:
 - Diferenciación errores técnicos (retry) vs negocio (REJECTED)
 """
 from datetime import UTC, datetime
+from uuid import uuid4
 
 from app.infrastructure.persistence.repositories.inbox_repository import InboxRepository
-from app.infrastructure.persistence.repositories.outbox_repository import OutboxRepository
-
+from app.infrastructure.persistence.repositories.outbox_repository import (
+    OutboxRepository,
+)
+from sqlalchemy import text
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -167,6 +170,61 @@ def test_get_pending_events_incluye_event_id_y_retry_count(db_session) -> None:
         assert "retry_count" in e
         assert "last_error" in e
         assert "processed_at" in e
+
+
+def test_get_pending_events_filtra_antes_de_order_y_limit(db_session) -> None:
+    marker = uuid4().hex
+    unrelated_type = f"fairness_unrelated_{marker}"
+    requested_type = f"fairness_requested_{marker}"
+    db_session.execute(
+        text(
+            """
+            INSERT INTO outbox_event (
+                event_type, aggregate_type, aggregate_id, payload,
+                occurred_at, status
+            )
+            SELECT
+                :unrelated_type,
+                'fairness_test',
+                series,
+                '{}'::jsonb,
+                TIMESTAMP '2026-01-01 00:00:00' + series * INTERVAL '1 second',
+                'PENDING'
+            FROM generate_series(1, 101) AS series
+            """
+        ),
+        {"unrelated_type": unrelated_type},
+    )
+    db_session.execute(
+        text(
+            """
+            INSERT INTO outbox_event (
+                event_type, aggregate_type, aggregate_id, payload,
+                occurred_at, status
+            )
+            SELECT
+                :requested_type,
+                'fairness_test',
+                series,
+                '{}'::jsonb,
+                TIMESTAMP '2026-02-01 00:00:00' + series * INTERVAL '1 second',
+                'PENDING'
+            FROM generate_series(1, 3) AS series
+            """
+        ),
+        {"requested_type": requested_type},
+    )
+
+    events = OutboxRepository(db_session).get_pending_events(
+        limit=2,
+        event_types=(requested_type,),
+    )
+
+    assert [event["event_type"] for event in events] == [
+        requested_type,
+        requested_type,
+    ]
+    assert [event["aggregate_id"] for event in events] == [1, 2]
 
 
 # ── inbox: claim idempotente ──────────────────────────────────────────────────
