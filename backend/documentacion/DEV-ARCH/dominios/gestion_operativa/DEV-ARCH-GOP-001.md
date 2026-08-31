@@ -53,7 +53,7 @@ El MVP permite crear y operar Tareas humanas, asignarlas, priorizarlas, fijar fe
 - generador_sistema = NULL;
 - si propone una sucursal, requiere administración vigente sobre esa sucursal y autorización efectiva de Administrativo;
 - si propone scope global, requiere alcance global administrativo vigente y autorización efectiva de Administrativo.
-  
+
 No se habilita origen SISTEMA, baja lógica pública, alertas, automatización, scheduler, notificaciones ni infraestructura transversal nueva.
 
 ## 6. Modelo conceptual
@@ -96,7 +96,7 @@ Todo uid_global es obligatorio para la entidad sincronizable, único, inmutable,
 | origen | USUARIO en MVP; SISTEMA reservado | No | No | No después del alta |
 | creador | Autor humano del alta | No | No para USUARIO | No después del alta |
 | generador_sistema | Descriptor futuro de generación | No | Sí en USUARIO | No después del alta |
-| título | Asunto breve | Sí en estados editables | No | Sí |
+| título | Asunto breve obligatorio y con contenido funcional real; nunca cadena vacía | Sí en estados editables | No | Sí |
 | descripción | Detalle funcional | Sí en estados editables | Sí; opcional | Sí |
 | prioridad | BAJA/NORMAL/ALTA/URGENTE | Sí | No; NORMAL por defecto | Sí |
 | responsable | Usuario 0..1 | Sí | Sí | Sí |
@@ -148,7 +148,36 @@ La comparación es DATE estricta. Una Tarea con fecha objetivo igual a la fecha 
 
 El creador humano se toma exclusivamente de Bearer → AuthenticatedPrincipal.id_usuario, conserva FK local y viaja como usuario.uid_global. Es inmutable. La baja o desactivación posterior del usuario no invalida la Tarea ni elimina su identidad histórica.
 
-El responsable es 0..1 y puede asignarse, reasignarse o quitarse mediante administración aplicable mientras el lifecycle lo permita. Para una Tarea de sucursal, la elegibilidad exige habilitación operativa vigente sobre ese scope y autorización efectiva Administrativa suficiente; para una Tarea global exige el alcance global operativo equivalente y autorización efectiva. Sin responsable elegible no se ingresa a EN_CURSO ni COMPLETADA.
+El responsable es 0..1 y puede asignarse, reasignarse o quitarse mediante administración aplicable mientras el lifecycle lo permita. Su elegibilidad es una invariante continua y se evalúa completa sobre un único `instante_corte_utc` capturado una sola vez por caso de uso desde el reloj confiable del servidor en UTC; ese instante no proviene del cliente, navegador, sucursal ni instalación.
+
+Para una Tarea de sucursal, el responsable sólo es elegible cuando se cumplen simultáneamente:
+
+```text
+usuario vigente
+= estado_usuario = ACTIVO
+  AND usuario.deleted_at IS NULL
+  AND usuario.fecha_baja IS NULL
+
+sucursal vigente
+= estado_sucursal = ACTIVA
+  AND sucursal.deleted_at IS NULL
+  AND sucursal.fecha_baja IS NULL
+
+vínculo usuario_sucursal vigente
+= usuario_sucursal.deleted_at IS NULL
+  AND estado_vinculo = ACTIVO
+  AND fecha_desde_utc <= instante_corte_utc
+  AND (fecha_hasta_utc IS NULL OR instante_corte_utc < fecha_hasta_utc)
+  AND usuario vigente
+  AND sucursal vigente
+
+responsable elegible
+= vínculo usuario_sucursal vigente
+  AND puede_operar = true
+  AND autorización efectiva Administrativa suficiente
+```
+
+El intervalo de vigencia es `[fecha_desde, fecha_hasta)`, inclusivo al inicio y exclusivo al final. No alcanza con verificar aisladamente `puede_operar`. Para una Tarea global se exige el alcance global operativo vigente equivalente y autorización efectiva Administrativa suficiente; la representación técnica de ese alcance permanece bajo ownership Administrativo. Sin responsable elegible no se ingresa a EN_CURSO ni COMPLETADA.
 
 Si el responsable pierde después elegibilidad, permanece referenciado para trazabilidad pero pierde las capacidades derivadas de esa relación. No hay desasignación, reasignación, cancelación ni cambio de estado automático. La gestión posterior requiere una mutación explícita de un actor con administración aplicable.
 
@@ -231,6 +260,19 @@ Los comentarios no se duplican como historial. La consulta puede presentar ambos
 Tarea aplica uid_global, version_registro, created_at, updated_at, deleted_at, id_instalacion_origen, id_instalacion_ultima_modificacion, op_id_alta y op_id_ultima_modificacion. ComentarioTarea aplica identidad, versión y metadata CORE-EF correspondientes a una entidad sincronizable.
 
 Quién actuó se expresa con usuario; dónde se ejecutó se expresa con instalación. La metadata transversal no se duplica como campos funcionales. Tarea nace en versión 1. Toda mutación local material confirmada del snapshot avanza exactamente una versión `Vn → Vn+1`; la baja lógica también incrementa exactamente una versión local.
+
+Las clasificaciones CORE-EF congeladas para las operaciones estudiadas del MVP son:
+
+| Operación conceptual | Clasificación CORE-EF | Sincronización |
+| --- | --- | --- |
+| Crear o mutar snapshot de Tarea | COMMAND_WRITE_NEGOCIO | SINCRONIZABLE |
+| Agregar ComentarioTarea | COMMAND_WRITE_NEGOCIO | SINCRONIZABLE |
+| Baja lógica futura | COMMAND_WRITE_TECNICO | SINCRONIZABLE |
+| Consultas | QUERY_READLIKE | No generan outbox |
+
+Crear o mutar snapshot comprende creación, contenido, asignación/reasignación/desasignación, prioridad, fecha objetivo, transiciones de estado, completar, cancelar y reabrir. La baja lógica futura conserva su naturaleza técnica y permanece fuera del primer MVP público.
+
+Para las operaciones estudiadas del MVP se congela `lock lógico = NO APLICA`. Esta decisión no elimina ni debilita CAS, `If-Match-Version`, `version_registro`, idempotencia, transacción ni el fencing de infraestructura Técnica cuando corresponda: el control optimista del snapshot continúa siendo obligatorio según este documento. No se introduce un mecanismo de locking adicional.
 
 ## 18. Versionado y CAS
 
@@ -349,9 +391,9 @@ La arquitectura debe soportar lecturas de pendientes, responsable, creador, esta
 
 ## 29. Invariantes para DER y SQL
 
-El DER posterior debe materializar Tarea, ComentarioTarea, HistorialTarea, FKs locales, identidades portables, metadata CORE-EF e invariantes estructurales de origen/creador/generador, estados, prioridad, versión positiva, unicidad/inmutabilidad de UID, soft delete y relación comentario–Tarea.
+El DER posterior debe materializar Tarea, ComentarioTarea, HistorialTarea, FKs locales, identidades portables, metadata CORE-EF e invariantes estructurales de origen/creador/generador, título obligatorio y no vacío, estados, prioridad, versión positiva, unicidad/inmutabilidad de UID, soft delete y relación comentario–Tarea.
 
-SQL deberá proteger las invariantes estructurales y referenciales con la representación que determine el DER; application layer protegerá autorización, elegibilidad, lifecycle contextual, causalidad, continuidad remota, idempotencia orquestada y composición transaccional. No se congelan nombres de tabla/columna, tipos SQL, enums físicos, CHECK, triggers ni índices definitivos.
+SQL y application layer deberán preservar que `título` no sea nullable ni cadena vacía y conserve contenido funcional real en creación y modificación, con la representación concreta que determine el DER. SQL deberá proteger las demás invariantes estructurales y referenciales; application layer protegerá autorización, elegibilidad, lifecycle contextual, causalidad, continuidad remota, idempotencia orquestada y composición transaccional. No se congelan nombres de tabla/columna, tipos SQL, longitudes, enums físicos, CHECK, triggers ni índices definitivos.
 
 ## 30. Derivaciones hacia DEV-SRV y DEV-API
 
