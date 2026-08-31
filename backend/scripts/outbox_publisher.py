@@ -2,7 +2,6 @@ import argparse
 import os
 from datetime import UTC, datetime
 
-
 INTERNAL_CONSUMER_MANAGED_EVENT_TYPES = {"escrituracion_registrada"}
 PORTABLE_TRANSPORT_PENDING_EVENT_TYPES = {"usuario_creado", "usuario_desactivado"}
 

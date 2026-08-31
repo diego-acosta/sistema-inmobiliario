@@ -4,10 +4,8 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import UUID, uuid4
 
-from sqlalchemy.orm import Session
-
 from app.application.common.results import AppResult
-
+from sqlalchemy.orm import Session
 
 EVENT_TYPE_ESCRITURACION_REGISTRADA = "escrituracion_registrada"
 ESTADO_DISPONIBILIDAD_ESPERADO = "RESERVADA"

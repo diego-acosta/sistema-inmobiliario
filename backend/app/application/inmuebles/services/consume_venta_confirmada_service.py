@@ -3,10 +3,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
-from sqlalchemy.orm import Session
-
 from app.application.common.results import AppResult
-
+from sqlalchemy.orm import Session
 
 EVENT_TYPE_VENTA_CONFIRMADA = "venta_confirmada"
 ESTADO_VENTA_CONFIRMADA = "confirmada"

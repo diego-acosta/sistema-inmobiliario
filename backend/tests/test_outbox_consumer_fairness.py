@@ -1,7 +1,8 @@
 import pytest
-
 from app.application.inmuebles.services.consume_entrega_locativa_service import (
     EVENT_TYPE as ENTREGA_EVENT_TYPE,
+)
+from app.application.inmuebles.services.consume_entrega_locativa_service import (
     ConsumeEntregaLocativaService,
 )
 from app.application.inmuebles.services.consume_escrituracion_registrada_service import (
@@ -10,6 +11,8 @@ from app.application.inmuebles.services.consume_escrituracion_registrada_service
 )
 from app.application.inmuebles.services.consume_restitucion_locativa_service import (
     EVENT_TYPE as RESTITUCION_EVENT_TYPE,
+)
+from app.application.inmuebles.services.consume_restitucion_locativa_service import (
     ConsumeRestitucionLocativaService,
 )
 from app.application.inmuebles.services.consume_venta_confirmada_service import (

@@ -6,10 +6,8 @@ from datetime import UTC, date, datetime
 from typing import Any, Protocol
 from uuid import UUID, uuid4
 
-from sqlalchemy.orm import Session
-
 from app.application.common.results import AppResult
-
+from sqlalchemy.orm import Session
 
 EVENT_TYPE = "restitucion_locativa_registrada"
 TIPO_OCUPACION = "ALQUILER"

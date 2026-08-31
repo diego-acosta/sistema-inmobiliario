@@ -11,11 +11,11 @@ Cubre:
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import text
-
 from app.infrastructure.persistence.repositories.inbox_repository import InboxRepository
-from app.infrastructure.persistence.repositories.outbox_repository import OutboxRepository
-
+from app.infrastructure.persistence.repositories.outbox_repository import (
+    OutboxRepository,
+)
+from sqlalchemy import text
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
