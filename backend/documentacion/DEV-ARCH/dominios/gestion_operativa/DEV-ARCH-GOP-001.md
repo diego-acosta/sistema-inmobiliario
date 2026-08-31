@@ -82,7 +82,7 @@ HistorialTarea no es root de mutación pública. Se genera desde el command due�
 | Actor de historial | id_usuario local cuando exista | usuario.uid_global cuando exista | Administrativo |
 | Autor de comentario | id_usuario local | usuario.uid_global | Administrativo |
 | Sucursal | id_sucursal local nullable | sucursal.uid_global nullable | Operativo |
-| Instalación | id_instalacion local | instalacion.uid_global | Operativo/Técnico |
+| Instalación | id_instalacion local | instalacion.uid_global | Operativo (exclusivo); Técnico sólo consume identidad/contexto para procedencia, validación y sync transversal, sin adquirir ownership ni semántica de instalación |
 
 Todo uid_global es obligatorio para la entidad sincronizable, único, inmutable, no reutilizable y generado al crearla. op_id identifica la operación y nunca se convierte en identidad de Tarea o Comentario. Ninguna PK local viaja entre instalaciones.
 
