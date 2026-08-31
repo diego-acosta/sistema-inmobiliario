@@ -1,6 +1,6 @@
 # PROJECT-STATUS — Estado operativo del proyecto
 
-Actualizado: 2026-08-29
+Actualizado: 2026-08-31
 **Repositorio:** `diego-acosta/sistema-inmobiliario`
 
 ## 1. Propósito
@@ -26,10 +26,10 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 | Frente | Estado verificable | Issue/epic principal | Último PR relevante verificado | Próximo foco |
 | --- | --- | --- | --- | --- |
 | A — Comercial / Financiero | Activo. PR #432 está mergeado y #424 cerrado como completado: `INT-FIN-005` es la fuente contractual vigente para la indexación PPV2 mensual; la implementación runtime permanece pendiente. PR #422 conserva la materialización como fuente de `EMITIDA`/`PROYECTADA`. Baseline anterior verificable: `1763 passed`; no hubo nueva ejecución de la suite backend por el PR documental #432. | #425–#431 y #423 conforman el roadmap de implementación; #423 sigue bloqueado por los incrementos de soporte. #345 y #365 conservan alcance relacionado. | #432 mergeado (cierra #424); #422 permanece como fuente vigente para `EMITIDA`/`PROYECTADA`. | #425; luego #426 → #427 → #428/#429 → #423 → #430/#431. |
-| B — Administrativo | #407–#412 y #482–#484 implementados; PR #504, correspondiente a #484, está mergeado. #485 implementa la programación append-only y el producer `calendario_comercial_programado` en este PR, actualmente en revisión. #508, implementado y mergeado mediante PR #509, materializó `usuario.uid_global` y su resolver local. #510 materializa en este PR la replicación interinstalación del lifecycle runtime existente: `usuario_creado` y `usuario_desactivado`. | #425 permanece coordinador abierto y dividido; #426 continúa bloqueado. #507/#489 no se cierran desde #510: otros frentes del coordinador permanecen separados. | PR #503 mergeado (#483), PR #504 mergeado (#484), PR #509 mergeado (#508); #485 en revisión; #510 implementado en este PR. | #486 es el siguiente incremento de calendario; continuar por separado los demás frentes pendientes de #507. |
-| Operativo | #456 incorpora la identidad canónica local read-only para futuros commands técnicos, sin consumidor productivo ni cambios SQL. | #248 abierto; #454 permanece fuera de alcance. | #456 implementado en este incremento, pendiente de merge. | `LOCAL_INSTALLATION_CODE` es soporte transversal default-deny; Operativo conserva ownership de `instalacion`. |
-| Transversal — CORE-EF / Técnico | #469/#470 están completados. #511 está cerrado y PR #512 mergeado: `PENDING_DEPENDENCY`, retry, retained envelope, operation scope y fencing están materializados; no incorporan scheduler productivo definitivo. #510 reutiliza esa infraestructura para `administrativo.usuario`, sin crear un mecanismo paralelo. | #402 está cerrado/completado; #461 permanece abierto y separado. #507 sigue abierto por sus otros frentes. | PR #512 mergeado (#511); #510 integrado sobre esa infraestructura en este PR. | Integrar consumers futuros sólo mediante incrementos dueños y no ampliar compatibilidad heredada. |
-| Gestión Operativa — Tareas | Freeze funcional pre-DER: #490 y #491 están completados; #492 y #493 quedan documentalmente resueltos. | Épica #489 abierta; #492 conserva su estado previo y #493 queda listo para cierre después del merge. | Baseline verificado: merge de PR #495 (`1e994ba`), cierre documental del blocker interno #10. | Evaluar la siguiente etapa de #489 tras merge/cierre de #493 y resolver dependencias administrativas/técnicas antes de DER/SQL/API; no implementar Tarea desde este incremento. |
+| B — Administrativo | #407–#412 y #482–#484 implementados; PR #504, correspondiente a #484, está mergeado. #508/PR #509 materializó `usuario.uid_global`; #510/PR #521 completó su replicación portable. | #425 permanece coordinador abierto y dividido; #426 continúa bloqueado. | PR #509 mergeado (#508); PR #521 mergeado (#510). | #486 es el siguiente incremento de calendario; mantener separados los demás frentes. |
+| Operativo | #456 incorporó la identidad canónica local read-only para commands técnicos, sin consumidor productivo ni cambios SQL. | #248 abierto. | #456 completado. | `LOCAL_INSTALLATION_CODE` es soporte transversal default-deny; Operativo conserva ownership de `instalacion`. |
+| Transversal — CORE-EF / Técnico | #469/#470 están completados. #511 está cerrado y PR #512 mergeado: `PENDING_DEPENDENCY`, retry, retained envelope, operation scope y fencing están materializados; no incorporan scheduler productivo definitivo. #510/PR #521 reutiliza esa infraestructura para `administrativo.usuario`. | #402 y #507 están cerrados/completados; #461 permanece abierto y separado. #522 está abierto: no bloquea el MVP humano de Tarea y es requerido antes de automatización. | PR #512 mergeado (#511); PR #521 mergeado (#510). | Integrar consumers futuros mediante sus dominios dueños; resolver #522 antes de origen `SISTEMA`. |
+| Gestión Operativa — Tareas | Etapa pre-DER cerrada: #489, #490–#493 y #507 están cerrados/completados. #523 está en curso y materializa `DEV-ARCH-GOP-001` para el MVP humano. | #523 abierto. #522 abierto, no blocker del MVP humano y requerido antes de automatización. | PR #509, PR #512 y PR #521 mergeados como dependencias transversales verificadas. | Revisar y aprobar DEV-ARCH-GOP; DER/SQL/API/runtime permanecen en incrementos posteriores. |
 
 ## 4. Reglas para trabajo paralelo
 
@@ -76,9 +76,9 @@ outbox y receipt. #461 permanece abierto como migración transversal separada.
 
 ## 4.2 Gestión Operativa — Tareas y seguimiento interno
 
-Estado documental verificable: la épica #489 sigue abierta y `Tarea` continúa
-como concepto funcional principal propuesto del dominio `gestion_operativa`,
-separado de `operativo`. #490 está cerrado. No existen todavía DEV-ARCH-GOP,
+Estado documental verificable: #489 y la etapa pre-DER están cerrados/completados.
+`Tarea` es el concepto principal del dominio `gestion_operativa`, separado de
+`operativo`. #523 está en curso y agrega `DEV-ARCH-GOP-001`; no existen todavía
 DER, SQL, migrations, API, router, schema, service, repository, frontend ni
 tests runtime de Tarea.
 
@@ -122,14 +122,14 @@ Blockers internos de `GOP-FREEZE-001`:
 - #7 — comentario / `version_registro`: documentalmente resuelto por #493; listo para cierre después del merge.
 - #10 — identidad canónica interinstalación: documentalmente resuelto por #492;
   #511 materializa el runtime Técnico de la política retryable transversal y #510
-  lo reutiliza para `administrativo.usuario`. #492 conserva su estado documental
-  y #507 sigue abierto por los otros frentes.
+  lo reutiliza para `administrativo.usuario`. #492 está cerrado/completado
+  y #507 cerró la auditoría transversal previa a DEV-ARCH-GOP.
 
 #492 congela `uid_global` de Tarea como identidad distribuida y reserva el futuro
 ID local sólo para joins/FKs. Creador, responsable y actores de
 historial/comentario deben viajar por una identidad global de usuario provista
 por Administrativo. #508/PR #509 materializó `usuario.uid_global` y su resolver
-local; #510 materializa en este PR su replicación portable para altas y bajas, sin
+local; #510/PR #521 materializó su replicación portable para altas y bajas, sin
 transportar la PK local. Sucursal
 e instalación ya poseen `uid_global`: la primera referencia scope funcional y
 las segundas expresan procedencia técnica, sin confundir `Tarea.id_sucursal` con
@@ -158,9 +158,10 @@ regla. Si comentario y baja son concurrentes sin relación causal, ambos efectos
 convergen a Tarea dada de baja más comentario presente, sin LWW ni conflicto
 automático. Agregarlo no incrementa `Tarea.version_registro` ni requiere
 `If-Match-Version` de Tarea; la atomicidad futura abarca comentario/outbox/receipt.
-GOP todavía no está listo para DER/SQL/API. #493
-permanece abierto durante el PR y listo para cierre después del merge; no se
-cierra #489 desde esta actualización.
+La etapa pre-DER está cerrada: #489, #490–#493 y #507 están
+cerrados/completados. #523 está en curso con `DEV-ARCH-GOP-001`; DER/SQL/API y
+runtime permanecen fuera de este incremento. #522 continúa abierto, no bloquea
+el MVP humano y debe resolverse antes de automatización.
 
 ## 5. Frente A — Comercial / Financiero
 
@@ -402,7 +403,7 @@ Sub-issues con estado verificable:
 - #399 `CRUD write de item_catalogo` cerrado/completado por commit `e1efa0a`.
 - #508 / PR #509 materializó `usuario.uid_global` como identidad portable propia,
   estable e inmutable y agregó su resolver local, manteniendo `id_usuario` como PK local.
-- #510 materializa en este PR `usuario_creado` y `usuario_desactivado` sobre el
+- #510/PR #521 materializó `usuario_creado` y `usuario_desactivado` sobre el
   consumer `administrativo.usuario`, preservando UID y versión con PK local
   independiente. Credenciales y sesiones continúan locales/no sincronizables por #455.
 
@@ -587,11 +588,11 @@ el estado vigente de #412 y #482 se documenta en el frente Administrativo anteri
 
 ## 16. Incremento Técnico/Sync #511 — PENDING_DEPENDENCY
 
-#511 está cerrado y PR #512 mergeado. Materializa el Frente B transversal de #507: `inbox_event` retiene envelope y procedencia, incorpora lifecycle `PENDING_DEPENDENCY`, claim atómico visible, backoff acotado, pausa automática y reanudación manual. `event_id` identifica delivery, `op_id` operación y un `attempt_id` UUID único identifica cada adquisición concreta; `worker_id` es sólo diagnóstico. `inbox_operation_scope` es la única autoridad consumer-scoped de equivalencia, exclusión y receipt, sin advisory lock ni leader por menor delivery. La expiración habilita takeover y el takeover exitoso avanza el fence e invalida al attempt anterior. Efecto, receipt y transición terminal comparten el commit exterior del processor; `REJECTED` sigue terminal. #510 reutiliza este protocolo mediante el consumer portable `administrativo.usuario`, sin ledger ni mecanismo paralelo. #507 permanece abierto por sus otros frentes. No se implementa Tarea, GOP, heartbeat automático ni scheduler productivo.
+#511 está cerrado y PR #512 mergeado. Materializa el Frente B transversal de #507: `inbox_event` retiene envelope y procedencia, incorpora lifecycle `PENDING_DEPENDENCY`, claim atómico visible, backoff acotado, pausa automática y reanudación manual. `event_id` identifica delivery, `op_id` operación y un `attempt_id` UUID único identifica cada adquisición concreta; `worker_id` es sólo diagnóstico. `inbox_operation_scope` es la única autoridad consumer-scoped de equivalencia, exclusión y receipt, sin advisory lock ni leader por menor delivery. La expiración habilita takeover y el takeover exitoso avanza el fence e invalida al attempt anterior. Efecto, receipt y transición terminal comparten el commit exterior del processor; `REJECTED` sigue terminal. #510/PR #521 reutiliza este protocolo mediante el consumer portable `administrativo.usuario`, sin ledger ni mecanismo paralelo. #507 está cerrado/completado. No se implementó Tarea, GOP, heartbeat automático ni scheduler productivo.
 
 ## 17. Incremento Administrativo/Técnico #510 — replicación portable de usuario
 
-#510 materializa en este PR la replicación interinstalación del lifecycle de
+#510/PR #521 materializó la replicación interinstalación del lifecycle de
 `usuario` actualmente disponible: `usuario_creado` y `usuario_desactivado`.
 Administrativo conserva ownership funcional y resuelve exclusivamente por
 `usuario.uid_global`; cada instalación conserva su propia PK `id_usuario`.
@@ -601,5 +602,5 @@ coherente sobre UID ausente, y reutiliza retry, operation scope, fencing y retai
 envelope de #511/#512. `op_id_alta` remoto permanece nullable, los timestamps se
 canonicalizan a UTC-naive y credenciales/sesiones quedan fuera de sync por #455.
 La replicación es prospectiva: no incorpora backfill ni reparación legacy de #520.
-#507 no se cierra desde este incremento; la autenticación técnica de procesos
-`origen = SISTEMA` y sus demás frentes continúan separados.
+#507 está cerrado/completado. La autenticación técnica de procesos
+`origen = SISTEMA` permanece separada y bajo #522.
