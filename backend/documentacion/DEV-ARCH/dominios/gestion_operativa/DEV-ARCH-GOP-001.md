@@ -212,6 +212,10 @@ Si la sucursal del scope deja de estar vigente, la Tarea conserva scope, estado,
 
 GOP declara habilitaciones funcionales y consume la autorización efectiva de Administrativo; no crea ACL, roles ni tablas de permisos. Toda operación humana protegida requiere simultáneamente la relación funcional que la habilita y autorización efectiva Administrativa. Ninguna de las dos sustituye a la otra.
 
+Para todo command humano, el caller debe autenticarse mediante Bearer resuelto a un `AuthenticatedPrincipal` vigente y superar la autorización actual aplicable sobre la Tarea, el target o el scope solicitado **antes** de que `claim_operation` pueda producir cualquier respuesta observable. Esta barrera de acceso actual gatea por igual `EXECUTE`, `REPLAY` y `CONFLICT`: conocer o reutilizar un `op_id`, presentar un fingerprint/envelope compatible o existir un receipt durable no prueba identidad, no concede acceso y no sustituye autenticación ni autorización. Por lo tanto, un caller distinto o uno originalmente autorizado que luego perdió permiso no puede obtener el snapshot durable de replay ni detalles del conflicto por conocer un `op_id` válido.
+
+La autorización actual de acceso del caller es distinta de las precondiciones mutables propias del command —entre otras, lifecycle, versión esperada, elegibilidad y estado del target—. Después de superar autenticación y autorización actuales, un `REPLAY` puede devolver el resultado durable sin repetir el efecto ni reevaluar esas precondiciones de la ejecución original cuando sea necesario para preservar el replay durable. DEV-SRV podrá ordenar las demás lecturas, pero nunca desplazar autenticación/autorización detrás de un replay o conflicto observable.
+
 ### 14.1 Bases de visibilidad
 
 Un usuario puede ver una Tarea si, con autorización efectiva correspondiente, cumple al menos una base independiente:
@@ -313,7 +317,7 @@ La recepción remota no redefine esta regla. Si el receptor conserva Tarea en Vn
 
 GOP reutiliza public.operacion_idempotente y el contrato #469/#470: claim → EXECUTE, REPLAY o CONFLICT → complete. No crea ledger propio.
 
-Cada command futuro define command_code, target_type, target_uid o target_key, payload material canonicalizable, versión esperada cuando aplica, fingerprint, snapshot durable de replay y completion. El claim ocurre después del parseo/normalización suficientes para construir el fingerprint y antes del efecto material, dentro de la misma transacción coordinada. El orden exacto respecto de autorización y lecturas mutables se definirá en DEV-SRV preservando el contrato #470 y replay durable. Mismo op_id y envelope compatible devuelve replay sin repetir efecto/outbox; incompatibilidad material produce conflicto.
+Cada command futuro define command_code, target_type, target_uid o target_key, payload material canonicalizable, versión esperada cuando aplica, fingerprint, snapshot durable de replay y completion. El claim ocurre después del parseo/normalización suficientes para construir el fingerprint y antes del efecto material, dentro de la misma transacción coordinada. En commands humanos, Bearer → `AuthenticatedPrincipal` vigente y la autorización actual aplicable del caller sobre target/scope preceden cualquier respuesta observable de `claim_operation` y gatean `EXECUTE`, `REPLAY` y `CONFLICT`; la idempotencia no concede acceso. Mismo op_id y envelope compatible devuelve replay sin repetir efecto/outbox sólo después de superar esa barrera; incompatibilidad material produce conflicto cuyos detalles tampoco se exponen a un caller no autorizado. Superada la autorización actual, el replay durable puede omitir la reevaluación de precondiciones mutables propias de la ejecución original. DEV-SRV definirá el orden exacto de esas otras lecturas sin mover autorización después de un replay/conflict observable.
 
 La futura creación con `origen = SISTEMA` exige además una garantía funcional distinta de la idempotencia técnica por `op_id`: el mismo hecho fuente no puede crear una segunda Tarea funcional equivalente aunque sea reprocesado con un `op_id` nuevo. La identidad o clave material del hecho fuente se definirá en artefactos posteriores; este contrato no crea un ledger GOP paralelo ni congela columnas, hashes o índices.
 
@@ -436,6 +440,7 @@ DEV-API definirá operaciones HTTP sin congelarlas aquí. Auth humana será Bear
 | Persistencia | UID, FKs, constraints, CAS, soft delete | PostgreSQL |
 | Atomicidad | Efecto + historial + outbox + receipt; rollback | PostgreSQL |
 | Idempotencia | Execute/replay/conflict y canonicalización | PostgreSQL/API |
+| Autorización + idempotencia | Caller distinto con mismo op_id; caller originalmente autorizado que pierde permiso; ningún snapshot de replay ni detalle de conflict se filtra antes de auth/authz actual | API/PostgreSQL |
 | API | Bearer, headers, If-Match, errores y replay | API |
 | Sync | Payload sin PK, continuidad Vn→Vn+1, gap, conflicto y replay | Sync |
 | Dependencias | Referencia funcional requerida ausente vs procedencia Técnica | Sync |
@@ -480,7 +485,8 @@ Además permanecen fuera de este incremento: DER, SQL, migrations, tablas, route
 22. Misma versión y contenido con `op_id` distinto es una operación materialmente convergente distinta: no replay/duplicado y conserva ambas trazas.
 23. Toda entrada de HistorialTarea conserva obligatoriamente su Tarea; no existe historial funcional huérfano.
 24. El contrato mínimo de consultas incluye obtener, listar, Mis tareas, Tareas creadas por mí, pendientes, vencidas y sin asignar, sin congelar todavía endpoints HTTP.
-25. No existen gaps funcionales bloqueantes para DER posterior.
+25. Idempotencia no concede acceso: en todo command humano, Bearer → `AuthenticatedPrincipal` vigente y autorización actual aplicable sobre target/scope preceden cualquier respuesta observable de claim y gatean `EXECUTE`, `REPLAY` y `CONFLICT`; sólo después puede servirse replay durable sin repetir efectos ni reevaluar precondiciones mutables originales cuando corresponda.
+26. No existen gaps funcionales bloqueantes para DER posterior.
 
 ## 34. Pendientes no bloqueantes
 
