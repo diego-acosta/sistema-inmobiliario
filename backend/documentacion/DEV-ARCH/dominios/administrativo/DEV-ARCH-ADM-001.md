@@ -392,9 +392,26 @@ es conflicto y no se repara. #484 produce exactamente un
 `calendario_comercial_creado` agregado y registra su policy mínima, específica y
 default-deny. Raíz, pareja, outbox y receipt #470 comparten la transacción. Replay
 no reemite. Consumer, inbox, reentrega, aplicación y sync remoto permanecen en
-#486. #485 deberá producir `calendario_comercial_programado` dentro de su propio
-write transaccional.
+#486. #485 produce `calendario_comercial_programado` dentro de su propio write
+transaccional.
 
 ## Incremento #485 — programación append-only del calendario
 
 Administrativo conserva ownership exclusivo del agregado. El command autenticado bloquea la raíz y la historia GLOBAL, aplica CAS sobre `version_registro`, cierra la pareja abierta y crea otra pareja con fecha explícita posterior. Claim #470, mutaciones, incremento único de raíz, EVT-ADM-079 y completion comparten una transacción; replay usa el snapshot durable sin releer estado. #486 conserva el consumer remoto y #426 el cálculo Comercial; #425 permanece abierto.
+
+## Incremento #486 — recepción portable y aplicación remota
+
+El consumer único `administrativo.calendario_comercial` registra EVT-ADM-078 y
+EVT-ADM-079 en el inbox Técnico vigente. `event_id` identifica la delivery y
+`(consumer, op_id)` la operación; `attempt_id` y `fence_generation` pertenecen
+al protocolo #512. El hash emitido por #484/#485 valida integridad del payload y
+no sustituye el fingerprint técnico calculado sobre el envelope retenido.
+
+El applicator resuelve localmente las definiciones por los dos códigos
+contractuales y preserva únicamente los UIDs portables de raíz e hijos. Creación
+V1 y programación de la pareja se aplican dentro del savepoint funcional y del
+commit exterior de #512, sin commits internos. La continuidad es estricta:
+`Vn+1` puede aplicar, un salto queda `PENDING_DEPENDENCY`, una versión inferior
+termina procesada sin efecto y una misma versión sólo converge si el snapshot
+material coincide. No existe LWW, reparación silenciosa ni scheduler productivo
+nuevo en este incremento.

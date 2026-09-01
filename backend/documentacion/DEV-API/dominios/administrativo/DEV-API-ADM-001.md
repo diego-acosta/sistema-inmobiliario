@@ -1360,8 +1360,8 @@ original. La ejecución material captura exactamente un outbox agregado
 `calendario_comercial_creado`/`calendario_comercial`, `PENDING`, en la misma
 transacción que raíz, pareja y receipt #470; replay y conflictos no emiten. Su
 payload sólo distribuye UIDs/versiones, intervalo, días, `op_id` y UID de
-instalación origen, con hash RFC 8785/SHA-256. Consumer, inbox, aplicación y sync
-remoto no aplican en #484 y permanecen pendientes en #486. #485 deberá producir
+instalación origen, con hash RFC 8785/SHA-256. #486 consume ese contrato mediante
+el inbox portable vigente. #485 produce
 `calendario_comercial_programado` transaccionalmente.
 
 ### PUT programación de nueva vigencia (#485)
@@ -1374,5 +1374,7 @@ reutiliza los dos enteros estrictos 1–31 y la fecha ASCII `YYYY-MM-DD` del POS
 Programa append-only una fecha posterior a la última vigencia, devuelve 200 con
 snapshot `COMPLETA` y nueva versión, y responde 412 `CONCURRENCY_ERROR` ante CAS
 real bajo lock. Idempotencia usa el target singleton GLOBAL y replay durable sin
-requery. El producer EVT-ADM-079 comparte la transacción; consumo remoto sigue
-fuera de alcance hasta #486.
+requery. El producer EVT-ADM-079 comparte la transacción; #486 implementa su
+consumo remoto sin agregar una ruta HTTP pública. El entry point de
+sincronización es interno y reutiliza delivery, operation scope, retry y fencing
+de #512.
