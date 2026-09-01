@@ -444,7 +444,15 @@ DEV-API definirá operaciones HTTP sin congelarlas aquí. Auth humana será Bear
 
 ## 32. Fuera de alcance
 
-DER, SQL, migrations, tablas, routers, schemas, services, repositories, frontend, alertas, automatización, scheduler, notificaciones, auth técnica, #522, service accounts, API keys, usuario SYSTEM, workflow/BPM, DSL, EAV, plugins, IAM GOP, event sourcing, CQRS, ledger GOP y sync paralelo.
+### 32.1 Fuera del MVP funcional
+
+Se preserva como contrato normativo el conjunto completo congelado por `GOP-FREEZE-001` §28. Quedan fuera del MVP: agenda completa, recordatorios, alertas, notificaciones, recurrencia, subtareas, dependencias, múltiples responsables, equipos, sectores, Kanban, SLA, workflows configurables, adjuntos, generación automática efectiva, control de mora efectivo, relaciones polimórficas, incidencias, novedades, observaciones, frontend avanzado y dashboard analítico.
+
+Ningún artefacto posterior —DER, DEV-SRV, DEV-API, SQL o runtime— incorpora esas capacidades al MVP por omisión de este documento; cada una requiere un incremento funcional propio y trazable antes de habilitarse.
+
+### 32.2 Fuera de este incremento arquitectónico
+
+Además permanecen fuera de este incremento: DER, SQL, migrations, tablas, routers, schemas, services, repositories, frontend, alertas, automatización, scheduler, notificaciones, auth técnica, #522, service accounts, API keys, usuario SYSTEM, workflow/BPM, DSL, EAV, plugins, IAM GOP, event sourcing, CQRS, ledger GOP y sync paralelo.
 
 ## 33. Decisiones congeladas
 
