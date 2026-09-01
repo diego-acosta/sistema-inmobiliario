@@ -143,7 +143,7 @@ Completar genera en servidor la `fecha_finalizacion` vigente. Reabrir limpia la 
 
 ## 11. Prioridad y fechas
 
-El orden es BAJA < NORMAL < ALTA < URGENTE y NORMAL es el default conceptual. fecha_objetivo es opcional y representa DATE funcional, no timestamp CORE-EF.
+El orden es BAJA < NORMAL < ALTA < URGENTE y NORMAL es el default conceptual. La prioridad afecta únicamente ordenamiento, filtros y señalización visual; no cambia estado, vencimiento, permisos/autorización, locks, SLA ni dispara automatización. fecha_objetivo es opcional y representa DATE funcional, no timestamp CORE-EF.
 
 `VENCIDA` no es un estado persistido. Para cada caso de uso relevante, `fecha_corte_local` se captura una sola vez desde un reloj confiable del servidor y se proyecta en la zona IANA `America/Argentina/Buenos_Aires`; no proviene del cliente, instalación ni sesión PostgreSQL. La regla exacta es:
 
@@ -456,7 +456,7 @@ DER, SQL, migrations, tablas, routers, schemas, services, repositories, frontend
 6. Sucursal es scope nullable e inmutable; NULL es global.
 7. Creador es inmutable; responsable es 0..1 y su elegibilidad es continua.
 8. Comentario no versiona Tarea ni usa su CAS.
-9. Toda mutación local material del snapshot avanza exactamente `Vn → Vn+1` y usa CAS.
+9. La creación nace en `version_registro = 1` sin versión esperada ni `If-Match-Version`; toda mutación material de un snapshot de Tarea ya existente/versionado avanza exactamente `Vn → Vn+1` y usa CAS.
 10. Una recepción de Tarea con gap `> Vn+1` no adelanta el snapshot; su mecanismo técnico se difiere sin clasificarla automáticamente como PENDING_DEPENDENCY, rechazo o conflicto.
 11. Idempotencia, outbox/inbox y retry son transversales.
 12. Los eventos deben transportar información suficiente para aplicar cada mutación sincronizable; la granularidad concreta queda para DEV-SRV y un snapshot posterior no sustituye una operación intermedia faltante.
