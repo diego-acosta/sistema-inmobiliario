@@ -28,7 +28,20 @@ El runtime portable de #510 admite saltos de versión para `administrativo.usuar
 
 Ante contradicción rige: AGENTS.md; DEV-ARCH vigente; SQL real; runtime real; tests reales; issues/PR vigentes; GOP-FREEZE-001; PROJECT-STATUS; CODEX-WORKFLOW; documentación histórica. Toda contradicción se declara; no se reconcilia silenciosamente.
 
-## 4. Ownership y límites
+## 4. Clasificación semántica, ownership y límites
+
+La taxonomía semántica congelada por `GOP-FREEZE-001` §1 se preserva explícitamente y es independiente de la naturaleza técnica definida después en la sección 6:
+
+| Concepto/capacidad | Clasificación semántica |
+| --- | --- |
+| Tarea | Núcleo del dominio |
+| ComentarioTarea | Núcleo del dominio |
+| HistorialTarea | Núcleo del dominio |
+| Identidad y autorización provistas por Administrativo | Soporte transversal |
+| Metadata, versionado, idempotencia, procedencia técnica, outbox, inbox, sync y demás capacidades CORE-EF/Técnico aplicables | Soporte transversal |
+| Antiguos `CU-OPER-*` y cualquier modelo legacy de tareas | Compatibilidad heredada / documentación histórica desalineada; no se adopta como modelo principal de Tareas |
+
+Esta clasificación no sustituye aggregate boundaries ni decisiones de persistencia: `Tarea` sigue siendo aggregate root, `ComentarioTarea` append sincronizable independiente e `HistorialTarea` append funcional estructurado. Ninguna estructura heredada de `operativo` se adopta como contrato vigente de `gestion_operativa`.
 
 | Concepto | Owner | Contrato GOP |
 | --- | --- | --- |
