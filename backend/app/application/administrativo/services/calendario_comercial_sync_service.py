@@ -5,6 +5,9 @@ from itertools import pairwise
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
 from app.application.administrativo.parametro_entero import parse_parametro_entero
 from app.application.common.idempotency import canonical_payload_hash
 from app.application.common.synchronization_policy import validate_sync_event
@@ -23,12 +26,19 @@ from app.infrastructure.persistence.repositories.inbox_repository import InboxRe
 from app.infrastructure.persistence.repositories.outbox_repository import (
     OutboxRepository,
 )
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
 
 CALENDARIO_SYNC_CONSUMER = "administrativo.calendario_comercial"
 CALENDARIO_SYNC_EVENTS = frozenset(
     {"calendario_comercial_creado", "calendario_comercial_programado"}
+)
+_RECONCILIABLE_CONSTRAINTS = frozenset(
+    {
+        "uq_configuracion_calendario_comercial_uid",
+        "ux_configuracion_calendario_comercial_activa",
+        "ux_configuracion_calendario_comercial_op_id_alta",
+        "uq_valor_parametro_uid_global",
+        "ux_valor_parametro_op_id_alta",
+    }
 )
 
 _METADATA_FIELDS = frozenset({"uid_instalacion_origen", "payload_hash"})
@@ -72,6 +82,15 @@ class CalendarioComercialSyncPayloadError(ValueError):
 
 class CalendarioComercialSyncConcurrentApplyRetry(RuntimeError):
     """La historia cambió durante el CAS y debe reprocesarse desde #512."""
+
+
+def _is_reconciliable_integrity_error(exc: IntegrityError) -> bool:
+    """Sólo carreras UNIQUE conocidas pueden releerse como convergencia/conflicto."""
+    original = getattr(exc, "orig", None)
+    diagnostic = getattr(original, "diag", None)
+    constraint = getattr(diagnostic, "constraint_name", None)
+    sqlstate = getattr(original, "sqlstate", None) or getattr(original, "pgcode", None)
+    return sqlstate == "23505" and constraint in _RECONCILIABLE_CONSTRAINTS
 
 
 def _invalid() -> None:
@@ -370,7 +389,11 @@ class CalendarioComercialSyncApplicator:
         self, envelope: dict[str, Any], roots: list[dict[str, Any]], history: list[dict[str, Any]]
     ) -> bool:
         active = [row for row in roots if row["deleted_at"] is None]
-        if len(active) != 1 or str(active[0]["uid_global"]) != envelope["aggregate_uid"]:
+        if (
+            len(roots) != 1
+            or len(active) != 1
+            or str(active[0]["uid_global"]) != envelope["aggregate_uid"]
+        ):
             return False
         if active[0]["version_registro"] != envelope["version_agregada"]:
             return False
@@ -417,8 +440,10 @@ class CalendarioComercialSyncApplicator:
             self.repository.create_remote(definitions=definitions, envelope=envelope)
             nested.commit()
             return self._processed()
-        except IntegrityError:
+        except IntegrityError as exc:
             nested.rollback()
+            if not _is_reconciliable_integrity_error(exc):
+                raise
         roots = self.repository.lock_roots()
         history = self.repository.lock_history()
         return self._processed() if self._equivalent(envelope, roots, history) else self._conflict()
@@ -433,7 +458,11 @@ class CalendarioComercialSyncApplicator:
         active = [row for row in roots if row["deleted_at"] is None]
         if not active:
             return self._pending() if not roots and not history else self._conflict()
-        if len(active) != 1 or str(active[0]["uid_global"]) != envelope["aggregate_uid"]:
+        if (
+            len(roots) != 1
+            or len(active) != 1
+            or str(active[0]["uid_global"]) != envelope["aggregate_uid"]
+        ):
             return self._conflict()
         local_version = active[0]["version_registro"]
         incoming_version = envelope["version_agregada"]
@@ -481,8 +510,10 @@ class CalendarioComercialSyncApplicator:
                 raise RuntimeError("CALENDARIO_SYNC_CAS_LOST")
             nested.commit()
             return self._processed()
-        except IntegrityError:
+        except IntegrityError as exc:
             nested.rollback()
+            if not _is_reconciliable_integrity_error(exc):
+                raise
         except RuntimeError as exc:
             nested.rollback()
             raise CalendarioComercialSyncConcurrentApplyRetry(
@@ -499,12 +530,15 @@ class CalendarioComercialSyncApplicator:
             return InboxOutcome(
                 InboxOutcomeKind.REJECTED, CalendarioComercialSyncPayloadError.code
             )
+        # Todos los writers comparten el mismo orden: advisory del agregado,
+        # raíz total, definiciones y finalmente historia ordenada por código/fecha/id.
+        self.repository.lock_global()
+        roots = self.repository.lock_roots()
         definition_status, definitions = self.repository.lock_definitions()
         if definition_status == "MISSING":
             return self._pending()
         if definition_status != "READY":
             return self._conflict()
-        roots = self.repository.lock_roots()
         history = self.repository.lock_history()
         if envelope["event_type"] == "calendario_comercial_creado":
             return self._apply_created(envelope, definitions, roots, history)
@@ -528,16 +562,39 @@ def run_calendario_inbox_once(
 
 
 def transport_calendario_outbox_once(
-    session: Session, *, limit: int = 100
+    source_session: Session,
+    destination_session: Session,
+    *,
+    limit: int = 100,
 ) -> tuple[int, int]:
-    """Transporte mínimo testeable; la transacción pertenece al caller."""
-    repository = OutboxRepository(session)
+    """Entrega at-least-once entre bases; no intenta un commit distribuido.
+
+    Cada delivery se confirma primero en destino y recién después se acredita en
+    origen. Si falla el ack de origen, la reentrega queda protegida por
+    ``(event_id, consumer)`` en #512.
+    """
+    if source_session is destination_session:
+        raise ValueError("CALENDARIO_SYNC_SOURCE_DESTINATION_MUST_DIFFER")
+    repository = OutboxRepository(source_session)
     events = repository.get_pending_events(
         limit=limit, event_types=CALENDARIO_SYNC_EVENTS
     )
     registered = 0
     for event in events:
-        if register_calendario_outbox_delivery(session, outbox_event=event):
-            registered += 1
-        repository.mark_as_published(event["id"])
+        try:
+            created = register_calendario_outbox_delivery(
+                destination_session, outbox_event=event
+            )
+            destination_session.commit()
+        except Exception:
+            destination_session.rollback()
+            source_session.rollback()
+            raise
+        try:
+            repository.mark_as_published(event["id"])
+            source_session.commit()
+        except Exception:
+            source_session.rollback()
+            raise
+        registered += int(created)
     return len(events), registered

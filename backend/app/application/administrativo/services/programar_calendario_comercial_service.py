@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from typing import Any, Callable
+from itertools import pairwise
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -85,6 +87,9 @@ class ProgramarCalendarioComercialService:
             raise ProgramarCalendarioComercialError(
                 400, "inconsistencia_contexto_tecnico"
             )
+        # Jerarquía única de todos los writers del singleton calendario:
+        # advisory aggregate → raíz total → definiciones → historia.
+        repository.lock_global()
         root = repository.lock_active_root()
         if root is None:
             raise ProgramarCalendarioComercialError(
@@ -200,7 +205,7 @@ class ProgramarCalendarioComercialService:
             raise ProgramarCalendarioComercialError(
                 409, "CONFIGURACION_CALENDARIO_COMERCIAL_INCONSISTENTE"
             )
-        if any(a[1] != b[0] for a, b in zip(ordered, ordered[1:], strict=False)):
+        if any(a[1] != b[0] for a, b in pairwise(ordered)):
             raise ProgramarCalendarioComercialError(
                 409, "CONFIGURACION_CALENDARIO_COMERCIAL_INCONSISTENTE"
             )

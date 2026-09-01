@@ -3,11 +3,12 @@ from __future__ import annotations
 from typing import Any
 from uuid import uuid5
 
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
 from app.infrastructure.persistence.repositories.calendario_comercial_command_repository import (
     CODIGOS,
 )
-from sqlalchemy import text
-from sqlalchemy.orm import Session
 
 
 class CalendarioComercialSyncRepository:
@@ -15,6 +16,9 @@ class CalendarioComercialSyncRepository:
 
     def __init__(self, session: Session) -> None:
         self.session = session
+
+    def lock_global(self) -> None:
+        self.session.execute(text("SELECT pg_advisory_xact_lock(759942885, 986974765)"))
 
     def lock_definitions(self) -> tuple[str, dict[str, int]]:
         rows = (
@@ -84,7 +88,7 @@ class CalendarioComercialSyncRepository:
                    ('DIA_CIERRE_COMERCIAL',
                     'DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS')
                    AND v.id_sucursal IS NULL AND v.id_instalacion IS NULL
-                 ORDER BY v.fecha_desde, p.codigo_parametro,
+                 ORDER BY p.codigo_parametro, v.fecha_desde,
                           v.id_valor_parametro
                  FOR UPDATE OF v
                 """)

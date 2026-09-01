@@ -4,6 +4,9 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
+
 from app.api.core_ef_headers import AuthenticatedCoreEFHeaders, TechnicalCoreEFHeaders
 from app.application.administrativo.services.bootstrap_calendario_comercial_service import (
     BootstrapCalendarioComercialService,
@@ -11,6 +14,7 @@ from app.application.administrativo.services.bootstrap_calendario_comercial_serv
 from app.application.administrativo.services.calendario_comercial_sync_service import (
     CALENDARIO_SYNC_CONSUMER,
     CalendarioComercialSyncPayloadError,
+    _is_reconciliable_integrity_error,
     parse_calendario_outbox_envelope,
     register_calendario_outbox_delivery,
     run_calendario_inbox_once,
@@ -22,7 +26,9 @@ from app.application.administrativo.services.programar_calendario_comercial_serv
 from app.application.common.idempotency import canonical_payload_hash
 from app.application.integration.inbox_retry import InboxOutcomeKind
 from app.infrastructure.persistence.repositories.inbox_repository import InboxRepository
-from sqlalchemy import text
+from app.infrastructure.persistence.repositories.outbox_repository import (
+    OutboxRepository,
+)
 
 
 def _headers(op_id=None, version=None):
@@ -74,6 +80,18 @@ def _program_origin(db_session, op_id=None):
         dia_vencimiento_predeterminado_cuotas=11,
         vigente_desde=date(2026, 10, 1),
         headers=_headers(op_id, 1),
+        id_usuario=1,
+    )
+    db_session.commit()
+    return _outbox(db_session, "calendario_comercial_programado")
+
+
+def _program_origin_v3(db_session, op_id=None):
+    ProgramarCalendarioComercialService(db_session).execute(
+        dia_cierre_comercial=22,
+        dia_vencimiento_predeterminado_cuotas=12,
+        vigente_desde=date(2026, 11, 1),
+        headers=_headers(op_id, 2),
         id_usuario=1,
     )
     db_session.commit()
@@ -338,6 +356,80 @@ def test_programacion_remota_y_consultas_historicas(db_session):
     ]
 
 
+@pytest.mark.parametrize(
+    ("mutate", "expected"),
+    [
+        (False, InboxOutcomeKind.PROCESSED),
+        (True, InboxOutcomeKind.CONFLICTO),
+    ],
+)
+def test_v2_mismo_version_con_op_distinto_clasifica_snapshot(
+    db_session, mutate, expected
+):
+    created = _bootstrap_origin(db_session)
+    programmed = _program_origin(db_session)
+    _clear_calendar(db_session)
+    for event in (created, programmed):
+        assert register_calendario_outbox_delivery(db_session, outbox_event=event)
+        db_session.commit()
+        assert run_calendario_inbox_once(
+            db_session,
+            worker_id="calendar",
+            event_id=str(event["event_id"]),
+            manual=True,
+        ).kind is InboxOutcomeKind.PROCESSED
+
+    candidate = deepcopy(programmed)
+    candidate["event_id"] = uuid4()
+    candidate["payload"]["data"]["op_id"] = str(uuid4())
+    if mutate:
+        candidate["payload"]["data"]["dia_cierre_comercial"] = 31
+    _rehash(candidate["payload"])
+    assert register_calendario_outbox_delivery(db_session, outbox_event=candidate)
+    db_session.commit()
+    assert run_calendario_inbox_once(
+        db_session,
+        worker_id="calendar-equal-version",
+        event_id=str(candidate["event_id"]),
+        manual=True,
+    ).kind is expected
+    assert db_session.execute(
+        text("SELECT version_registro FROM configuracion_calendario_comercial")
+    ).scalar_one() == 2
+
+
+def test_version_inferior_es_obsoleta_sin_mutacion(db_session):
+    created = _bootstrap_origin(db_session)
+    v2 = _program_origin(db_session)
+    v3 = _program_origin_v3(db_session)
+    _clear_calendar(db_session)
+    for event in (created, v2, v3):
+        assert register_calendario_outbox_delivery(db_session, outbox_event=event)
+        db_session.commit()
+        assert run_calendario_inbox_once(
+            db_session,
+            worker_id="calendar",
+            event_id=str(event["event_id"]),
+            manual=True,
+        ).kind is InboxOutcomeKind.PROCESSED
+
+    obsolete = deepcopy(v2)
+    obsolete["event_id"] = uuid4()
+    obsolete["payload"]["data"]["op_id"] = str(uuid4())
+    _rehash(obsolete["payload"])
+    assert register_calendario_outbox_delivery(db_session, outbox_event=obsolete)
+    db_session.commit()
+    assert run_calendario_inbox_once(
+        db_session,
+        worker_id="calendar-obsolete",
+        event_id=str(obsolete["event_id"]),
+        manual=True,
+    ).kind is InboxOutcomeKind.PROCESSED
+    assert db_session.execute(
+        text("SELECT version_registro FROM configuracion_calendario_comercial")
+    ).scalar_one() == 3
+
+
 def test_v3_antes_de_v2_pending_y_converge_despues(db_session):
     created = _bootstrap_origin(db_session)
     v2 = _program_origin(db_session)
@@ -420,7 +512,9 @@ def test_transporte_filtra_calendario_antes_del_limit(db_session):
         ),
         RecordingOutbox,
     ):
-        assert transport_calendario_outbox_once(db_session, limit=1) == (0, 0)
+        assert transport_calendario_outbox_once(
+            db_session, object(), limit=1
+        ) == (0, 0)
     assert calls == [
         (
             1,
@@ -430,3 +524,177 @@ def test_transporte_filtra_calendario_antes_del_limit(db_session):
         )
     ]
     assert foreign["event_type"] == "usuario_creado"
+
+
+def test_fairness_sql_eventos_ajenos_no_consumen_limit_calendario(db_session):
+    db_session.execute(
+        text("""
+        INSERT INTO outbox_event(
+            event_type, aggregate_type, aggregate_id, payload, occurred_at, status)
+        SELECT 'usuario_creado', 'usuario', value, '{}'::jsonb,
+               timestamp '2026-01-01' + value * interval '1 second', 'PENDING'
+          FROM generate_series(1, 101) AS value
+        """)
+    )
+    calendar = _bootstrap_origin(db_session)
+    selected = OutboxRepository(db_session).get_pending_events(
+        limit=1,
+        event_types={"calendario_comercial_creado", "calendario_comercial_programado"},
+    )
+    assert [str(event["event_id"]) for event in selected] == [
+        str(calendar["event_id"])
+    ]
+
+
+def test_transporte_rechaza_self_delivery(db_session):
+    with pytest.raises(
+        ValueError, match="CALENDARIO_SYNC_SOURCE_DESTINATION_MUST_DIFFER"
+    ):
+        transport_calendario_outbox_once(db_session, db_session)
+
+
+def test_transporte_confirma_destino_antes_del_ack_origen():
+    calls = []
+    event = {"id": 7}
+
+    class Source:
+        def commit(self):
+            calls.append("source.commit")
+
+        def rollback(self):
+            calls.append("source.rollback")
+
+    class Destination:
+        def commit(self):
+            calls.append("destination.commit")
+
+        def rollback(self):
+            calls.append("destination.rollback")
+
+    class Outbox:
+        def __init__(self, _session):
+            pass
+
+        def get_pending_events(self, *, limit, event_types):
+            return [event]
+
+        def mark_as_published(self, event_id):
+            assert event_id == 7
+            calls.append("source.ack")
+
+    with (
+        patch(
+            "app.application.administrativo.services."
+            "calendario_comercial_sync_service.OutboxRepository",
+            Outbox,
+        ),
+        patch(
+            "app.application.administrativo.services."
+            "calendario_comercial_sync_service.register_calendario_outbox_delivery",
+            side_effect=lambda session, outbox_event: calls.append(
+                "destination.register"
+            )
+            or True,
+        ),
+    ):
+        assert transport_calendario_outbox_once(Source(), Destination()) == (1, 1)
+    assert calls == [
+        "destination.register",
+        "destination.commit",
+        "source.ack",
+        "source.commit",
+    ]
+
+
+def test_transporte_no_ackea_si_destino_falla():
+    calls = []
+
+    class Source:
+        def rollback(self):
+            calls.append("source.rollback")
+
+    class Destination:
+        def commit(self):
+            raise RuntimeError("destination unavailable")
+
+        def rollback(self):
+            calls.append("destination.rollback")
+
+    class Outbox:
+        def __init__(self, _session):
+            pass
+
+        def get_pending_events(self, *, limit, event_types):
+            return [{"id": 8}]
+
+        def mark_as_published(self, event_id):
+            calls.append("source.ack")
+
+    with (
+        patch(
+            "app.application.administrativo.services."
+            "calendario_comercial_sync_service.OutboxRepository",
+            Outbox,
+        ),
+        patch(
+            "app.application.administrativo.services."
+            "calendario_comercial_sync_service.register_calendario_outbox_delivery",
+            return_value=True,
+        ),
+        pytest.raises(RuntimeError, match="destination unavailable"),
+    ):
+        transport_calendario_outbox_once(Source(), Destination())
+    assert calls == ["destination.rollback", "source.rollback"]
+
+
+def test_integrity_error_solo_reconcilia_unique_conocida():
+    class Diagnostic:
+        constraint_name = "uq_valor_parametro_uid_global"
+
+    class KnownUnique(Exception):
+        sqlstate = "23505"
+        diag = Diagnostic()
+
+    class UnexpectedCheck(Exception):
+        sqlstate = "23514"
+        diag = type("Diagnostic", (), {"constraint_name": "unexpected_check"})()
+
+    assert _is_reconciliable_integrity_error(
+        IntegrityError("insert", {}, KnownUnique())
+    )
+    assert not _is_reconciliable_integrity_error(
+        IntegrityError("insert", {}, UnexpectedCheck())
+    )
+
+
+def test_raiz_historica_adicional_es_conflicto(db_session):
+    event = _bootstrap_origin(db_session)
+    _clear_calendar(db_session)
+    assert register_calendario_outbox_delivery(db_session, outbox_event=event)
+    db_session.commit()
+    assert run_calendario_inbox_once(
+        db_session, worker_id="calendar", event_id=str(event["event_id"]), manual=True
+    ).kind is InboxOutcomeKind.PROCESSED
+
+    db_session.execute(
+        text("""
+        INSERT INTO configuracion_calendario_comercial(
+            uid_global, version_registro, deleted_at, op_id_alta,
+            op_id_ultima_modificacion)
+        VALUES (:uid, 1, now(), :op, :op)
+        """),
+        {"uid": str(uuid4()), "op": str(uuid4())},
+    )
+    db_session.commit()
+    convergent = deepcopy(event)
+    convergent["event_id"] = uuid4()
+    convergent["payload"]["data"]["op_id"] = str(uuid4())
+    _rehash(convergent["payload"])
+    assert register_calendario_outbox_delivery(db_session, outbox_event=convergent)
+    db_session.commit()
+    assert run_calendario_inbox_once(
+        db_session,
+        worker_id="calendar-singleton",
+        event_id=str(convergent["event_id"]),
+        manual=True,
+    ).kind is InboxOutcomeKind.CONFLICTO

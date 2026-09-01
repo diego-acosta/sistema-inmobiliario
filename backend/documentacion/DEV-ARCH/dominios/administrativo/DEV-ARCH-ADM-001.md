@@ -397,7 +397,17 @@ transaccional.
 
 ## Incremento #485 — programación append-only del calendario
 
-Administrativo conserva ownership exclusivo del agregado. El command autenticado bloquea la raíz y la historia GLOBAL, aplica CAS sobre `version_registro`, cierra la pareja abierta y crea otra pareja con fecha explícita posterior. Claim #470, mutaciones, incremento único de raíz, EVT-ADM-079 y completion comparten una transacción; replay usa el snapshot durable sin releer estado. #486 conserva el consumer remoto y #426 el cálculo Comercial; #425 permanece abierto.
+Administrativo conserva ownership exclusivo del agregado. Todos sus writers —bootstrap
+local, programación local y applicators remotos— comparten la jerarquía
+`advisory GLOBAL → raíz total → definiciones por código → historia por
+(código, fecha_desde, id)`. El advisory transaccional protege también la ausencia
+de raíz. La raíz es singleton físico absoluto: una raíz eliminada o cualquier
+cardinalidad total distinta de uno después del bootstrap es inconsistencia y no
+autoriza otra escritura. El command aplica CAS, cierra la pareja abierta y crea
+otra pareja con fecha explícita posterior. Claim #470, mutaciones, incremento
+único de raíz, EVT-ADM-079 y completion comparten una transacción; replay usa el
+snapshot durable sin releer estado. #486 conserva el consumer remoto y #426 el
+cálculo Comercial; #425 permanece abierto.
 
 ## Incremento #486 — recepción portable y aplicación remota
 
@@ -415,3 +425,11 @@ commit exterior de #512, sin commits internos. La continuidad es estricta:
 termina procesada sin efecto y una misma versión sólo converge si el snapshot
 material coincide. No existe LWW, reparación silenciosa ni scheduler productivo
 nuevo en este incremento.
+
+El transporte mínimo es at-least-once y separa sesiones de origen y destino. El
+inbox destino confirma primero; sólo entonces el origen marca el outbox como
+publicado. No existe 2PC: si falla el ack origen, la reentrega del mismo
+`event_id` converge por Delivery. El entry point manual puede transportar y
+procesar, pero no constituye scheduler/broker productivo. Sólo violaciones
+`UNIQUE` conocidas se reconcilian después de `IntegrityError`; cualquier error
+SQL no clasificado se propaga como fallo técnico y conserva rollback/retry #512.
