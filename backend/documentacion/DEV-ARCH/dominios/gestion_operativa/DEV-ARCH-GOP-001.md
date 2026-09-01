@@ -253,7 +253,7 @@ Comentario y baja causalmente concurrentes conservan ambos efectos. Un comentari
 
 HistorialTarea registra cambios funcionales estructurados; no es CORE-EF, auditoría administrativa, outbox, inbox ni operacion_idempotente.
 
-Cada entrada conserva conceptualmente tipo de cambio, actor local y portable cuando exista, instante, op_id causal, valores anterior/nuevo cuando corresponda y motivo obligatorio de reapertura. Se genera para creación, cambios materiales de contenido, asignación, prioridad, fecha objetivo, estado, completar, cancelar y reabrir. La evidencia de finalizaciones previas se conserva cuando una Tarea se reabre.
+Cada entrada conserva conceptualmente tipo de cambio, actor local y portable cuando exista, instante, op_id causal, valores anterior/nuevo cuando corresponda y motivo obligatorio de reapertura. Se genera para creación, cambios materiales de contenido, asignación, prioridad, fecha objetivo, estado, completar, cancelar y reabrir. La evidencia de finalizaciones previas se conserva cuando una Tarea se reabre. Para el tipo `REABIERTA`, dado que el MVP de reapertura es exclusivamente humano y requiere administración aplicable, el actor humano es obligatorio junto con el instante y el motivo: la entrada debe conservar actor local y `usuario.uid_global`, `estado_anterior = COMPLETADA`, `estado_nuevo = PENDIENTE`, instante y motivo obligatorio; no puede existir una reapertura funcional sin actor atribuible.
 
 Una eventual baja lógica conserva obligatoriamente versionado, CAS, idempotencia, outbox, sync y trazabilidad CORE-EF, pero una entrada funcional específica de HistorialTarea sólo será obligatoria si un contrato funcional posterior determina que corresponde; no se convierte automáticamente toda mutación técnica en hecho funcional.
 
@@ -349,7 +349,8 @@ PENDING_DEPENDENCY sólo aplica cuando una referencia **funcional portable**, v�
 | Funcional requerida | Autor de comentario | PENDING_DEPENDENCY |
 | Funcional requerida | Sucursal funcional concreta | PENDING_DEPENDENCY |
 | Funcional requerida | Tarea padre de ComentarioTarea | PENDING_DEPENDENCY |
-| Funcional condicional | Actor de historial | Sólo si ese tipo de hecho exige actor humano y la operación requiere materializarlo |
+| Funcional requerida en REABIERTA | Actor humano de historial | PENDING_DEPENDENCY si la referencia portable requerida del actor todavía no se resuelve; REABIERTA no admite actor ausente |
+| Funcional condicional | Actor de historial en otros hechos | Sólo si ese tipo de hecho exige actor humano y la operación requiere materializarlo |
 | Funcional opcional | responsable = NULL o sucursal = NULL | No genera dependencia |
 | Procedencia técnica | instalación/envelope técnico | La clasifica Técnico según su contrato; no es PENDING_DEPENDENCY GOP por defecto |
 
@@ -367,7 +368,8 @@ La convergencia de Tarea usa continuidad estricta de snapshot; la de ComentarioT
 | Versión exactamente local + 1 | Candidata a aplicar si resuelve referencias y satisface invariantes |
 | Versión > local + 1 | Gap de continuidad; no aplicar inmediatamente ni avanzar snapshot |
 | Versión inferior a la local | No revierte estado; evaluar idempotencia/obsolescencia según operación ya conocida |
-| Misma versión y mismo contenido | Replay/duplicado seguro cuando corresponde a la misma operación compatible |
+| Misma versión y mismo contenido, mismo op_id/envelope compatible | Replay/duplicado seguro de la misma operación; no repetir efecto |
+| Misma versión y mismo contenido, op_id distinto | Operación distinta pero materialmente convergente: no es replay ni duplicado, no cambia el snapshot y conserva separadamente la trazabilidad de ambas operaciones |
 | Misma versión y distinto contenido | Conflicto material |
 | deleted_at en la versión siguiente válida | Aplicar baja sin convertir lifecycle |
 | Timestamp más nuevo | Sin autoridad por sí mismo |
@@ -453,7 +455,9 @@ DER, SQL, migrations, tablas, routers, schemas, services, repositories, frontend
 18. Las fronteras temporales de elegibilidad exigen offset explícito, normalización UTC y tratamiento explícito de legacy naïve antes de ser autoritativas.
 19. La futura generación SISTEMA combina idempotencia técnica por op_id con idempotencia funcional por hecho fuente.
 20. Tarea tiene criticidad de sincronización MEDIA; no admite auto-merge genérico, field-by-field ni LWW.
-21. No existen gaps funcionales bloqueantes para DER posterior.
+21. Toda reapertura `REABIERTA` conserva obligatoriamente actor humano local+portable, instante y motivo.
+22. Misma versión y contenido con `op_id` distinto es una operación materialmente convergente distinta: no replay/duplicado y conserva ambas trazas.
+23. No existen gaps funcionales bloqueantes para DER posterior.
 
 ## 34. Pendientes no bloqueantes
 
