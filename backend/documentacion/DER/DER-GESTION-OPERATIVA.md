@@ -97,12 +97,12 @@ versión esperada. Toda mutación material posterior avanza exactamente
 | Campo conceptual | Obligatorio | Mutable | Relación / naturaleza |
 | --- | --- | --- | --- |
 | PK local | Sí | No | Identidad local para joins y FK |
-| `uid_global` | Sí | No | Identidad portable propia |
+| `uid_global` | Sí | No | Identidad portable propia, única, inmutable y no reutilizable |
 | `version_registro` | Sí | Incremental | Versión del snapshot; nace en 1 |
 | `origen` | Sí | No | `USUARIO`; `SISTEMA` reservado |
 | creador | Condicional | No | FK local a `usuario` |
 | `generador_sistema` | Condicional | No | Descriptor funcional, no credencial |
-| título | Sí | Sí | Texto funcional obligatorio |
+| título | Sí | Sí | Texto no nullable, funcionalmente no vacío y con contenido textual real |
 | descripción | No | Sí | Texto funcional |
 | prioridad | Sí | Sí | `BAJA` / `NORMAL` / `ALTA` / `URGENTE` |
 | responsable | No | Sí | FK local a `usuario`; máximo uno |
@@ -131,6 +131,10 @@ Tarea requiere conceptualmente el bloque aplicable completo:
 - `op_id_alta`;
 - `op_id_ultima_modificacion`.
 
+`Tarea.uid_global` es obligatorio, único, inmutable y no reutilizable. Su
+unicidad CORE-EF no está diferida: sólo permanecen pendientes el nombre físico
+del constraint, el nombre físico del índice y los detalles SQL de protección.
+
 Los nombres físicos de las FK de instalación permanecen sujetos a la convención
 CORE-EF que se confirme al diseñar SQL. La instalación conserva ownership
 Operativo y no define visibilidad ni scope funcional de Tarea.
@@ -148,7 +152,7 @@ mutable de Tarea.
 | Campo conceptual | Obligatorio | Mutable | Relación / naturaleza |
 | --- | --- | --- | --- |
 | PK local | Sí | No | Identidad local |
-| `uid_global` | Sí | No | Identidad portable propia |
+| `uid_global` | Sí | No | Identidad portable propia, única, inmutable y no reutilizable |
 | `version_registro` | Sí | No ordinariamente | Versión propia; normalmente 1 en MVP |
 | Tarea | Sí | No | FK local obligatoria a Tarea |
 | autor | Sí | No | FK local obligatoria a `usuario` |
@@ -160,6 +164,10 @@ Su metadata CORE-EF comprende conceptualmente `uid_global`,
 `version_registro`, `created_at`, `updated_at`, `deleted_at`, instalaciones de
 origen y última modificación, `op_id_alta` y `op_id_ultima_modificacion`. Esto no
 habilita edición ni borrado funcional en el MVP.
+
+`ComentarioTarea.uid_global` es obligatorio, único, inmutable y no reutilizable.
+Su unicidad CORE-EF tampoco está diferida; sólo se difieren los nombres físicos
+del constraint y del índice y sus detalles SQL de implementación.
 
 Agregar un comentario:
 
@@ -226,7 +234,20 @@ El historial debe soportar hechos funcionales equivalentes a:
 
 No se fijan códigos físicos. Para `REABIERTA` la estructura debe permitir exigir
 actor humano, instante, motivo, estado anterior `COMPLETADA`, estado nuevo
-`PENDIENTE` y finalización anterior.
+`PENDIENTE` y finalización anterior. El postestado queda cerrado
+conceptualmente:
+
+```text
+REABIERTA
+estado: COMPLETADA → PENDIENTE
+Tarea.fecha_finalizacion vigente → NULL
+finalización anterior → evidencia en HistorialTarea
+```
+
+Por lo tanto, una Tarea reabierta no puede conservar simultáneamente
+`estado = PENDIENTE` y `fecha_finalizacion != NULL`. La entrada de historial
+preserva además actor humano obligatorio, motivo obligatorio, instante y `op_id`
+causal. La forma física de proteger estas reglas permanece diferida.
 
 La representación de evidencia anterior/nueva queda deliberadamente abierta:
 este DER no elige JSON libre, EAV, snapshots completos ni una tabla auxiliar de
@@ -252,26 +273,33 @@ GOP persiste FK local
 | autor de comentario | FK a `usuario` | `usuario.uid_global` | Administrativo |
 | actor de historial | FK condicional a `usuario` | `usuario.uid_global` | Administrativo |
 | sucursal funcional | FK nullable a `sucursal` | `sucursal.uid_global` | Operativo |
-| instalación de procedencia | FK CORE-EF local | `instalacion.uid_global` en metadata/envelope | Operativo/Técnico |
+| instalación de procedencia | FK CORE-EF local | `instalacion.uid_global` en metadata/envelope | Operativo |
 
 GOP no duplica `usuario.uid_global`, `sucursal.uid_global` ni
 `instalacion.uid_global`. Ninguna PK remota viaja. El soft delete del owner
 conserva su fila e identidad portable para trazabilidad y resolución.
+Técnico consume `instalacion.uid_global` como contexto/procedencia en
+metadata/envelope CORE-EF/Sync, sin adquirir ownership ni definir semántica de
+instalación.
 
 ## 10. Invariantes estructurales congeladas
 
-- Tarea y ComentarioTarea tienen UID propio; HistorialTarea no.
+- Tarea y ComentarioTarea tienen UID propio, obligatorio, único, inmutable y no
+  reutilizable; HistorialTarea no.
 - Tarea y ComentarioTarea tienen versionado propio; HistorialTarea no.
 - ComentarioTarea e HistorialTarea pertenecen siempre a una Tarea.
 - El comentario tiene autor humano obligatorio.
 - El historial conserva el `op_id` causal de la operación de Tarea.
 - Responsable y sucursal admiten como máximo una referencia cada uno.
 - Creador y generador son condicionales y excluyentes según origen.
-- El título es obligatorio.
+- El título es no nullable, funcionalmente no vacío y conserva contenido textual
+  real; su protección física se define después.
 - Prioridad y estado pertenecen a catálogos conceptuales cerrados.
 - `deleted_at` es independiente de `CANCELADA` y del lifecycle.
 - `REABIERTA` exige actor y motivo, además de evidencia del estado/finalización
-  anteriores.
+  anteriores; cambia `COMPLETADA → PENDIENTE`, limpia la
+  `fecha_finalizacion` vigente y conserva la finalización anterior en
+  HistorialTarea.
 - La metadata CORE-EF no duplica semántica funcional.
 - Las referencias externas persisten FK local y no copian UID del owner.
 - La sucursal funcional es nullable, inmutable en MVP y `NULL` significa global.
@@ -288,7 +316,9 @@ Quedan para el diseño físico:
 - nombres definitivos de tablas y columnas;
 - tipos y longitudes finales;
 - `CHECK`, enums físicos, FK, defaults y triggers;
-- índices y unicidades definitivas;
+- nombres físicos del constraint de unicidad y del índice CORE-EF de UID, cuya
+  existencia obligatoria no está diferida;
+- índices finales adicionales y unicidades específicas del dominio;
 - protección física de inmutabilidad;
 - estrategia concreta de CAS;
 - reglas físicas de timestamps y metadata CORE-EF.
@@ -318,9 +348,11 @@ La futura persistencia debe permitir:
 - consultar comentarios;
 - consultar historial.
 
-Son candidatos para evaluar índices posteriormente: UID de Tarea y Comentario,
-baja lógica, responsable, creador, estado, sucursal, prioridad, fecha objetivo y
-las FK de comentario/historial a Tarea. Esta lista no congela índices.
+El índice de `uid_global` de Tarea y ComentarioTarea es obligatorio por CORE-EF;
+sólo su nombre y forma física permanecen diferidos. Son candidatos para evaluar
+índices adicionales: baja lógica, responsable, creador, estado, sucursal,
+prioridad, fecha objetivo y las FK de comentario/historial a Tarea. Esta lista no
+congela esos índices adicionales.
 
 ## 13. Sync y portabilidad
 
@@ -364,10 +396,13 @@ Los siguientes puntos no bloquean el DER y no se deciden aquí:
 - nombres físicos definitivos de tablas y columnas;
 - tipos y longitudes de textos;
 - `CHECK` frente a enum físico;
+- nombres y detalles SQL del constraint único y del índice obligatorio de
+  `uid_global`; la unicidad, inmutabilidad y no reutilización CORE-EF no están
+  diferidas;
 - representación física de evidencia anterior/nueva;
 - catálogo físico de tipos de historial;
 - unicidades de HistorialTarea relacionadas con `op_id`;
-- índices finales;
+- índices finales adicionales;
 - estrategia física de CAS;
 - representación y tratamiento técnico de gaps de continuidad;
 - clasificación terminal de un comentario causalmente posterior a baja;
