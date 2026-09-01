@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from app.api.core_ef_headers import AuthenticatedCoreEFHeaders, TechnicalCoreEFHeaders
 from app.application.administrativo.services.bootstrap_calendario_comercial_service import (
@@ -534,7 +535,10 @@ def test_transporte_filtra_calendario_antes_del_limit(db_session):
         RecordingOutbox,
     ):
         assert transport_calendario_outbox_once(
-            db_session, object(), limit=1
+            db_session,
+            object(),
+            limit=1,
+            database_identity_resolver=lambda session: (id(session),),
         ) == (0, 0)
     assert calls == [
         (
@@ -572,6 +576,25 @@ def test_transporte_rechaza_self_delivery(db_session):
         ValueError, match="CALENDARIO_SYNC_SOURCE_DESTINATION_MUST_DIFFER"
     ):
         transport_calendario_outbox_once(db_session, db_session)
+
+
+def test_transporte_rechaza_sessions_distintas_sobre_misma_base(db_session):
+    event = _bootstrap_origin(db_session)
+    inbox_before = db_session.execute(
+        text("SELECT count(*) FROM inbox_event")
+    ).scalar_one()
+    bind = db_session.get_bind()
+    with Session(getattr(bind, "engine", bind)) as destination:
+        assert destination is not db_session
+        with pytest.raises(
+            ValueError, match="CALENDARIO_SYNC_SOURCE_DESTINATION_MUST_DIFFER"
+        ):
+            transport_calendario_outbox_once(db_session, destination)
+    assert _outbox(db_session, event["event_type"])["status"] == "PENDING"
+    assert (
+        db_session.execute(text("SELECT count(*) FROM inbox_event")).scalar_one()
+        == inbox_before
+    )
 
 
 def test_transporte_confirma_destino_antes_del_ack_origen():
@@ -618,7 +641,11 @@ def test_transporte_confirma_destino_antes_del_ack_origen():
             or True,
         ),
     ):
-        assert transport_calendario_outbox_once(Source(), Destination()) == (1, 1)
+        assert transport_calendario_outbox_once(
+            Source(),
+            Destination(),
+            database_identity_resolver=lambda session: (id(session),),
+        ) == (1, 1)
     assert calls == [
         "destination.register",
         "destination.commit",
@@ -664,7 +691,11 @@ def test_transporte_no_ackea_si_destino_falla():
         ),
         pytest.raises(RuntimeError, match="destination unavailable"),
     ):
-        transport_calendario_outbox_once(Source(), Destination())
+        transport_calendario_outbox_once(
+            Source(),
+            Destination(),
+            database_identity_resolver=lambda session: (id(session),),
+        )
     assert calls == ["destination.rollback", "source.rollback"]
 
 

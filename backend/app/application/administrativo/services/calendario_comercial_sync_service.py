@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import AbstractContextManager
-from datetime import date
+from dataclasses import dataclass
+from datetime import date, datetime
 from itertools import pairwise
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -85,6 +87,14 @@ class CalendarioComercialSyncPayloadError(ValueError):
 
 class CalendarioComercialSyncConcurrentApplyRetry(RuntimeError):
     """La historia cambió durante el CAS y debe reprocesarse desde #512."""
+
+
+@dataclass(frozen=True, slots=True)
+class _PostgresDatabaseIdentity:
+    database_name: str
+    server_address: str | None
+    server_port: int
+    postmaster_started_at: datetime
 
 
 def _is_reconciliable_integrity_error(exc: IntegrityError) -> bool:
@@ -570,11 +580,44 @@ def run_calendario_inbox_once(
     )
 
 
+def _postgres_database_identity(
+    session: Session,
+) -> _PostgresDatabaseIdentity:
+    """Identifica la base física desde el servidor, sin exponer el DSN."""
+    row = session.execute(
+        text("""
+        SELECT current_database()::text,
+               inet_server_addr()::text,
+               current_setting('port')::integer,
+               pg_postmaster_start_time()
+        """)
+    ).one()
+    return _PostgresDatabaseIdentity(row[0], row[1], row[2], row[3])
+
+
+def _same_physical_database(source: object, destination: object) -> bool:
+    if not isinstance(source, _PostgresDatabaseIdentity) or not isinstance(
+        destination, _PostgresDatabaseIdentity
+    ):
+        return source == destination
+    same_server = (
+        source.postmaster_started_at == destination.postmaster_started_at
+        and source.server_port == destination.server_port
+        and (
+            source.server_address == destination.server_address
+            or source.server_address is None
+            or destination.server_address is None
+        )
+    )
+    return same_server and source.database_name == destination.database_name
+
+
 def transport_calendario_outbox_once(
     source_session: Session,
     destination_session: Session,
     *,
     limit: int = 100,
+    database_identity_resolver: Callable[[Session], object] = _postgres_database_identity,
 ) -> tuple[int, int]:
     """Entrega at-least-once entre bases; no intenta un commit distribuido.
 
@@ -583,6 +626,10 @@ def transport_calendario_outbox_once(
     ``(event_id, consumer)`` en #512.
     """
     if source_session is destination_session:
+        raise ValueError("CALENDARIO_SYNC_SOURCE_DESTINATION_MUST_DIFFER")
+    source_identity = database_identity_resolver(source_session)
+    destination_identity = database_identity_resolver(destination_session)
+    if _same_physical_database(source_identity, destination_identity):
         raise ValueError("CALENDARIO_SYNC_SOURCE_DESTINATION_MUST_DIFFER")
     repository = OutboxRepository(source_session)
     events = repository.get_pending_events(
