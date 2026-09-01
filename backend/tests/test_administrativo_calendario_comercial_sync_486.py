@@ -533,13 +533,12 @@ def test_transporte_filtra_calendario_antes_del_limit(db_session):
             "calendario_comercial_sync_service.OutboxRepository"
         ),
         RecordingOutbox,
+    ), patch(
+        "app.application.administrativo.services."
+        "calendario_comercial_sync_service._postgres_database_identity",
+        side_effect=lambda session: (id(session),),
     ):
-        assert transport_calendario_outbox_once(
-            db_session,
-            object(),
-            limit=1,
-            database_identity_resolver=lambda session: (id(session),),
-        ) == (0, 0)
+        assert transport_calendario_outbox_once(db_session, object(), limit=1) == (0, 0)
     assert calls == [
         (
             1,
@@ -640,12 +639,13 @@ def test_transporte_confirma_destino_antes_del_ack_origen():
             )
             or True,
         ),
+        patch(
+            "app.application.administrativo.services."
+            "calendario_comercial_sync_service._postgres_database_identity",
+            side_effect=lambda session: (id(session),),
+        ),
     ):
-        assert transport_calendario_outbox_once(
-            Source(),
-            Destination(),
-            database_identity_resolver=lambda session: (id(session),),
-        ) == (1, 1)
+        assert transport_calendario_outbox_once(Source(), Destination()) == (1, 1)
     assert calls == [
         "destination.register",
         "destination.commit",
@@ -689,13 +689,14 @@ def test_transporte_no_ackea_si_destino_falla():
             "calendario_comercial_sync_service.register_calendario_outbox_delivery",
             return_value=True,
         ),
+        patch(
+            "app.application.administrativo.services."
+            "calendario_comercial_sync_service._postgres_database_identity",
+            side_effect=lambda session: (id(session),),
+        ),
         pytest.raises(RuntimeError, match="destination unavailable"),
     ):
-        transport_calendario_outbox_once(
-            Source(),
-            Destination(),
-            database_identity_resolver=lambda session: (id(session),),
-        )
+        transport_calendario_outbox_once(Source(), Destination())
     assert calls == ["destination.rollback", "source.rollback"]
 
 

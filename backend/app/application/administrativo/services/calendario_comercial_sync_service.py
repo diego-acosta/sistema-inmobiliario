@@ -617,7 +617,6 @@ def transport_calendario_outbox_once(
     destination_session: Session,
     *,
     limit: int = 100,
-    database_identity_resolver: Callable[[Session], object] = _postgres_database_identity,
 ) -> tuple[int, int]:
     """Entrega at-least-once entre bases; no intenta un commit distribuido.
 
@@ -627,8 +626,8 @@ def transport_calendario_outbox_once(
     """
     if source_session is destination_session:
         raise ValueError("CALENDARIO_SYNC_SOURCE_DESTINATION_MUST_DIFFER")
-    source_identity = database_identity_resolver(source_session)
-    destination_identity = database_identity_resolver(destination_session)
+    source_identity = _postgres_database_identity(source_session)
+    destination_identity = _postgres_database_identity(destination_session)
     if _same_physical_database(source_identity, destination_identity):
         raise ValueError("CALENDARIO_SYNC_SOURCE_DESTINATION_MUST_DIFFER")
     repository = OutboxRepository(source_session)
