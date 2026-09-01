@@ -179,6 +179,10 @@ responsable elegible
 
 El intervalo de vigencia es `[fecha_desde, fecha_hasta)`, inclusivo al inicio y exclusivo al final. No alcanza con verificar aisladamente `puede_operar`. Para una Tarea global se exige el alcance global operativo vigente equivalente y autorización efectiva Administrativa suficiente; la representación técnica de ese alcance permanece bajo ownership Administrativo. Sin responsable elegible no se ingresa a EN_CURSO ni COMPLETADA.
 
+Las fronteras temporales de elegibilidad preservan el contrato temporal congelado: toda entrada nueva de `fecha_desde`/`fecha_hasta` que deba ser autoritativa llega con offset explícito, se normaliza a UTC y se compara como instante UTC. Si la persistencia futura usa `timestamp without time zone`, sólo puede tratarse como UTC canónico cuando la escritura recibió un offset explícito y normalizó previamente el instante; el timezone de sesión PostgreSQL no es autoridad semántica.
+
+Los valores legacy naïve sin offset no se reinterpretan silenciosamente como UTC ni como ninguna otra zona. Antes de usarlos como frontera autoritativa para visibilidad, elegibilidad, asignación o mutación GOP, su semántica debe resolverse mediante migración/backfill explícito o una regla legacy documentada y validada. Este DEV-ARCH no elige esa estrategia ni supone un timezone histórico.
+
 Si el responsable pierde después elegibilidad, permanece referenciado para trazabilidad pero pierde las capacidades derivadas de esa relación. No hay desasignación, reasignación, cancelación ni cambio de estado automático. La gestión posterior requiere una mutación explícita de un actor con administración aplicable.
 
 Actores de historial y autores de comentario conservan referencia local más identidad portable cuando el tipo de hecho exige actor humano. El receptor no reevalúa retrospectivamente roles, permisos, asignación ni relaciones humanas que cambiaron después del hecho confirmado.
@@ -232,13 +236,13 @@ Ser creador sólo habilita visibilidad y comentario por autoría. El responsable
 
 ## 15. Comentarios
 
-ComentarioTarea es append-only en el MVP: no se edita ni se borra funcionalmente; una corrección es otro append. Tiene uid_global propio, único, inmutable y no reutilizable, y version_registro propio que nace en 1 y normalmente permanece en 1.
+ComentarioTarea es append-only en el MVP: no se edita ni se borra funcionalmente; una corrección es otro append. Tiene uid_global propio, único, inmutable y no reutilizable, y version_registro propio que nace en 1 y normalmente permanece en 1. Cada comentario conserva obligatoriamente la Tarea a la que pertenece, su autor humano portable, el `texto` funcional y el instante de ocurrencia generado/conservado conforme al contrato temporal aplicable; ninguno de esos datos puede omitirse al derivar DER, DEV-SRV o DEV-API.
 
 Agregar comentario:
 
 - no incrementa Tarea.version_registro;
 - no requiere If-Match-Version de Tarea;
-- conserva Tarea.uid_global, autor portable, op_id y causalidad suficiente;
+- conserva Tarea.uid_global, autor portable, `texto`, instante del comentario, op_id y causalidad suficiente;
 - produce persistencia, outbox y receipt en una transacción;
 - es válido en PENDIENTE, EN_CURSO, COMPLETADA y CANCELADA cuando alguna relación funcional de la matriz lo habilita y existe autorización efectiva;
 - no reabre, no completa, no cancela ni altera fecha_finalizacion.
@@ -298,6 +302,8 @@ GOP reutiliza public.operacion_idempotente y el contrato #469/#470: claim → EX
 
 Cada command futuro define command_code, target_type, target_uid o target_key, payload material canonicalizable, versión esperada cuando aplica, fingerprint, snapshot durable de replay y completion. El claim ocurre después del parseo/normalización suficientes para construir el fingerprint y antes del efecto material, dentro de la misma transacción coordinada. El orden exacto respecto de autorización y lecturas mutables se definirá en DEV-SRV preservando el contrato #470 y replay durable. Mismo op_id y envelope compatible devuelve replay sin repetir efecto/outbox; incompatibilidad material produce conflicto.
 
+La futura creación con `origen = SISTEMA` exige además una garantía funcional distinta de la idempotencia técnica por `op_id`: el mismo hecho fuente no puede crear una segunda Tarea funcional equivalente aunque sea reprocesado con un `op_id` nuevo. La identidad o clave material del hecho fuente se definirá en artefactos posteriores; este contrato no crea un ledger GOP paralelo ni congela columnas, hashes o índices.
+
 ## 20. Fronteras transaccionales
 
 El application service/orchestrator es owner de commit y rollback. Los repositories no hacen commit ni rollback internos.
@@ -351,6 +357,8 @@ Payload inválido o referencia permanentemente inválida se clasifica conforme a
 
 ## 25. Conflicto, replay y obsolescencia
 
+Tarea conserva criticidad de sincronización **MEDIA**. Esa clasificación prohíbe auto-merge genérico, resolución automática campo por campo y LWW: toda divergencia material que las reglas explícitas no puedan resolver de forma segura debe persistirse como conflicto con trazabilidad. Una resolución que modifique datos requiere una nueva operación trazable con nuevo `op_id`; la criticidad no transfiere ownership funcional a Técnico.
+
 La convergencia de Tarea usa continuidad estricta de snapshot; la de ComentarioTarea permanece independiente.
 
 | Entrada remota de Tarea | Resultado arquitectónico |
@@ -384,6 +392,8 @@ El modelo debe poder proteger esta invariante:
 | SISTEMA | NULL | Obligatorio |
 
 Sólo USUARIO se acepta en el primer runtime. generador_sistema es un descriptor funcional mínimo, no una credencial ni identidad técnica. #522 debe cerrar autenticación/autorización técnica antes de habilitar SISTEMA. No se crean service accounts, API keys, usuario SYSTEM ni Bearer artificial.
+
+Cuando `origen = SISTEMA` se habilite en un incremento futuro, deberá preservarse simultáneamente `op_id → idempotencia técnica` y `hecho fuente → idempotencia funcional`: reprocesar el mismo hecho fuente con otro `op_id` no puede crear una Tarea funcional duplicada. La clave exacta del hecho fuente permanece diferida y no se diseña en este MVP.
 
 ## 28. Consultas esperadas
 
@@ -439,7 +449,11 @@ DER, SQL, migrations, tablas, routers, schemas, services, repositories, frontend
 14. PENDING_DEPENDENCY sólo cubre referencias funcionales portables requeridas y temporalmente ausentes; procedencia Técnica conserva ownership Técnico.
 15. deleted_at no es CANCELADA y la baja técnica no obliga por sí sola a crear HistorialTarea funcional.
 16. MVP sólo admite origen USUARIO.
-17. No existen gaps funcionales bloqueantes para DER posterior.
+17. ComentarioTarea conserva Tarea, autor, texto e instante funcional.
+18. Las fronteras temporales de elegibilidad exigen offset explícito, normalización UTC y tratamiento explícito de legacy naïve antes de ser autoritativas.
+19. La futura generación SISTEMA combina idempotencia técnica por op_id con idempotencia funcional por hecho fuente.
+20. Tarea tiene criticidad de sincronización MEDIA; no admite auto-merge genérico, field-by-field ni LWW.
+21. No existen gaps funcionales bloqueantes para DER posterior.
 
 ## 34. Pendientes no bloqueantes
 
