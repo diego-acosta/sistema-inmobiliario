@@ -11,6 +11,10 @@ from app.infrastructure.persistence.repositories.calendario_comercial_command_re
 )
 
 
+class CalendarioComercialSyncCasLost(RuntimeError):
+    """El snapshot cambió entre el lock/lectura y el CAS remoto."""
+
+
 class CalendarioComercialSyncRepository:
     """Persistencia receptora de calendario; nunca confirma la transacción."""
 
@@ -181,7 +185,7 @@ class CalendarioComercialSyncRepository:
                 },
             ).scalar_one_or_none()
             if updated_version != envelope["previous_values"][code]["version_registro"]:
-                raise RuntimeError("CALENDARIO_SYNC_CAS_LOST")
+                raise CalendarioComercialSyncCasLost("CALENDARIO_SYNC_CAS_LOST")
 
         for code in CODIGOS:
             value = envelope["values"][code]

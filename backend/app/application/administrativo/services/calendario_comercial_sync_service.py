@@ -22,6 +22,7 @@ from app.infrastructure.persistence.repositories.calendario_comercial_command_re
     CODIGOS,
 )
 from app.infrastructure.persistence.repositories.calendario_comercial_sync_repository import (
+    CalendarioComercialSyncCasLost,
     CalendarioComercialSyncRepository,
 )
 from app.infrastructure.persistence.repositories.inbox_repository import InboxRepository
@@ -509,14 +510,14 @@ class CalendarioComercialSyncApplicator:
                 envelope=envelope,
             )
             if root_version != incoming_version:
-                raise RuntimeError("CALENDARIO_SYNC_CAS_LOST")
+                raise CalendarioComercialSyncCasLost("CALENDARIO_SYNC_CAS_LOST")
             nested.commit()
             return self._processed()
         except IntegrityError as exc:
             nested.rollback()
             if not _is_reconciliable_integrity_error(exc):
                 raise
-        except RuntimeError as exc:
+        except CalendarioComercialSyncCasLost as exc:
             nested.rollback()
             raise CalendarioComercialSyncConcurrentApplyRetry(
                 "SYNC_CONCURRENT_APPLY_RETRY"
