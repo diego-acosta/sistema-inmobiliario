@@ -56,7 +56,7 @@ DER no crea ledger, outbox, inbox, dependencia pendiente o conflicto propios.
 
 ```mermaid
 erDiagram
-    USUARIO ||--o{ TAREA : crea
+    USUARIO o|--o{ TAREA : crea
     USUARIO o|--o{ TAREA : responsable
     SUCURSAL o|--o{ TAREA : scope
     TAREA ||--o{ COMENTARIO_TAREA : recibe
@@ -67,8 +67,9 @@ erDiagram
 
 Cardinalidades y condiciones:
 
-- el creador es obligatorio cuando `origen = USUARIO`; queda nullable en la
-  estructura exclusivamente para el futuro `origen = SISTEMA`;
+- el creador admite estructuralmente `0..1` usuario; es obligatorio cuando
+  `origen = USUARIO` y debe ser `NULL` para el futuro `origen = SISTEMA`, según
+  la invariante cruzada con `generador_sistema`;
 - el responsable es opcional y existe como máximo uno;
 - la sucursal funcional es opcional y existe como máximo una; `NULL` significa
   alcance global;
@@ -104,18 +105,34 @@ versión esperada. Toda mutación material posterior avanza exactamente
 | `generador_sistema` | Condicional | No | Descriptor funcional, no credencial |
 | título | Sí | Sí | Texto no nullable, funcionalmente no vacío y con contenido textual real |
 | descripción | No | Sí | Texto funcional |
-| prioridad | Sí | Sí | `BAJA` / `NORMAL` / `ALTA` / `URGENTE` |
+| prioridad | Sí | Sí | `BAJA` / `NORMAL` / `ALTA` / `URGENTE`; al omitirse en creación adopta conceptualmente `NORMAL` |
 | responsable | No | Sí | FK local a `usuario`; máximo uno |
 | `fecha_objetivo` | No | Sí | `DATE` funcional |
-| estado | Sí | Transición válida | `PENDIENTE` / `EN_CURSO` / `COMPLETADA` / `CANCELADA` |
+| estado | Sí | Transición válida | `PENDIENTE` / `EN_CURSO` / `COMPLETADA` / `CANCELADA`; el único estado inicial es `PENDIENTE` |
 | `fecha_finalizacion` | No | Derivada | Resultado del lifecycle |
 | sucursal | No | No en MVP | FK local a `sucursal`; `NULL` global |
 | `deleted_at` | No | Baja futura | Soft delete técnico, distinto del lifecycle |
 | metadata CORE-EF | Según contrato | Según mutación | Identidad, causalidad y procedencia técnica |
 
 No se congelan longitudes ni tipos SQL; `DATE` para `fecha_objetivo` es una
-decisión funcional ya cerrada. `VENCIDA` se calcula a partir de estado, fecha
-objetivo y fecha de corte; no se persiste como estado.
+decisión funcional ya cerrada. El default conceptual `NORMAL` de prioridad y el
+estado inicial único `PENDIENTE` son reglas de creación, pero este DER no decide
+si se protegerán mediante `DEFAULT` SQL, validación de aplicación u otro
+mecanismo posterior.
+
+`VENCIDA` no es un estado ni un campo persistido, sino una proyección de consulta
+definida conceptualmente por la regla completa:
+
+```text
+VENCIDA =
+  deleted_at ausente
+  AND fecha_objetivo no nula
+  AND estado IN (PENDIENTE, EN_CURSO)
+  AND fecha_objetivo < fecha_corte_local
+```
+
+La `fecha_corte_local` conserva la semántica definida por `DEV-ARCH-GOP-001`.
+Por lo tanto, una Tarea con baja técnica no se proyecta como vencida.
 
 ### 6.3 Metadata CORE-EF
 
@@ -291,10 +308,17 @@ instalación.
 - El comentario tiene autor humano obligatorio.
 - El historial conserva el `op_id` causal de la operación de Tarea.
 - Responsable y sucursal admiten como máximo una referencia cada uno.
-- Creador y generador son condicionales y excluyentes según origen.
+- Creador y generador son condicionales y excluyentes según origen: para
+  `USUARIO`, creador obligatorio y generador `NULL`; para `SISTEMA`, creador
+  `NULL` y generador obligatorio. `SISTEMA` permanece deshabilitado en el MVP.
 - El título es no nullable, funcionalmente no vacío y conserva contenido textual
   real; su protección física se define después.
-- Prioridad y estado pertenecen a catálogos conceptuales cerrados.
+- Prioridad y estado pertenecen a catálogos conceptuales cerrados; la prioridad
+  omitida en creación adopta conceptualmente `NORMAL` y toda Tarea se crea
+  únicamente en `PENDIENTE`.
+- `VENCIDA` es una proyección no persistida que exige `deleted_at` ausente,
+  `fecha_objetivo` no nula, estado `PENDIENTE` o `EN_CURSO`, y
+  `fecha_objetivo < fecha_corte_local`.
 - `deleted_at` es independiente de `CANCELADA` y del lifecycle.
 - `REABIERTA` exige actor y motivo, además de evidencia del estado/finalización
   anteriores; cambia `COMPLETADA → PENDIENTE`, limpia la
