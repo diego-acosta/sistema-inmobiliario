@@ -26,7 +26,7 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 | Frente | Estado verificable | Issue/epic principal | Último PR relevante verificado | Próximo foco |
 | --- | --- | --- | --- | --- |
 | A — Comercial / Financiero | Activo. PR #432 está mergeado y #424 cerrado como completado: `INT-FIN-005` es la fuente contractual vigente para la indexación PPV2 mensual; la implementación runtime permanece pendiente. PR #422 conserva la materialización como fuente de `EMITIDA`/`PROYECTADA`. Baseline anterior verificable: `1763 passed`; no hubo nueva ejecución de la suite backend por el PR documental #432. | #425–#431 y #423 conforman el roadmap de implementación; #423 sigue bloqueado por los incrementos de soporte. #345 y #365 conservan alcance relacionado. | #432 mergeado (cierra #424); #422 permanece como fuente vigente para `EMITIDA`/`PROYECTADA`. | #425; luego #426 → #427 → #428/#429 → #423 → #430/#431. |
-| B — Administrativo | #407–#412 y #482–#485 implementados; PR #504 (#484) y PR #506 (#485) están mergeados. #486 está implementado en PR draft #526: validación estática OK y focal PostgreSQL real confirmada (`27 passed`); la matriz avanzada de concurrencia, rollback, fencing y E2E interinstalación sigue **NO CONFIRMADA**. #508/PR #509 materializó `usuario.uid_global`; #510/PR #521 completó su replicación portable. | #425 permanece abierto hasta verificar el merge de #486; #426 continúa bloqueado. | PR #506 mergeado (#485); PR #521 mergeado (#510); PR draft #526 pendiente de matriz PostgreSQL avanzada y auditoría. | Ejecutar la matriz PostgreSQL avanzada y auditar #526; sólo después de su merge reconciliar #425. |
+| B — Administrativo | #407–#412 y #482–#485 implementados; PR #504 (#484) y PR #506 (#485) están mergeados. #486 está implementado en PR draft #526: validación estática OK y PostgreSQL real confirmado para focal (`27 passed`) y matriz avanzada (`19 passed`); la hermeticidad de esa matriz dentro de la suite permanece en corrección/validación. #508/PR #509 materializó `usuario.uid_global`; #510/PR #521 completó su replicación portable. | #425 permanece abierto hasta verificar el merge de #486; #426 continúa bloqueado. | PR #506 mergeado (#485); PR #521 mergeado (#510); PR draft #526 pendiente de validar aislamiento y auditoría. | Validar hermeticidad de la matriz avanzada y auditar #526; sólo después de su merge reconciliar #425. |
 | Operativo | #456 incorporó la identidad canónica local read-only para commands técnicos, sin consumidor productivo ni cambios SQL. | #248 abierto. | #456 completado. | `LOCAL_INSTALLATION_CODE` es soporte transversal default-deny; Operativo conserva ownership de `instalacion`. |
 | Transversal — CORE-EF / Técnico | #469/#470 están completados. #511 está cerrado y PR #512 mergeado: `PENDING_DEPENDENCY`, retry, retained envelope, operation scope y fencing están materializados; no incorporan scheduler productivo definitivo. #510/PR #521 reutiliza esa infraestructura para `administrativo.usuario`. | #402 y #507 están cerrados/completados; #461 permanece abierto y separado. #522 está abierto: no bloquea el MVP humano de Tarea y es requerido antes de automatización. | PR #512 mergeado (#511); PR #521 mergeado (#510). | Integrar consumers futuros mediante sus dominios dueños; resolver #522 antes de origen `SISTEMA`. |
 | Gestión Operativa — Tareas | Etapa pre-DER cerrada: #489, #490–#493 y #507 están cerrados/completados. #523 está en curso y materializa `DEV-ARCH-GOP-001` para el MVP humano. | #523 abierto. #522 abierto, no blocker del MVP humano y requerido antes de automatización. | PR #509, PR #512 y PR #521 mergeados como dependencias transversales verificadas. | Revisar y aprobar DEV-ARCH-GOP; DER/SQL/API/runtime permanecen en incrementos posteriores. |
@@ -618,8 +618,10 @@ scheduler ni broker.
 
 Validación estática focal: OK. Evidencia PostgreSQL local aportada: focal #486
 `27 passed`; #512 `107 passed`; #510/fairness `63 passed`; #469/#470
-`173 passed, 1 skipped`; outbox/transporte/policy `96 passed`. La matriz avanzada
-agregada en el draft para locks, concurrencia local/remota, rollback inyectado,
-commit failure, fencing/takeover, transporte entre dos bases y E2E permanece
-**NO CONFIRMADA** hasta ejecutarse con PostgreSQL disponible. #486 no está
-completado hasta merge; #425 permanece abierto y #426 continúa bloqueado.
+`173 passed, 1 skipped`; outbox/transporte/policy `96 passed`; matriz avanzada
+`19 passed` después del fix de clasificación CAS. Esa matriz cubre locks,
+concurrencia local/remota, rollback inyectado, commit failure, fencing/takeover,
+transporte entre dos bases y E2E. Su aislamiento respecto de `inmobiliaria_test`
+compartida permanece pendiente de confirmación PostgreSQL tras incorporar una
+base temporal exclusiva del módulo. #486 no está completado hasta merge; #425
+permanece abierto y #426 continúa bloqueado.

@@ -37,7 +37,7 @@ from app.application.integration.inbox_retry import (
     InboxOutcomeKind,
     InboxRetryProcessor,
 )
-from app.config.database import engine
+from app.config.database import engine as shared_test_engine
 from app.infrastructure.persistence.repositories.calendario_comercial_query_repository import (
     CalendarioComercialQueryRepository,
 )
@@ -45,6 +45,87 @@ from app.infrastructure.persistence.repositories.inbox_repository import (
     InboxOwnershipLost,
     InboxRepository,
 )
+
+
+def _shared_database_state() -> tuple[tuple[int, str], ...]:
+    selections = (
+        "SELECT * FROM configuracion_calendario_comercial",
+        """
+        SELECT v.*
+          FROM valor_parametro v
+          JOIN parametro_sistema p USING(id_parametro_sistema)
+         WHERE p.codigo_parametro IN
+           ('DIA_CIERRE_COMERCIAL',
+            'DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS')
+        """,
+        "SELECT * FROM outbox_event",
+        "SELECT * FROM inbox_event",
+        "SELECT * FROM inbox_operation_scope",
+        "SELECT * FROM operacion_idempotente",
+    )
+    with shared_test_engine.connect() as connection:
+        return tuple(
+            tuple(
+                connection.execute(
+                    text(f"""
+                    SELECT count(*),
+                           md5(COALESCE(string_agg(
+                               to_jsonb(snapshot_row)::text,
+                               E'\\n' ORDER BY to_jsonb(snapshot_row)::text
+                           ), ''))
+                      FROM ({selection}) AS snapshot_row
+                    """)
+                ).one()
+            )
+            for selection in selections
+        )
+
+
+@pytest.fixture(scope="module", autouse=True)
+def isolated_advanced_engine():
+    """Ejecuta toda la matriz sobre un clon descartable del baseline TEST."""
+    global engine
+
+    database_name = f"inmobiliaria_test_486_advanced_{uuid4().hex[:10]}"
+    admin_engine = create_engine(
+        shared_test_engine.url.set(database="postgres"), future=True
+    )
+    shared_state_before = _shared_database_state()
+    shared_test_engine.dispose()
+    created = False
+    isolated_engine = None
+    try:
+        with admin_engine.connect().execution_options(
+            isolation_level="AUTOCOMMIT"
+        ) as admin:
+            admin.exec_driver_sql(
+                f'CREATE DATABASE "{database_name}" '
+                f'TEMPLATE "{shared_test_engine.url.database}"'
+            )
+        created = True
+        isolated_engine = create_engine(
+            shared_test_engine.url.set(database=database_name), future=True
+        )
+        engine = isolated_engine
+        yield isolated_engine
+    finally:
+        if isolated_engine is not None:
+            isolated_engine.dispose()
+        if created:
+            with admin_engine.connect().execution_options(
+                isolation_level="AUTOCOMMIT"
+            ) as admin:
+                admin.execute(
+                    text("""
+                    SELECT pg_terminate_backend(pid)
+                      FROM pg_stat_activity
+                     WHERE datname=:database AND pid <> pg_backend_pid()
+                    """),
+                    {"database": database_name},
+                )
+                admin.exec_driver_sql(f'DROP DATABASE IF EXISTS "{database_name}"')
+        admin_engine.dispose()
+        assert _shared_database_state() == shared_state_before
 
 
 def _expire_claims(session: Session, *, event_id: str, op_id: str) -> None:
@@ -109,39 +190,46 @@ def installation_engines():
     source_name = f"inmobiliaria_test_origen_{uuid4().hex[:10]}"
     destination_name = f"inmobiliaria_test_destino_{uuid4().hex[:10]}"
     admin_engine = create_engine(engine.url.set(database="postgres"), future=True)
-    engine.dispose()
-    with admin_engine.connect().execution_options(
-        isolation_level="AUTOCOMMIT"
-    ) as admin:
-        for name in (source_name, destination_name):
-            admin.exec_driver_sql(
-                f'CREATE DATABASE "{name}" TEMPLATE "{engine.url.database}"'
-            )
-    source = create_engine(engine.url.set(database=source_name), future=True)
-    destination = create_engine(engine.url.set(database=destination_name), future=True)
-    with source.begin() as connection:
-        connection.exec_driver_sql(
-            "ALTER TABLE instalacion DISABLE TRIGGER trg_bu_instalacion_core_ef"
-        )
-        connection.execute(
-            text(
-                "UPDATE instalacion SET uid_global=CAST(:uid AS uuid) "
-                "WHERE id_instalacion=1"
-            ),
-            {"uid": str(uuid4())},
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE instalacion ENABLE TRIGGER trg_bu_instalacion_core_ef"
-        )
+    created_names = []
+    source = destination = None
     try:
-        yield source, destination
-    finally:
-        source.dispose()
-        destination.dispose()
+        engine.dispose()
         with admin_engine.connect().execution_options(
             isolation_level="AUTOCOMMIT"
         ) as admin:
             for name in (source_name, destination_name):
+                admin.exec_driver_sql(
+                    f'CREATE DATABASE "{name}" TEMPLATE "{engine.url.database}"'
+                )
+                created_names.append(name)
+        source = create_engine(engine.url.set(database=source_name), future=True)
+        destination = create_engine(
+            engine.url.set(database=destination_name), future=True
+        )
+        with source.begin() as connection:
+            connection.exec_driver_sql(
+                "ALTER TABLE instalacion DISABLE TRIGGER trg_bu_instalacion_core_ef"
+            )
+            connection.execute(
+                text(
+                    "UPDATE instalacion SET uid_global=CAST(:uid AS uuid) "
+                    "WHERE id_instalacion=1"
+                ),
+                {"uid": str(uuid4())},
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE instalacion ENABLE TRIGGER trg_bu_instalacion_core_ef"
+            )
+        yield source, destination
+    finally:
+        if source is not None:
+            source.dispose()
+        if destination is not None:
+            destination.dispose()
+        with admin_engine.connect().execution_options(
+            isolation_level="AUTOCOMMIT"
+        ) as admin:
+            for name in created_names:
                 admin.execute(
                     text("""
                     SELECT pg_terminate_backend(pid)
