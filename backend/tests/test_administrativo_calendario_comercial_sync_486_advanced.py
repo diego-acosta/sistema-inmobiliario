@@ -119,6 +119,20 @@ def installation_engines():
             )
     source = create_engine(engine.url.set(database=source_name), future=True)
     destination = create_engine(engine.url.set(database=destination_name), future=True)
+    with source.begin() as connection:
+        connection.exec_driver_sql(
+            "ALTER TABLE instalacion DISABLE TRIGGER trg_bu_instalacion_core_ef"
+        )
+        connection.execute(
+            text(
+                "UPDATE instalacion SET uid_global=CAST(:uid AS uuid) "
+                "WHERE id_instalacion=1"
+            ),
+            {"uid": str(uuid4())},
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE instalacion ENABLE TRIGGER trg_bu_instalacion_core_ef"
+        )
     try:
         yield source, destination
     finally:
@@ -145,6 +159,14 @@ def test_e2e_dos_instalaciones_bootstrap_programacion_y_fuera_de_orden(
 ):
     source_engine, destination_engine = installation_engines
     with Session(source_engine) as source, Session(destination_engine) as destination:
+        assert (
+            source.execute(
+                text("SELECT uid_global FROM instalacion WHERE id_instalacion=1")
+            ).scalar_one()
+            != destination.execute(
+                text("SELECT uid_global FROM instalacion WHERE id_instalacion=1")
+            ).scalar_one()
+        )
         created = _bootstrap_origin(source)
         assert transport_calendario_outbox_once(source, destination) == (1, 1)
         created_outcome = run_calendario_inbox_once(
