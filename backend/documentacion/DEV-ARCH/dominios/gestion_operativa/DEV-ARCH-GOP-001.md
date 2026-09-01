@@ -253,7 +253,7 @@ Comentario y baja causalmente concurrentes conservan ambos efectos. Un comentari
 
 HistorialTarea registra cambios funcionales estructurados; no es CORE-EF, auditoría administrativa, outbox, inbox ni operacion_idempotente.
 
-Cada entrada conserva conceptualmente tipo de cambio, actor local y portable cuando exista, instante, op_id causal, valores anterior/nuevo cuando corresponda y motivo obligatorio de reapertura. Se genera para creación, cambios materiales de contenido, asignación, prioridad, fecha objetivo, estado, completar, cancelar y reabrir. La evidencia de finalizaciones previas se conserva cuando una Tarea se reabre. Para el tipo `REABIERTA`, dado que el MVP de reapertura es exclusivamente humano y requiere administración aplicable, el actor humano es obligatorio junto con el instante y el motivo: la entrada debe conservar actor local y `usuario.uid_global`, `estado_anterior = COMPLETADA`, `estado_nuevo = PENDIENTE`, instante y motivo obligatorio; no puede existir una reapertura funcional sin actor atribuible.
+Cada entrada conserva obligatoriamente la referencia a la Tarea a la que pertenece, además de tipo de cambio, actor local y portable cuando exista, instante, op_id causal, valores anterior/nuevo cuando corresponda y motivo obligatorio de reapertura. La asociación con Tarea es obligatoria para todo HistorialTarea y no puede existir una entrada huérfana; su representación física se difiere al DER. Se genera para creación, cambios materiales de contenido, asignación, prioridad, fecha objetivo, estado, completar, cancelar y reabrir. La evidencia de finalizaciones previas se conserva cuando una Tarea se reabre. Para el tipo `REABIERTA`, dado que el MVP de reapertura es exclusivamente humano y requiere administración aplicable, el actor humano es obligatorio junto con el instante y el motivo: la entrada debe conservar actor local y `usuario.uid_global`, `estado_anterior = COMPLETADA`, `estado_nuevo = PENDIENTE`, instante y motivo obligatorio; no puede existir una reapertura funcional sin actor atribuible.
 
 Una eventual baja lógica conserva obligatoriamente versionado, CAS, idempotencia, outbox, sync y trazabilidad CORE-EF, pero una entrada funcional específica de HistorialTarea sólo será obligatoria si un contrato funcional posterior determina que corresponde; no se convierte automáticamente toda mutación técnica en hecho funcional.
 
@@ -399,7 +399,7 @@ Cuando `origen = SISTEMA` se habilite en un incremento futuro, deberá preservar
 
 ## 28. Consultas esperadas
 
-La arquitectura debe soportar lecturas de pendientes, responsable, creador, estado, sucursal, prioridad, fecha objetivo, vencidas derivadas, completadas/canceladas, comentarios e historial. El DER evaluará índices sobre uid_global, filtros de lifecycle y baja, responsable, creador, sucursal, prioridad y fecha objetivo, sin fijar DDL aquí.
+La arquitectura debe soportar como contrato funcional mínimo: obtener una Tarea, listar Tareas, **Mis tareas**, **Tareas creadas por mí**, pendientes, vencidas derivadas y sin asignar. También debe permitir consultar comentarios e historial y aplicar, cuando corresponda, filtros por responsable, creador, estado, sucursal, prioridad y fecha objetivo. Estas consultas respetan siempre la política de visibilidad de la sección 14; este DEV-ARCH no congela endpoints HTTP, DTO ni rutas concretas. El DER evaluará índices sobre uid_global, filtros de lifecycle y baja, responsable, creador, sucursal, prioridad y fecha objetivo, sin fijar DDL aquí.
 
 ## 29. Invariantes para DER y SQL
 
@@ -457,7 +457,9 @@ DER, SQL, migrations, tablas, routers, schemas, services, repositories, frontend
 20. Tarea tiene criticidad de sincronización MEDIA; no admite auto-merge genérico, field-by-field ni LWW.
 21. Toda reapertura `REABIERTA` conserva obligatoriamente actor humano local+portable, instante y motivo.
 22. Misma versión y contenido con `op_id` distinto es una operación materialmente convergente distinta: no replay/duplicado y conserva ambas trazas.
-23. No existen gaps funcionales bloqueantes para DER posterior.
+23. Toda entrada de HistorialTarea conserva obligatoriamente su Tarea; no existe historial funcional huérfano.
+24. El contrato mínimo de consultas incluye obtener, listar, Mis tareas, Tareas creadas por mí, pendientes, vencidas y sin asignar, sin congelar todavía endpoints HTTP.
+25. No existen gaps funcionales bloqueantes para DER posterior.
 
 ## 34. Pendientes no bloqueantes
 
