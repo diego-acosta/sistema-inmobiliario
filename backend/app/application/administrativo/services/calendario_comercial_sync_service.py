@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from contextlib import AbstractContextManager
 from datetime import date
 from itertools import pairwise
 from typing import Any
@@ -551,8 +553,14 @@ def run_calendario_inbox_once(
     worker_id: str,
     event_id: str | None = None,
     manual: bool = False,
+    lifecycle_session_factory: Callable[[], AbstractContextManager[Session]]
+    | None = None,
 ) -> InboxOutcome | None:
-    processor = InboxRetryProcessor(session, consumer=CALENDARIO_SYNC_CONSUMER)
+    processor = InboxRetryProcessor(
+        session,
+        consumer=CALENDARIO_SYNC_CONSUMER,
+        lifecycle_session_factory=lifecycle_session_factory,
+    )
     return processor.run_once(
         CalendarioComercialSyncApplicator(session).apply,
         worker_id=worker_id,

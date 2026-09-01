@@ -31,6 +31,27 @@ from app.infrastructure.persistence.repositories.outbox_repository import (
 )
 
 
+class _NullSession:
+    """Adapta la sesión transaccional del fixture al lifecycle de #512."""
+
+    def __init__(self, session):
+        self.session = session
+
+    def __enter__(self):
+        return self.session
+
+    def __exit__(self, *_):
+        return False
+
+
+def _run_inbox(db_session, **kwargs):
+    return run_calendario_inbox_once(
+        db_session,
+        lifecycle_session_factory=lambda: _NullSession(db_session),
+        **kwargs,
+    )
+
+
 def _headers(op_id=None, version=None):
     cls = AuthenticatedCoreEFHeaders if version is not None else TechnicalCoreEFHeaders
     values = {
@@ -212,7 +233,7 @@ def test_creacion_remota_preserva_uids_y_es_replayable(db_session):
     assert register_calendario_outbox_delivery(db_session, outbox_event=event)
     db_session.commit()
 
-    outcome = run_calendario_inbox_once(
+    outcome = _run_inbox(
         db_session, worker_id="calendar", event_id=str(event["event_id"]), manual=True
     )
 
@@ -245,7 +266,7 @@ def test_creacion_remota_preserva_uids_y_es_replayable(db_session):
     duplicate["event_id"] = uuid4()
     assert register_calendario_outbox_delivery(db_session, outbox_event=duplicate)
     db_session.commit()
-    replay = run_calendario_inbox_once(
+    replay = _run_inbox(
         db_session,
         worker_id="calendar-replay",
         event_id=str(duplicate["event_id"]),
@@ -262,7 +283,7 @@ def test_mismo_op_id_payload_distinto_es_conflicto(db_session):
     _clear_calendar(db_session)
     assert register_calendario_outbox_delivery(db_session, outbox_event=event)
     db_session.commit()
-    assert run_calendario_inbox_once(
+    assert _run_inbox(
         db_session,
         worker_id="calendar-first",
         event_id=str(event["event_id"]),
@@ -277,7 +298,7 @@ def test_mismo_op_id_payload_distinto_es_conflicto(db_session):
         db_session, outbox_event=incompatible
     )
     db_session.commit()
-    assert run_calendario_inbox_once(
+    assert _run_inbox(
         db_session,
         worker_id="calendar-conflict",
         event_id=str(incompatible["event_id"]),
@@ -290,7 +311,7 @@ def test_op_distinto_mismo_snapshot_converge_sin_segundo_efecto(db_session):
     _clear_calendar(db_session)
     assert register_calendario_outbox_delivery(db_session, outbox_event=event)
     db_session.commit()
-    assert run_calendario_inbox_once(
+    assert _run_inbox(
         db_session,
         worker_id="calendar-first",
         event_id=str(event["event_id"]),
@@ -303,7 +324,7 @@ def test_op_distinto_mismo_snapshot_converge_sin_segundo_efecto(db_session):
     _rehash(convergent["payload"])
     assert register_calendario_outbox_delivery(db_session, outbox_event=convergent)
     db_session.commit()
-    assert run_calendario_inbox_once(
+    assert _run_inbox(
         db_session,
         worker_id="calendar-convergent",
         event_id=str(convergent["event_id"]),
@@ -328,7 +349,7 @@ def test_programacion_remota_y_consultas_historicas(db_session):
     for event in (created, programmed):
         assert register_calendario_outbox_delivery(db_session, outbox_event=event)
         db_session.commit()
-        outcome = run_calendario_inbox_once(
+        outcome = _run_inbox(
             db_session,
             worker_id="calendar",
             event_id=str(event["event_id"]),
@@ -372,7 +393,7 @@ def test_v2_mismo_version_con_op_distinto_clasifica_snapshot(
     for event in (created, programmed):
         assert register_calendario_outbox_delivery(db_session, outbox_event=event)
         db_session.commit()
-        assert run_calendario_inbox_once(
+        assert _run_inbox(
             db_session,
             worker_id="calendar",
             event_id=str(event["event_id"]),
@@ -387,7 +408,7 @@ def test_v2_mismo_version_con_op_distinto_clasifica_snapshot(
     _rehash(candidate["payload"])
     assert register_calendario_outbox_delivery(db_session, outbox_event=candidate)
     db_session.commit()
-    assert run_calendario_inbox_once(
+    assert _run_inbox(
         db_session,
         worker_id="calendar-equal-version",
         event_id=str(candidate["event_id"]),
@@ -406,7 +427,7 @@ def test_version_inferior_es_obsoleta_sin_mutacion(db_session):
     for event in (created, v2, v3):
         assert register_calendario_outbox_delivery(db_session, outbox_event=event)
         db_session.commit()
-        assert run_calendario_inbox_once(
+        assert _run_inbox(
             db_session,
             worker_id="calendar",
             event_id=str(event["event_id"]),
@@ -419,7 +440,7 @@ def test_version_inferior_es_obsoleta_sin_mutacion(db_session):
     _rehash(obsolete["payload"])
     assert register_calendario_outbox_delivery(db_session, outbox_event=obsolete)
     db_session.commit()
-    assert run_calendario_inbox_once(
+    assert _run_inbox(
         db_session,
         worker_id="calendar-obsolete",
         event_id=str(obsolete["event_id"]),
@@ -472,17 +493,17 @@ def test_v3_antes_de_v2_pending_y_converge_despues(db_session):
     for event in (created, v3):
         assert register_calendario_outbox_delivery(db_session, outbox_event=event)
         db_session.commit()
-        outcome = run_calendario_inbox_once(
+        outcome = _run_inbox(
             db_session, worker_id="calendar", event_id=str(event["event_id"]), manual=True
         )
     assert outcome.kind is InboxOutcomeKind.PENDING_DEPENDENCY
 
     assert register_calendario_outbox_delivery(db_session, outbox_event=v2)
     db_session.commit()
-    assert run_calendario_inbox_once(
+    assert _run_inbox(
         db_session, worker_id="calendar", event_id=str(v2["event_id"]), manual=True
     ).kind is InboxOutcomeKind.PROCESSED
-    assert run_calendario_inbox_once(
+    assert _run_inbox(
         db_session, worker_id="calendar", event_id=str(v3["event_id"]), manual=True
     ).kind is InboxOutcomeKind.PROCESSED
     assert db_session.execute(
@@ -672,7 +693,7 @@ def test_raiz_historica_adicional_es_conflicto(db_session):
     _clear_calendar(db_session)
     assert register_calendario_outbox_delivery(db_session, outbox_event=event)
     db_session.commit()
-    assert run_calendario_inbox_once(
+    assert _run_inbox(
         db_session, worker_id="calendar", event_id=str(event["event_id"]), manual=True
     ).kind is InboxOutcomeKind.PROCESSED
 
@@ -692,7 +713,7 @@ def test_raiz_historica_adicional_es_conflicto(db_session):
     _rehash(convergent["payload"])
     assert register_calendario_outbox_delivery(db_session, outbox_event=convergent)
     db_session.commit()
-    assert run_calendario_inbox_once(
+    assert _run_inbox(
         db_session,
         worker_id="calendar-singleton",
         event_id=str(convergent["event_id"]),
