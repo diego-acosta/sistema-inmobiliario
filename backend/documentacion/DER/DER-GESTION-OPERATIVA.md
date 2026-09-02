@@ -284,20 +284,42 @@ creador `NULL`, `generador_sistema` obligatorio y origen aún deshabilitado hast
 resolver #522, sin usuario SYSTEM, principal ficticio ni service account.
 
 Como regla transversal del MVP, `Authorization: Bearer` →
-`AuthenticatedPrincipal` vigente es la única fuente autoritativa de toda
-identidad humana GOP. Comprende creador de Tarea, autor de ComentarioTarea, actor
-humano de HistorialTarea —incluida `REABIERTA`—, usuario implícito de “Mis
-tareas” y “Tareas creadas por mí”, caller de commands y consultas protegidas y
-cualquier otro actor humano del dominio.
+`AuthenticatedPrincipal` vigente es la única fuente autoritativa de identidad
+humana **actuante/caller** GOP. Comprende al creador efectivo de una Tarea
+humana, autor efectivo de ComentarioTarea, actor efectivo de HistorialTarea
+—incluida `REABIERTA`—, caller de commands y consultas protegidas, usuario
+implícito de “Mis tareas” y “Tareas creadas por mí” y cualquier otra identidad
+que represente al usuario que actúa.
+
+Esta regla no convierte las identidades humanas **objetivo** de una operación en
+el caller. Un responsable inicial, nuevo responsable o destino de reasignación
+puede ser otro usuario distinto del `AuthenticatedPrincipal`, siempre que el
+caller esté autorizado y el target satisfaga las reglas aplicables. El target se
+recibe exclusivamente mediante la referencia funcional explícita permitida por
+el command, se valida contra Administrativo y se resuelve a su
+`usuario.id` local; cuando debe viajar, se representa con el
+`usuario.uid_global` portable del mismo owner. Por ejemplo, es válido:
+
+```text
+caller administrador = AuthenticatedPrincipal.id_usuario
+responsable solicitado = otro usuario elegible
+responsable portable = usuario.uid_global del target
+```
+
+En creación, el creador sigue siendo el principal actuante, mientras el
+responsable inicial puede ser otro target elegible. En reasignación, el actor es
+el principal y el nuevo responsable es el target validado. En `REABIERTA`, el
+actor es el principal, pero la reparación puede conservar al responsable
+elegible, dejarlo `NULL` o elegir otro target elegible. El autor de comentario
+y el usuario implícito de “Mis tareas” no admiten selector arbitrario: son el
+principal actuante.
 
 `X-Usuario-Id` no se requiere, parsea, compara ni utiliza para identidad o
-autorización GOP. No sustituye ni complementa `AuthenticatedPrincipal`, no
-funciona como fallback o cross-check y su presencia o ausencia no define al
-actor. Cuando una identidad humana debe viajar, se transporta el
-`usuario.uid_global` portable del owner Administrativo: nunca
-`X-Usuario-Id`, una PK local, login, email o código como fallback. Esta
-prohibición no agrega `X-Usuario-Id` al helper ni a los tres headers técnicos
-CORE-EF requeridos.
+autorización actuante, y tampoco selecciona un target funcional. No sustituye ni
+complementa `AuthenticatedPrincipal`, no funciona como fallback o cross-check
+y su presencia o ausencia no define al actor. Ninguna identidad humana viaja
+como `X-Usuario-Id`, PK local, login, email o código. Esta prohibición no agrega
+`X-Usuario-Id` al helper ni a los tres headers técnicos CORE-EF requeridos.
 
 La baja o desactivación posterior del usuario creador no invalida la Tarea ni
 elimina su identidad histórica: la FK y el UID del owner conservan la
