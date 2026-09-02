@@ -267,6 +267,26 @@ Agregar un comentario:
 Puede agregarse, con autorización aplicable, aunque la Tarea esté `COMPLETADA` o
 `CANCELADA`; esa operación no altera la terminalidad ni el snapshot de Tarea.
 
+### 7.3 Causalidad frente a baja lógica
+
+El orden de entrega no redefine el orden causal. La semántica funcional queda
+congelada así:
+
+- un comentario confirmado causalmente antes de la baja es válido y debe
+  converger, incluso si otra instalación recibe y aplica primero la baja;
+- un comentario y una baja causalmente concurrentes conservan ambos efectos; la
+  baja no invalida retroactivamente el append concurrente válido;
+- un intento de comentario causalmente posterior a la baja no es una mutación
+  ordinaria válida.
+
+Por lo tanto, recibir la baja antes que el comentario no basta para descartar el
+comentario. `deleted_at` es baja técnica, no hard delete ni `CANCELADA`, y no
+elimina comentarios válidos anteriores o concurrentes. Permanecen diferidos
+únicamente el mecanismo técnico de detección/reconciliación y la clasificación
+terminal exacta del intento causalmente posterior, incluidos código de error,
+respuesta HTTP y detalle del consumer. Esta causalidad no introduce versión
+esperada ni CAS contra Tarea para comentar.
+
 ## 8. HistorialTarea
 
 ### 8.1 Rol estructural
@@ -332,12 +352,21 @@ REABIERTA
 estado: COMPLETADA → PENDIENTE
 Tarea.fecha_finalizacion vigente → NULL
 finalización anterior → evidencia en HistorialTarea
+responsable anterior aún elegible → puede conservarse
+responsable anterior inelegible → responsable = NULL
+                              o reemplazo por responsable elegible
 ```
 
 Por lo tanto, una Tarea reabierta no puede conservar simultáneamente
 `estado = PENDIENTE` y `fecha_finalizacion != NULL`. La entrada de historial
 preserva además actor humano obligatorio, motivo obligatorio, instante y `op_id`
-causal. La forma física de proteger estas reglas permanece diferida.
+causal. La reapertura nunca puede producir una Tarea activa con responsable
+inelegible y no introduce autoasignación. La presencia del responsable continúa
+siendo distinta de su elegibilidad; application layer / DEV-SRV evalúa usuario,
+sucursal y vínculo vigentes, intervalo temporal, `puede_operar` y autorización
+Administrativa efectiva, y decide en la misma operación lógica entre conservar,
+dejar `NULL` o reemplazar. La forma física de proteger estas reglas permanece
+diferida.
 
 La representación de evidencia anterior/nueva queda deliberadamente abierta:
 este DER no elige JSON libre, EAV, snapshots completos ni una tabla auxiliar de
@@ -414,6 +443,9 @@ instalación.
   reapertura explícita a `PENDIENTE`; `CANCELADA` no reabre.
 - Los comentarios autorizados en estados terminales siguen siendo appends
   independientes y no mutan, reabren, versionan ni usan el CAS de Tarea.
+- Comentarios confirmados antes de la baja o concurrentes con ella convergen y
+  se conservan, aunque la baja se entregue primero; sólo el intento causalmente
+  posterior a la baja no es una mutación ordinaria válida.
 - La metadata CORE-EF no duplica semántica funcional.
 - Las referencias externas persisten FK local y no copian UID del owner.
 - La sucursal funcional es nullable, inmutable en MVP y `NULL` significa global.
@@ -450,7 +482,9 @@ Quedan para servicios y contratos posteriores:
 - idempotencia y frontera transaccional concreta;
 - continuidad remota y representación de gaps;
 - `PENDING_DEPENDENCY`, retry, replay y conflicto;
-- causalidad de comentarios frente a baja;
+- mecanismo técnico de causalidad comentario/baja y clasificación terminal
+  exacta del intento causalmente posterior; la semántica funcional ya está
+  congelada en este DER;
 - fecha de corte para `VENCIDA`;
 - auth/authz antes de cualquier replay o conflicto observable;
 - nombres y granularidad de commands/eventos.
