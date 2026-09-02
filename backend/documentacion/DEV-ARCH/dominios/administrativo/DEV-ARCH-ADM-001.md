@@ -426,7 +426,11 @@ termina procesada sin efecto y una misma versión sólo converge si el snapshot
 material coincide. No existe LWW, reparación silenciosa ni scheduler productivo
 nuevo en este incremento.
 
-El transporte mínimo es at-least-once y separa sesiones de origen y destino. El
+El transporte mínimo es at-least-once y separa endpoints físicos de origen y
+destino mediante `system_identifier` persistente del clúster PostgreSQL más
+`current_database()`, sin usar URL, hostname, dirección de red, puerto ni hora de
+arranque como identidad. Dos bases distintas del mismo clúster son endpoints
+distintos; dos conexiones a la misma base se rechazan antes de leer el outbox. El
 inbox destino confirma primero; sólo entonces el origen marca el outbox como
 publicado. No existe 2PC: si falla el ack origen, la reentrega del mismo
 `event_id` converge por Delivery. El entry point manual puede transportar y

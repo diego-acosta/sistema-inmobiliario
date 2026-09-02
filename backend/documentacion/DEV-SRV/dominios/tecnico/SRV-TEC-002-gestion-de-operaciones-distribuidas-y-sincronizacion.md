@@ -324,8 +324,12 @@ la continuidad estricta de versiones y la clasificación de dependencias
 pertenecen al applicator Administrativo. El incremento no incorpora scheduler o
 broker productivo.
 
-Su adaptador de transporte recibe conexiones distintas de origen y destino y
-aplica at-least-once: commit de la delivery destino antes del ack/publicación en
+Su adaptador de transporte recibe endpoints distintos de origen y destino. Los
+identifica por `system_identifier` persistente del clúster PostgreSQL más
+`current_database()`: IPv4, IPv6, hostname, alias, puerto y hora de arranque no
+son autoridad; dos bases distintas del mismo clúster sí son endpoints distintos.
+El guard se ejecuta antes de leer el outbox. Luego aplica at-least-once: commit de
+la delivery destino antes del ack/publicación en
 origen. No forma parte de la transacción funcional del applicator ni introduce
 2PC. Un ack perdido conserva el outbox reintentable y la reentrega se deduplica
 por `(event_id, consumer)`; un fallo destino nunca acredita el origen.

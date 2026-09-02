@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date
 from itertools import pairwise
 from typing import Any
 from uuid import UUID
@@ -91,10 +91,8 @@ class CalendarioComercialSyncConcurrentApplyRetry(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class _PostgresDatabaseIdentity:
+    cluster_system_identifier: str
     database_name: str
-    server_address: str | None
-    server_port: int
-    postmaster_started_at: datetime
 
 
 def _is_reconciliable_integrity_error(exc: IntegrityError) -> bool:
@@ -586,30 +584,16 @@ def _postgres_database_identity(
     """Identifica la base física desde el servidor, sin exponer el DSN."""
     row = session.execute(
         text("""
-        SELECT current_database()::text,
-               inet_server_addr()::text,
-               current_setting('port')::integer,
-               pg_postmaster_start_time()
+        SELECT control.system_identifier::text,
+               current_database()::text
+          FROM pg_control_system() AS control
         """)
     ).one()
-    return _PostgresDatabaseIdentity(row[0], row[1], row[2], row[3])
+    return _PostgresDatabaseIdentity(row[0], row[1])
 
 
 def _same_physical_database(source: object, destination: object) -> bool:
-    if not isinstance(source, _PostgresDatabaseIdentity) or not isinstance(
-        destination, _PostgresDatabaseIdentity
-    ):
-        return source == destination
-    same_server = (
-        source.postmaster_started_at == destination.postmaster_started_at
-        and source.server_port == destination.server_port
-        and (
-            source.server_address == destination.server_address
-            or source.server_address is None
-            or destination.server_address is None
-        )
-    )
-    return same_server and source.database_name == destination.database_name
+    return source == destination
 
 
 def transport_calendario_outbox_once(

@@ -4,8 +4,8 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from app.api.core_ef_headers import AuthenticatedCoreEFHeaders, TechnicalCoreEFHeaders
@@ -15,7 +15,9 @@ from app.application.administrativo.services.bootstrap_calendario_comercial_serv
 from app.application.administrativo.services.calendario_comercial_sync_service import (
     CALENDARIO_SYNC_CONSUMER,
     CalendarioComercialSyncPayloadError,
+    _PostgresDatabaseIdentity,
     _is_reconciliable_integrity_error,
+    _same_physical_database,
     parse_calendario_outbox_envelope,
     register_calendario_outbox_delivery,
     run_calendario_inbox_once,
@@ -594,6 +596,52 @@ def test_transporte_rechaza_sessions_distintas_sobre_misma_base(db_session):
         db_session.execute(text("SELECT count(*) FROM inbox_event")).scalar_one()
         == inbox_before
     )
+
+
+def test_identidad_fisica_es_cluster_persistente_mas_database():
+    same_database_a = _PostgresDatabaseIdentity("cluster-A", "database-A")
+    same_database_b = _PostgresDatabaseIdentity("cluster-A", "database-A")
+    other_database_same_cluster = _PostgresDatabaseIdentity("cluster-A", "database-B")
+    same_name_other_cluster = _PostgresDatabaseIdentity("cluster-B", "database-A")
+
+    assert _same_physical_database(same_database_a, same_database_b)
+    assert not _same_physical_database(same_database_a, other_database_same_cluster)
+    assert not _same_physical_database(same_database_a, same_name_other_cluster)
+
+
+@pytest.mark.parametrize("alternate_host", ["127.0.0.1", "::1", "localhost"])
+def test_transporte_rechaza_misma_base_por_otra_interfaz(
+    db_session, alternate_host
+):
+    bind = db_session.get_bind()
+    source_engine = getattr(bind, "engine", bind)
+    if source_engine.url.host == alternate_host:
+        pytest.skip("La conexión base ya usa esta interfaz")
+    alternate_engine = create_engine(
+        source_engine.url.set(host=alternate_host), future=True, pool_pre_ping=True
+    )
+    event = _bootstrap_origin(db_session)
+    inbox_before = db_session.execute(
+        text("SELECT count(*) FROM inbox_event")
+    ).scalar_one()
+    try:
+        with Session(alternate_engine) as destination:
+            try:
+                with pytest.raises(
+                    ValueError,
+                    match="CALENDARIO_SYNC_SOURCE_DESTINATION_MUST_DIFFER",
+                ):
+                    transport_calendario_outbox_once(db_session, destination)
+            except OperationalError as exc:
+                pytest.skip(f"Interfaz PostgreSQL no disponible: {type(exc).__name__}")
+    finally:
+        alternate_engine.dispose()
+    assert _outbox(db_session, event["event_type"])["status"] == "PENDING"
+    assert (
+        db_session.execute(text("SELECT count(*) FROM inbox_event")).scalar_one()
+        == inbox_before
+    )
+    assert db_session.execute(text("SELECT 1")).scalar_one() == 1
 
 
 def test_transporte_confirma_destino_antes_del_ack_origen():

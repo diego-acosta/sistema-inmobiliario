@@ -803,7 +803,9 @@ evento material es `calendario_comercial_programado`; #486 no se implementa aqu�
 ambos tipos para `administrativo.calendario_comercial`. Conserva por separado el
 `metadata.payload_hash` del producer y el fingerprint Técnico de #512. El
 transporte mínimo consulta `OutboxRepository.get_pending_events` con los dos
-tipos antes de `ORDER BY/LIMIT` y exige sesiones distintas de origen/destino.
+tipos antes de `ORDER BY/LIMIT` y exige endpoints distintos por
+`(system_identifier PostgreSQL, current_database())`; la interfaz de red no
+participa de la identidad y el rechazo ocurre antes de consultar el outbox.
 Confirma primero el registro inbox destino y después acredita el outbox origen:
 es at-least-once, tolera la pérdida del ack mediante Delivery y no agrega 2PC,
 broker ni scheduler. `scripts/calendario_comercial_sync.py` expone transporte y
