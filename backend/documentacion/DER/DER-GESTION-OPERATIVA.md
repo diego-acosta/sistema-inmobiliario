@@ -338,6 +338,9 @@ instalación.
 - Instalación expresa procedencia técnica, no scope funcional.
 - Un comentario no versiona Tarea ni usa su CAS.
 - Historial no tiene outbox, retry, consumer, CAS o conflicto autónomos.
+- La futura generación con origen `SISTEMA` combina idempotencia técnica por
+  `op_id` con idempotencia funcional por hecho fuente; reprocesar el mismo hecho
+  fuente con otro `op_id` no crea una segunda Tarea funcional equivalente.
 
 ## 11. Responsabilidades posteriores
 
@@ -410,7 +413,20 @@ El modelo permite proteger conceptualmente estas formas:
 El MVP habilita únicamente `USUARIO`. `SISTEMA` permanece reservado: #522 sigue
 abierto, no bloquea el MVP humano y es prerequisito de cualquier automatización.
 No se materializa una identidad humana ficticia para procesos técnicos ni se
-crean credenciales, service accounts, API keys o claves de hecho fuente.
+crean credenciales, service accounts o API keys.
+
+Cuando `SISTEMA` se habilite en un incremento futuro deberán coexistir dos
+garantías distintas, sin que una sustituya a la otra:
+
+```text
+op_id → idempotencia técnica de la operación
+hecho fuente → idempotencia funcional de la generación
+```
+
+Reprocesar el mismo hecho fuente con un `op_id` distinto no puede crear una
+segunda Tarea funcional equivalente. `op_id` no es la identidad funcional del
+hecho fuente. Este DER congela sólo esa invariante funcional: no define ni agrega
+una columna, FK, entidad, tabla, ledger, constraint o índice para materializarla.
 
 ## 15. Fuera de alcance post-MVP
 
@@ -439,6 +455,10 @@ Los siguientes puntos no bloquean el DER y no se deciden aquí:
 - representación y tratamiento técnico de gaps de continuidad;
 - clasificación terminal de un comentario causalmente posterior a baja;
 - granularidad exacta entre una operación de Tarea y sus filas de historial.
+- representación física de la identidad funcional del hecho fuente para el
+  futuro origen `SISTEMA`: nombre de campo, tipo, longitud, clave natural, UUID,
+  hash, referencia externa, constraint, índice, unicidad SQL, tabla auxiliar,
+  fingerprint, algoritmo de deduplicación, command/evento y producer concretos.
 
 ## 17. Criterio de suficiencia
 
