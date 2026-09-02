@@ -311,7 +311,8 @@ Aplicación debe imponer, antes de cualquier persistencia:
 - `INDEXACION` continúa permitida sólo en `TRAMO_CUOTAS`;
 - todos los tramos indexados consumen la misma entidad común;
 - los bloques no reciben índice, período ni valor independientes;
-- replay con la misma base es idempotente y una base diferente es conflicto;
+- replay sólo con el mismo payload semántico canónico completo es idempotente;
+  cualquier diferencia material, incluida pero no limitada a la base, es conflicto;
 - preview y write ejecutan la misma validación funcional.
 
 La obligación de que todo plan con tramos indexados posea base común es una
@@ -358,16 +359,41 @@ consume un query service interno de Financiero que busca el valor `PUBLICADO`
 exactamente correspondiente al período mensual. No usa HTTP interno ni consulta
 SQL financiero desde el service Comercial.
 
-- cero valores exactos: persiste `BASE_PENDIENTE`;
-- un valor exacto: persiste su id y snapshot como `BASE_DISPONIBLE`;
-- más de un valor dentro del mismo período: inconsistencia técnica controlada;
-- un valor anterior, aunque sea el último publicado: no es valor base aplicable.
+Antes de contar coincidencias, el query preserva íntegramente el predicado de
+validez semántica vigente de
+`IndiceFinancieroRepository.get_valor_publicado_por_id_y_fecha` y sustituye sólo
+su selección temporal `<= fecha` por el intervalo mensual exacto. Un valor puede
+convertir `BASE_PENDIENTE` en `BASE_DISPONIBLE` únicamente si se cumplen todas
+estas condiciones:
 
-El query normaliza el período recibido y busca `fecha_valor >= periodo_base` y
-`fecha_valor < periodo_base + 1 mes`; no modifica el selector objetivo heredado.
-La identidad y el snapshot resultantes se persisten en la misma transacción del
-write Comercial. `#428` completa posteriormente sólo bases pendientes y
-materializa sus efectos de manera idempotente.
+- el índice solicitado existe;
+- `indice_financiero.estado_indice_financiero = ACTIVO`;
+- `indice_financiero.deleted_at IS NULL`;
+- el valor pertenece al índice solicitado;
+- `indice_financiero_valor.deleted_at IS NULL`;
+- `indice_financiero_valor.estado_valor_indice = PUBLICADO`;
+- `indice_financiero_valor.fecha_publicacion IS NOT NULL`;
+- `fecha_valor >= periodo_base` y
+  `fecha_valor < periodo_base + 1 mes`.
+
+Un índice inexistente, inactivo o dado de baja se rechaza como selección inválida.
+Una fila marcada `PUBLICADO` pero sin `fecha_publicacion`, dada de baja o
+perteneciente a otro índice no es un valor publicado válido y no cuenta en la
+cardinalidad contractual.
+
+La cardinalidad se calcula después de aplicar todos esos predicados:
+
+- cero valores válidos en el mes: persiste `BASE_PENDIENTE`;
+- exactamente un valor válido en el mes: persiste su id y snapshot como
+  `BASE_DISPONIBLE`;
+- más de un valor válido en el mes: `INCONSISTENCIA_TECNICA` controlada, sin
+  desempate ni persistencia parcial.
+
+No se reutiliza el selector objetivo `<= fecha`, no se introduce fallback
+temporal y un valor anterior, aunque sea el último publicado, no es valor base
+aplicable. La identidad y el snapshot resultantes se persisten en la misma
+transacción del write Comercial. `#428` completa posteriormente sólo bases
+pendientes y materializa sus efectos de manera idempotente.
 
 ### 6.5 Migración estructural sin datos preservables
 
@@ -490,8 +516,30 @@ no declara cobertura existente.
 - `plan_pago_venta_indexacion` posee `version_registro` y metadata CORE-EF. Su alta
   y replay quedan incluidos en la idempotencia del command dueño, no crean un
   receipt paralelo.
-- Mismo `op_id` y mismo payload reutiliza plan/base; mismo `op_id` con otra base
-  devuelve conflicto y no muta. Se conservan las claves vigentes de generación y
+- `#427` extiende el payload material de cada command vigente para incluir
+  `base_indexacion`; no redefine idempotencia ni compara ad hoc sólo contra las
+  columnas de la base.
+- Se reutiliza el contrato transversal vigente de `#469/#470/#412`:
+  canonicalización, `canonical_payload_hash`/fingerprint, claim y completion en
+  `public.operacion_idempotente`, receipt durable y el orden de conflictos
+  `COMMAND`, `TARGET`, `PAYLOAD` que corresponda. No se crea ledger, receipt
+  ni mecanismo paralelo.
+- El payload semántico canónico completo comprende todos los campos materiales del
+  command vigente después de su normalización: tipo de pago, monto total, moneda,
+  cantidad y orden contractual material de bloques, tipo y método de cada bloque,
+  importes, fechas, cuotas, periodicidad, redondeo, liquidación, tasa, períodos,
+  base de cálculo, políticas de indexación, refuerzos, observaciones materiales,
+  `base_indexacion` y cualquier otro campo que el command incluya en su
+  fingerprint/canonical payload.
+- Mismo `op_id` y mismo payload semántico canónico completo produce
+  `REPLAY`/reutilización del snapshot durable, sin repetir efectos ni outbox.
+  Mismo `op_id` con cualquier diferencia material del payload produce
+  `CONFLICTO` y no muta, aunque la `base_indexacion` coincida.
+- Si un intento anterior falló antes de completion/commit y no dejó receipt
+  durable, el mismo `op_id` puede reintentarse conforme al contrato vigente y
+  vuelve a `EXECUTE`; la mera existencia de un intento abortado no constituye
+  conflicto. Si el receipt ya fue completado, un payload distinto produce
+  conflicto. Se conservan las claves vigentes de generación y
   `clave_funcional_origen` para obligaciones.
 - La generación granular no agrega outbox. Las confirmaciones conservan el outbox
   vigente de venta; no se crea un evento exclusivo para la base.
