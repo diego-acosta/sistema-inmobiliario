@@ -29,7 +29,7 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 | B — Administrativo | #407–#412 y #482–#486 implementados. PR #526 fue mergeado mediante `8fc23529d6c172c8baf829eee9c2d5bbe265cda2` y completó el sync portable del calendario comercial; #425 y #486 están cerrados. #508/PR #509 materializó `usuario.uid_global`; #510/PR #521 completó su replicación portable. | Sin blocker Administrativo para #426. | PR #526 mergeado (#486); PR #506 mergeado (#485); PR #521 mergeado (#510). | Administrativo mantiene ownership del calendario; Comercial consume el query service temporal interno. |
 | Operativo | #456 incorporó la identidad canónica local read-only para commands técnicos, sin consumidor productivo ni cambios SQL. | #248 abierto. | #456 completado. | `LOCAL_INSTALLATION_CODE` es soporte transversal default-deny; Operativo conserva ownership de `instalacion`. |
 | Transversal — CORE-EF / Técnico | #469/#470 están completados. #511 está cerrado y PR #512 mergeado: `PENDING_DEPENDENCY`, retry, retained envelope, operation scope y fencing están materializados; no incorporan scheduler productivo definitivo. #510/PR #521 reutiliza esa infraestructura para `administrativo.usuario`. | #402 y #507 están cerrados/completados; #461 permanece abierto y separado. #522 está abierto: no bloquea el MVP humano de Tarea y es requerido antes de automatización. | PR #512 mergeado (#511); PR #521 mergeado (#510). | Integrar consumers futuros mediante sus dominios dueños; resolver #522 antes de origen `SISTEMA`. |
-| Gestión Operativa — Tareas | Etapa pre-DER cerrada: #489, #490–#493 y #507 están cerrados/completados. #523 está en curso y materializa `DEV-ARCH-GOP-001` para el MVP humano. | #523 abierto. #522 abierto, no blocker del MVP humano y requerido antes de automatización. | PR #509, PR #512 y PR #521 mergeados como dependencias transversales verificadas. | Revisar y aprobar DEV-ARCH-GOP; DER/SQL/API/runtime permanecen en incrementos posteriores. |
+| Gestión Operativa — Tareas | Etapa pre-DER y arquitectura cerradas: #489, #490–#493, #507 y #523 están cerrados/completados; PR #524 está mergeado y `DEV-ARCH-GOP-001` vigente. #528 materializa el DER del MVP humano. | #528 en curso. #527 conserva el backlog post-MVP. #522 abierto, no blocker humano y requerido antes de automatización. | PR #524 mergeado (#523); PR #509, PR #512 y PR #521 permanecen como dependencias transversales verificadas. | Completar y revisar el DER de #528; SQL/API/runtime permanecen en incrementos posteriores. |
 
 ## 4. Reglas para trabajo paralelo
 
@@ -78,9 +78,9 @@ outbox y receipt. #461 permanece abierto como migración transversal separada.
 
 Estado documental verificable: #489 y la etapa pre-DER están cerrados/completados.
 `Tarea` es el concepto principal del dominio `gestion_operativa`, separado de
-`operativo`. #523 está en curso y agrega `DEV-ARCH-GOP-001`; no existen todavía
-DER, SQL, migrations, API, router, schema, service, repository, frontend ni
-tests runtime de Tarea.
+`operativo`. #523 está cerrado/completado y PR #524 mergeado; #528 está en curso
+y materializa el DER del MVP inicial. No existen todavía SQL, migrations, API,
+router, schema, service, repository, frontend ni tests runtime de Tarea.
 
 #491 está completado por PR #494. `GOP-FREEZE-001` congela que toda
 mutación funcional compartida de Tarea es `COMMAND_WRITE_NEGOCIO +
@@ -158,10 +158,11 @@ regla. Si comentario y baja son concurrentes sin relación causal, ambos efectos
 convergen a Tarea dada de baja más comentario presente, sin LWW ni conflicto
 automático. Agregarlo no incrementa `Tarea.version_registro` ni requiere
 `If-Match-Version` de Tarea; la atomicidad futura abarca comentario/outbox/receipt.
-La etapa pre-DER está cerrada: #489, #490–#493 y #507 están
-cerrados/completados. #523 está en curso con `DEV-ARCH-GOP-001`; DER/SQL/API y
-runtime permanecen fuera de este incremento. #522 continúa abierto, no bloquea
-el MVP humano y debe resolverse antes de automatización.
+La etapa pre-DER y arquitectura están cerradas: #489, #490–#493, #507 y #523
+están cerrados/completados; PR #524 está mergeado y `DEV-ARCH-GOP-001` vigente.
+#528 materializa el DER del MVP inicial. #527 conserva el backlog post-MVP.
+SQL/API/runtime permanecen en incrementos posteriores. #522 continúa abierto,
+no bloquea el MVP humano y debe resolverse antes de automatización.
 
 ## 5. Frente A — Comercial / Financiero
 
