@@ -112,8 +112,18 @@ no puede expresarse completamente mediante la cardinalidad Mermaid.
 
 `Tarea` es el aggregate root, snapshot funcional versionado, entidad
 sincronizable y autoridad del lifecycle. La creación nace en versión 1 y no usa
-versión esperada. Toda mutación material posterior avanza exactamente
-`Vn → Vn+1`; la estrategia física de CAS se difiere.
+versión esperada, CAS ni `If-Match-Version` de Tarea porque no existe snapshot
+previo; no se inventa una versión 0. Toda mutación material posterior de una
+Tarea existente/versionada exige que la versión esperada del command coincida
+con la versión local actual `Vn`; sólo entonces puede confirmar exactamente
+`Vn → Vn+1`. Si el snapshot actual difiere de la versión esperada, la mutación
+no puede confirmar el efecto como si aún operara sobre `Vn`.
+
+La obligación conceptual de versión esperada/CAS no está diferida. Permanecen
+diferidos únicamente su forma física —incluidos `UPDATE` condicionado, rowcount,
+repository, trigger, error y representación final de `If-Match-Version`—. Agregar
+ComentarioTarea es la excepción independiente: no usa versión esperada, CAS ni
+`If-Match-Version` de Tarea y no incrementa `Tarea.version_registro`.
 
 ### 6.2 Matriz estructural
 
@@ -492,6 +502,10 @@ instalación.
 - Tarea y ComentarioTarea tienen UID propio, obligatorio, único, inmutable y no
   reutilizable; HistorialTarea no.
 - Tarea y ComentarioTarea tienen versionado propio; HistorialTarea no.
+- La creación de Tarea nace en `version_registro = 1` sin versión esperada, CAS
+  ni `If-Match-Version` de Tarea. Toda mutación material de una Tarea existente
+  en `Vn` exige versión esperada `Vn` y sólo puede confirmar `Vn → Vn+1`; un
+  mismatch impide confirmar el efecto sobre la versión obsoleta.
 - Todo ComentarioTarea nace obligatoriamente con `version_registro = 1`; su
   versión es independiente de Tarea y en el MVP append-only normalmente
   permanece en `1`.
@@ -555,6 +569,9 @@ instalación.
 - Misma versión y contenido con el mismo `op_id`/envelope compatible es replay;
   con `op_id` distinto es una operación materialmente convergente diferente que
   no muta ni versiona el snapshot y conserva trazabilidad/receipt separados.
+- Una creación remota válida con versión `1` sobre `Tarea.uid_global` inexistente
+  es candidata a materializar Tarea e `HistorialTarea(CREADA)` y no constituye
+  gap; si el UID ya existe se aplican las reglas de continuidad y convergencia.
 - Una referencia funcional portable válida, requerida y temporalmente ausente
   produce `PENDING_DEPENDENCY` sin aplicación parcial, placeholder ni PK remota;
   los `NULL` funcionalmente válidos, la procedencia técnica y los gaps de versión
@@ -577,6 +594,8 @@ Quedan para el diseño físico:
 - índices finales adicionales y unicidades específicas del dominio;
 - protección física de inmutabilidad;
 - estrategia concreta de CAS;
+- representación física de la versión esperada y del CAS, cuyo uso conceptual
+  en toda mutación de Tarea existente ya es obligatorio;
 - reglas físicas de timestamps y metadata CORE-EF.
 
 ### 11.2 Application layer / DEV-SRV
@@ -588,6 +607,8 @@ Quedan para servicios y contratos posteriores:
 - autorización y visibilidad;
 - implementación concreta de idempotencia y de la frontera transaccional ya
   congelada;
+- lectura y validación de versión esperada, CAS concreto y clasificación del
+  mismatch, sin alterar sus excepciones de creación y comentario;
 - mecanismo técnico de espera, reordenamiento, reentrega y reconciliación de
   gaps de continuidad; el gate estricto de versión ya está congelado;
 - implementación runtime y mecanismo Técnico de retry/reclaim para
@@ -636,16 +657,30 @@ congela esos índices adicionales.
 - No se transportan ni almacenan PK remotas.
 - Se reutiliza la infraestructura transversal; no se crean tablas Sync GOP.
 
-### 13.1 Gate estricto de continuidad remota de Tarea
+### 13.1 Creación remota y gate estricto de continuidad de Tarea
 
-Si el receptor conserva Tarea en `Vn`, sólo una entrada `Vn+1` es candidata
-inmediata a aplicar, siempre que resuelva referencias y satisfaga invariantes.
+Cuando no existe localmente una Tarea para el `Tarea.uid_global` recibido, una
+operación de creación válida con `version_registro = 1` es candidata a
+crear/materializar la Tarea local si resuelve referencias, satisface invariantes
+y supera idempotencia/convergencia. Esta creación inicial no es un gap porque no
+existe un snapshot local previo ni una versión intermedia faltante. Debe
+materializar atómicamente la evidencia funcional `HistorialTarea(CREADA)` ya
+exigida para toda creación confirmada; si falta temporalmente una referencia
+funcional requerida, queda en `PENDING_DEPENDENCY` sin creación parcial ni
+placeholder.
+
+Si el mismo `uid_global` ya existe, el caso deja de ser creación sobre UID
+inexistente y se evalúa mediante continuidad, replay, convergencia, obsolescencia
+o conflicto; nunca crea una segunda Tarea con el mismo UID. Para una Tarea local
+existente en `Vn`, sólo una entrada `Vn+1` es candidata inmediata a aplicar,
+siempre que resuelva referencias y satisfaga invariantes.
 Una entrada `> Vn+1` constituye un gap: no se aplica inmediatamente ni adelanta
 el snapshot. Un snapshot posterior no sustituye una mutación intermedia faltante,
 porque se perdería silenciosamente su evidencia funcional de HistorialTarea.
 
 | Entrada remota | Resultado conceptual |
 | --- | --- |
+| UID inexistente + creación válida con versión inicial `1` | Candidata a crear la Tarea y `HistorialTarea(CREADA)`; no es gap |
 | Versión `Vn+1` sobre local `Vn` | Candidata a aplicar si satisface referencias e invariantes |
 | Versión `> Vn+1` | Gap; no aplicar inmediatamente ni adelantar snapshot |
 | Versión inferior a la local | No revierte snapshot; evaluar obsolescencia/idempotencia según operación conocida |
