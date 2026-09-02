@@ -70,7 +70,9 @@ Cardinalidades y condiciones:
 - el creador admite estructuralmente `0..1` usuario; es obligatorio cuando
   `origen = USUARIO` y debe ser `NULL` para el futuro `origen = SISTEMA`, según
   la invariante cruzada con `generador_sistema`;
-- el responsable es opcional y existe como máximo uno;
+- el responsable existe como máximo uno y es nullable en la estructura general;
+  su presencia es obligatoria en `EN_CURSO` y `COMPLETADA`, según la invariante
+  cruzada de estado;
 - la sucursal funcional es opcional y existe como máximo una; `NULL` significa
   alcance global;
 - todo comentario pertenece a una Tarea y tiene autor humano obligatorio;
@@ -106,10 +108,10 @@ versión esperada. Toda mutación material posterior avanza exactamente
 | título | Sí | Sí | Texto no nullable, funcionalmente no vacío y con contenido textual real |
 | descripción | No | Sí | Texto funcional |
 | prioridad | Sí | Sí | `BAJA` / `NORMAL` / `ALTA` / `URGENTE`; orden semántico `BAJA < NORMAL < ALTA < URGENTE`; al omitirse en creación adopta conceptualmente `NORMAL` |
-| responsable | No | Sí | FK local a `usuario`; máximo uno |
+| responsable | Condicional por estado | Sí | FK local a `usuario`; máximo uno; obligatorio en `EN_CURSO` y `COMPLETADA` |
 | `fecha_objetivo` | No | Sí | `DATE` funcional |
 | estado | Sí | Transición válida | `PENDIENTE` / `EN_CURSO` / `COMPLETADA` / `CANCELADA`; el único estado inicial es `PENDIENTE` |
-| `fecha_finalizacion` | No | Derivada | Resultado del lifecycle |
+| `fecha_finalizacion` | Sólo en `COMPLETADA` | Derivada | Instante vigente generado por servidor al completar; `NULL` en los demás estados |
 | sucursal | No | No en MVP | FK local a `sucursal`; `NULL` global |
 | `deleted_at` | No | Baja futura | Soft delete técnico, distinto del lifecycle |
 | metadata CORE-EF | Según contrato | Según mutación | Identidad, causalidad y procedencia técnica |
@@ -139,7 +141,26 @@ VENCIDA =
 La `fecha_corte_local` conserva la semántica definida por `DEV-ARCH-GOP-001`.
 Por lo tanto, una Tarea con baja técnica no se proyecta como vencida.
 
-### 6.3 Metadata CORE-EF
+### 6.3 Coherencia estructural del snapshot por estado
+
+| Estado | Responsable | `fecha_finalizacion` vigente |
+| --- | --- | --- |
+| `PENDIENTE` | `0..1`; puede ser `NULL` | `NULL` |
+| `EN_CURSO` | Obligatorio | `NULL` |
+| `COMPLETADA` | Obligatorio | Obligatoria; generada por servidor al completar |
+| `CANCELADA` | `0..1`; no es obligatorio por el solo estado | `NULL` |
+
+Esta matriz congela presencia y nulabilidad conceptual. Un snapshot
+`EN_CURSO` o `COMPLETADA` con responsable `NULL` es inválido; también lo son
+`COMPLETADA` con `fecha_finalizacion = NULL` y cualquier estado restante con
+`fecha_finalizacion != NULL`.
+
+La presencia del responsable no demuestra su elegibilidad. La evaluación de
+usuario, sucursal y vínculo vigentes, intervalo temporal, `puede_operar` y
+autorización Administrativa efectiva permanece en application layer / DEV-SRV.
+Este DER no decide `CHECK`, trigger ni otro mecanismo físico para estas reglas.
+
+### 6.4 Metadata CORE-EF
 
 Tarea requiere conceptualmente el bloque aplicable completo:
 
@@ -313,6 +334,9 @@ instalación.
 - El comentario tiene autor humano obligatorio.
 - El historial conserva el `op_id` causal de la operación de Tarea.
 - Responsable y sucursal admiten como máximo una referencia cada uno.
+- `PENDIENTE` admite responsable `NULL`; `EN_CURSO` y `COMPLETADA` exigen
+  responsable; `CANCELADA` no lo exige por el solo estado. La presencia no
+  sustituye la elegibilidad vigente, que corresponde a application layer.
 - Creador y generador son condicionales y excluyentes según origen: para
   `USUARIO`, creador obligatorio y generador `NULL`; para `SISTEMA`, creador
   `NULL` y generador obligatorio. `SISTEMA` permanece deshabilitado en el MVP.
@@ -332,6 +356,9 @@ instalación.
   anteriores; cambia `COMPLETADA → PENDIENTE`, limpia la
   `fecha_finalizacion` vigente y conserva la finalización anterior en
   HistorialTarea.
+- `COMPLETADA` exige `fecha_finalizacion` vigente, generada por servidor al
+  completar; `PENDIENTE`, `EN_CURSO` y `CANCELADA` exigen
+  `fecha_finalizacion = NULL`.
 - La metadata CORE-EF no duplica semántica funcional.
 - Las referencias externas persisten FK local y no copian UID del owner.
 - La sucursal funcional es nullable, inmutable en MVP y `NULL` significa global.
@@ -363,6 +390,7 @@ Quedan para el diseño físico:
 Quedan para servicios y contratos posteriores:
 
 - lifecycle contextual y elegibilidad continua del responsable;
+- generación server-side de `fecha_finalizacion` al completar;
 - autorización y visibilidad;
 - idempotencia y frontera transaccional concreta;
 - continuidad remota y representación de gaps;
