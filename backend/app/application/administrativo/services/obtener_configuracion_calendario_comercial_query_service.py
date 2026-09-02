@@ -68,10 +68,9 @@ class ObtenerConfiguracionCalendarioComercialQueryService:
             raise ConfiguracionCalendarioComercialInconsistente()
 
         valores_activos = [row for row in valores if row["deleted_at"] is None]
-        raices_activas = [row for row in raices if row["deleted_at"] is None]
         if not valores and not raices:
             raise ConfiguracionCalendarioComercialIncompleta()
-        if len(raices_activas) != 1:
+        if len(raices) != 1 or raices[0]["deleted_at"] is not None:
             raise ConfiguracionCalendarioComercialInconsistente()
         if not valores_activos:
             raise ConfiguracionCalendarioComercialInconsistente()
@@ -124,7 +123,7 @@ class ObtenerConfiguracionCalendarioComercialQueryService:
             raise ConfiguracionCalendarioComercialInconsistente()
 
         (fecha_desde, fecha_hasta), pareja = aplicables[0]
-        raiz = raices_activas[0]
+        raiz = raices[0]
         return ConfiguracionCalendarioComercialSnapshot(
             dia_cierre_comercial=pareja["DIA_CIERRE_COMERCIAL"],
             dia_vencimiento_predeterminado_cuotas=pareja[
