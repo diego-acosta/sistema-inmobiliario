@@ -4,10 +4,6 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import create_engine, text
-from sqlalchemy.exc import IntegrityError, OperationalError
-from sqlalchemy.orm import Session
-
 from app.api.core_ef_headers import AuthenticatedCoreEFHeaders, TechnicalCoreEFHeaders
 from app.application.administrativo.services.bootstrap_calendario_comercial_service import (
     BootstrapCalendarioComercialService,
@@ -15,8 +11,8 @@ from app.application.administrativo.services.bootstrap_calendario_comercial_serv
 from app.application.administrativo.services.calendario_comercial_sync_service import (
     CALENDARIO_SYNC_CONSUMER,
     CalendarioComercialSyncPayloadError,
-    _PostgresDatabaseIdentity,
     _is_reconciliable_integrity_error,
+    _PostgresDatabaseIdentity,
     _same_physical_database,
     parse_calendario_outbox_envelope,
     register_calendario_outbox_delivery,
@@ -32,6 +28,9 @@ from app.infrastructure.persistence.repositories.inbox_repository import InboxRe
 from app.infrastructure.persistence.repositories.outbox_repository import (
     OutboxRepository,
 )
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.orm import Session
 
 
 class _NullSession:

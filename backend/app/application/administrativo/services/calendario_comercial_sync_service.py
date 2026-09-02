@@ -8,10 +8,6 @@ from itertools import pairwise
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
-
 from app.application.administrativo.parametro_entero import parse_parametro_entero
 from app.application.common.idempotency import canonical_payload_hash
 from app.application.common.synchronization_policy import validate_sync_event
@@ -31,6 +27,9 @@ from app.infrastructure.persistence.repositories.inbox_repository import InboxRe
 from app.infrastructure.persistence.repositories.outbox_repository import (
     OutboxRepository,
 )
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 CALENDARIO_SYNC_CONSUMER = "administrativo.calendario_comercial"
 CALENDARIO_SYNC_EVENTS = frozenset(
