@@ -176,6 +176,26 @@ def test_api_acepta_fecha_venta_civil_estricta(client):
     )
 
 
+def test_openapi_declara_fecha_venta_requerida_y_unica(client):
+    response = client.get("/openapi.json")
+
+    assert response.status_code == 200
+    parameters = response.json()["paths"][ENDPOINT]["get"]["parameters"]
+    fecha_venta_parameters = [
+        parameter
+        for parameter in parameters
+        if parameter["name"] == "fecha_venta" and parameter["in"] == "query"
+    ]
+
+    assert len(fecha_venta_parameters) == 1
+    fecha_venta_parameter = fecha_venta_parameters[0]
+    assert fecha_venta_parameter["required"] is True
+    assert fecha_venta_parameter["schema"]["type"] == "string"
+    assert fecha_venta_parameter["schema"]["pattern"] == (
+        r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    )
+
+
 @pytest.mark.parametrize("fecha_venta", ["9999-12-01", "9999-11-11"])
 def test_api_rechaza_mes_destino_fuera_de_rango(client, fecha_venta):
     with patch(

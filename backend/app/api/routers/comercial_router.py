@@ -267,13 +267,28 @@ from app.infrastructure.persistence.repositories.indice_financiero_repository im
 from app.infrastructure.persistence.repositories.plan_pago_venta_v2_repository import (
     PlanPagoVentaV2Repository,
 )
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 router = APIRouter(tags=["Comercial"])
 
 _FECHA_CIVIL_PATTERN = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+
+_VENCIMIENTO_INICIAL_SUGERIDO_OPENAPI = {
+    "parameters": [
+        {
+            "name": "fecha_venta",
+            "in": "query",
+            "required": True,
+            "schema": {
+                "type": "string",
+                "pattern": r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+                "example": "2026-05-10",
+            },
+        }
+    ]
+}
 
 _CORE_EF_REQUIRED_HEADERS_OPENAPI = {
     "parameters": [
@@ -2099,6 +2114,7 @@ def list_ventas(
 @router.get(
     "/api/v1/ventas/vencimiento-inicial-sugerido",
     response_model=PrimerVencimientoSugeridoResponse,
+    openapi_extra=_VENCIMIENTO_INICIAL_SUGERIDO_OPENAPI,
     responses={
         422: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
@@ -2106,9 +2122,10 @@ def list_ventas(
     },
 )
 def resolver_primer_vencimiento_sugerido(
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
-    fecha_venta: Annotated[str | None, Query()] = None,
 ) -> PrimerVencimientoSugeridoResponse | JSONResponse:
+    fecha_venta = request.query_params.get("fecha_venta")
     fecha_venta_parseada = _parse_fecha_civil_query(fecha_venta)
     if fecha_venta_parseada is None:
         error = ErrorResponse(
