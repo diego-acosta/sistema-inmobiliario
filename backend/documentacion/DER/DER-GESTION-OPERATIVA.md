@@ -1209,6 +1209,24 @@ equipos, sectores, Kanban, SLA, workflows configurables, adjuntos, generación
 automática efectiva, control de mora, relaciones polimórficas, incidencias,
 novedades, observaciones, frontend avanzado o dashboard analítico.
 
+La baja lógica futura de Tarea continúa contemplada exclusivamente como
+`COMMAND_WRITE_TECNICO + SINCRONIZABLE`, con sus contratos ya congelados de
+CAS/versionado, idempotencia, outbox, atomicidad, conservación de appends y
+ausencia de hard delete. Esto no incorpora su operación inversa:
+
+```text
+soft delete futuro → contemplado
+restauración posterior a baja lógica → FUERA DE ALCANCE del MVP
+restauración → requiere incremento arquitectónico/funcional propio
+```
+
+La existencia de `deleted_at` no implica que volverlo a `NULL` sea una
+operación válida ni que delete/restore formen un par simétrico. Este DER no
+define command, endpoint, evento, autorización, CAS o idempotencia específicos,
+historial, transición/estado, efectos funcionales, visibilidad ni tratamiento
+Sync de restauración. No es una decisión física diferida: la capacidad completa
+queda fuera de alcance hasta un incremento propio.
+
 ## 16. NO CONFIRMADO / DIFERIDO
 
 Los siguientes puntos no bloquean el DER y no se deciden aquí:
