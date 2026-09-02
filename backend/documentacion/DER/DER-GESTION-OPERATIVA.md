@@ -283,6 +283,22 @@ owner Administrativo. Esta regla no altera el branch reservado `SISTEMA`:
 creador `NULL`, `generador_sistema` obligatorio y origen aún deshabilitado hasta
 resolver #522, sin usuario SYSTEM, principal ficticio ni service account.
 
+Como regla transversal del MVP, `Authorization: Bearer` →
+`AuthenticatedPrincipal` vigente es la única fuente autoritativa de toda
+identidad humana GOP. Comprende creador de Tarea, autor de ComentarioTarea, actor
+humano de HistorialTarea —incluida `REABIERTA`—, usuario implícito de “Mis
+tareas” y “Tareas creadas por mí”, caller de commands y consultas protegidas y
+cualquier otro actor humano del dominio.
+
+`X-Usuario-Id` no se requiere, parsea, compara ni utiliza para identidad o
+autorización GOP. No sustituye ni complementa `AuthenticatedPrincipal`, no
+funciona como fallback o cross-check y su presencia o ausencia no define al
+actor. Cuando una identidad humana debe viajar, se transporta el
+`usuario.uid_global` portable del owner Administrativo: nunca
+`X-Usuario-Id`, una PK local, login, email o código como fallback. Esta
+prohibición no agrega `X-Usuario-Id` al helper ni a los tres headers técnicos
+CORE-EF requeridos.
+
 La baja o desactivación posterior del usuario creador no invalida la Tarea ni
 elimina su identidad histórica: la FK y el UID del owner conservan la
 trazabilidad del alta.
@@ -967,6 +983,30 @@ congela esos índices adicionales.
   parte de la operación de Tarea para materializarlo determinísticamente.
 - No se transportan ni almacenan PK remotas.
 - Se reutiliza la infraestructura transversal; no se crean tablas Sync GOP.
+
+Esa reutilización preserva tres identidades conceptuales distintas del contrato
+Técnico:
+
+- **Delivery** = identidad de entrega `(event_id, consumer)`;
+- **Operation** = identidad material distribuida del consumidor
+  `(consumer, op_id)`;
+- **Attempt** = identidad de una adquisición o intento concreto `attempt_id`.
+
+`event_id` identifica el evento/delivery, no la operación funcional global:
+el mismo `event_id` con distinto `consumer` constituye distintas Delivery y
+deduplicar la operación material sólo por `event_id` es incorrecto. `op_id`
+identifica la operación dentro del scope del consumidor, no una delivery ni un
+attempt; el mismo `op_id` con distinto `consumer` constituye distintas
+Operation.
+
+Cada retry o takeover por expiración de lease puede adquirir un nuevo
+`attempt_id` para la misma Operation, sin crear ni repetir una nueva operación
+funcional. `attempt_id` es distinto de `event_id`, `op_id` y `worker_id`;
+este último sirve sólo para observabilidad y diagnóstico, no identifica
+Delivery, Operation o Attempt ni constituye autoridad o fencing authority. El
+fencing/takeover sigue perteneciendo al contrato Técnico transversal; este DER
+no diseña columnas, tablas, índices, SQL, leases, tiempos, queries o scheduler
+GOP propios.
 
 ### 13.1 Creación remota y gate estricto de continuidad de Tarea
 
