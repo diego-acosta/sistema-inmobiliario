@@ -273,6 +273,27 @@ owner Administrativo. Esta regla no altera el branch reservado `SISTEMA`:
 creador `NULL`, `generador_sistema` obligatorio y origen aún deshabilitado hasta
 resolver #522, sin usuario SYSTEM, principal ficticio ni service account.
 
+Autenticación/identidad del creador y autorización para elegir el scope son
+precondiciones distintas. Toda creación humana exige además administración
+aplicable sobre el scope funcional propuesto:
+
+```text
+id_sucursal != NULL
+→ administración vigente sobre esa sucursal
+  AND autorización efectiva Administrativa suficiente
+
+id_sucursal = NULL
+→ Tarea global
+→ alcance global administrativo vigente
+  AND autorización efectiva Administrativa suficiente
+```
+
+Estar autenticado, ser usuario activo, responsable, creador, tener
+`puede_operar` o acceso a otra sucursal no sustituye la administración aplicable
+al scope propuesto. `NULL` no omite la validación: significa scope global. Esta
+regla consume autorización de Administrativo y no crea ACL, tabla de scope, FK,
+copia de permisos ni rol GOP.
+
 ### 6.8 Elegibilidad temporal del responsable
 
 La elegibilidad se evalúa completa usando un único `instante_corte_utc`,
@@ -335,6 +356,18 @@ y la autorización actual aplicable preceden cualquier respuesta observable de
 `claim_operation` y gatean `EXECUTE`, `REPLAY` y `CONFLICT`; conocer un `op_id` o
 receipt no concede acceso.
 
+La autorización actual de acceso se distingue de las precondiciones mutables de
+la ejecución original. Un caller actualmente autenticado y autorizado que
+presenta el mismo `op_id`, envelope compatible y una operación ya completada
+recibe `REPLAY` durable sin repetir efecto ni outbox. Después de superar esa
+autorización actual, el replay puede devolver el resultado durable sin reevaluar
+lifecycle, versión actual/esperada original, elegibilidad, estado del target u
+otras precondiciones mutables necesarias sólo para ejecutar el efecto original.
+El replay no es una nueva ejecución. Un caller distinto, sin autorización actual
+o que perdió una base válida de acceso no recibe el resultado por conocer el
+`op_id`; autorización nunca se desplaza detrás de una respuesta observable de
+claim/replay/conflict.
+
 Con autorización efectiva correspondiente, son bases independientes de
 visibilidad:
 
@@ -370,6 +403,27 @@ lifecycle y elegibilidad. Si el responsable pierde elegibilidad, no se
 desasigna ni cambia estado automáticamente, pero pierde `Mis tareas` y todas las
 capacidades derivadas de ser responsable; sólo conserva acceso por otra base
 independiente válida.
+
+### 6.10 Clasificación CORE-EF de operaciones
+
+Las clasificaciones conceptuales ya congeladas son:
+
+| Operación conceptual | Clasificación CORE-EF | Sincronización/outbox |
+| --- | --- | --- |
+| Crear o mutar snapshot de Tarea | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE`; genera outbox transaccional |
+| Agregar ComentarioTarea | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE`; evento/outbox propio |
+| Baja lógica futura de Tarea | `COMMAND_WRITE_TECNICO` | `SINCRONIZABLE`; genera outbox transaccional |
+| Consultas | `QUERY_READLIKE` | No generan outbox |
+
+Crear o mutar snapshot comprende contenido, asignación/reasignación/
+desasignación, prioridad, fecha objetivo, lifecycle, completar, cancelar y
+reabrir. La baja conserva naturaleza técnica aunque afecte Tarea. Permanecen
+diferidos endpoints, métodos HTTP, command/event codes, schemas, routers, SQL y
+middleware; no está diferida la clasificación.
+
+Para estas operaciones se congela `lock lógico = NO APLICA`. Esto no elimina ni
+debilita CAS, `If-Match-Version`, `version_registro`, idempotencia, atomicidad,
+transacción ni fencing Técnico. No se introduce lock GOP adicional.
 
 ## 7. ComentarioTarea
 
@@ -643,6 +697,10 @@ instalación.
 - En creación humana, el creador se deriva exclusivamente de Bearer →
   `AuthenticatedPrincipal.id_usuario`; no se acepta desde payload,
   `X-Usuario-Id`, parámetros, login, email, código ni PK remota.
+- Crear con sucursal concreta exige administración vigente y autorización
+  efectiva sobre esa sucursal; crear con sucursal `NULL` exige alcance global
+  administrativo vigente y autorización efectiva. Identidad del creador no
+  sustituye autorización sobre el scope propuesto.
 - El título es no nullable, funcionalmente no vacío y conserva contenido textual
   real; su protección física se define después.
 - Prioridad y estado pertenecen a catálogos conceptuales cerrados; prioridad se
@@ -684,6 +742,10 @@ instalación.
   historial aplicable, outbox y receipt; agregar comentario confirma
   atómicamente claim, ComentarioTarea, outbox y receipt. Un fallo pre-commit
   revierte la unidad completa.
+- Todo evento de Tarea permite reproducir exactamente su `Vn → Vn+1` y
+  materializar HistorialTarea mediante descriptor causal, sin coalescer una
+  operación intermedia necesaria ni inventar historial mediante diff. El evento
+  de ComentarioTarea conserva su identidad, versión y causalidad independientes.
 - Application Service / Orchestrator es owner de commit y rollback; los
   repositories participan en la transacción provista sin commit ni rollback
   internos.
@@ -705,6 +767,13 @@ instalación.
   autorización Administrativa efectiva. Creador sólo obtiene ver/comentar;
   responsable elegible sólo las capacidades operativas de la matriz;
   administración aplicable conserva el scope global/sucursal/fallback.
+- Autenticación y autorización actuales siempre gatean `EXECUTE`, `REPLAY` y
+  `CONFLICT`; después de superarlas, un replay durable compatible no repite
+  efecto/outbox y puede omitir precondiciones mutables de la ejecución original.
+- Tarea writes y ComentarioTarea son `COMMAND_WRITE_NEGOCIO + SINCRONIZABLE`;
+  baja futura es `COMMAND_WRITE_TECNICO + SINCRONIZABLE`; consultas son
+  `QUERY_READLIKE` sin outbox. `lock lógico = NO APLICA` sin debilitar CAS,
+  idempotencia, transacción ni fencing Técnico.
 - Tarea tiene criticidad Sync MEDIA: prohíbe LWW, auto-merge genérico y merge
   campo por campo; conflicto material conserva trazabilidad y toda resolución que
   modifique datos es una nueva operación con nuevo `op_id`.
@@ -876,6 +945,31 @@ gap de `version_registro` tampoco es `PENDING_DEPENDENCY`: pertenece a
 continuidad estricta. Scheduler, frecuencia, reentrega, reclaim, lease, operation
 scope y mecanismo concreto de retry permanecen en Técnico/#512; no se crean
 tablas, colas, placeholders ni infraestructura GOP paralela.
+
+### 13.3 Suficiencia causal de eventos y outbox
+
+Toda mutación sincronizable de Tarea produce, dentro de su frontera atómica,
+información suficiente para reproducir exactamente el efecto remoto
+`Vn → Vn+1`. El evento/envelope conserva conceptualmente:
+
+- snapshot resultante necesario y `version_registro`;
+- `op_id` y causalidad funcional;
+- referencias portables requeridas;
+- descriptor suficiente para materializar HistorialTarea sin inventarlo;
+- procedencia técnica conforme al contrato transversal.
+
+El productor/outbox preserva la posibilidad de entregar cada mutación necesaria
+para continuidad estricta. No puede coalescer `V1 → V2 → V3` transportando sólo
+V3 como sustituto de V2 cuando esa operación intermedia es necesaria. Un snapshot
+posterior no reemplaza una versión faltante, y HistorialTarea no se reconstruye
+mediante diff entre snapshots ni comparando V1 con V3. Cada mutación aplicada
+materializa su descriptor causal propio.
+
+ComentarioTarea conserva evento/outbox independiente con su UID, versión, Tarea
+padre portable, autor portable, texto, instante, `op_id` y causalidad suficiente;
+no se convierte en snapshot de Tarea. Permanecen diferidos nombre/código EVT,
+routing, tópico, schema/JSON físico, broker, batching y transporte, pero ningún
+batching futuro puede impedir reproducir cada transición o versión necesaria.
 
 ## 14. Origen SISTEMA reservado
 
