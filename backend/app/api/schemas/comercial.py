@@ -266,6 +266,15 @@ class PreviewPlanPagoVentaV2SinVentaRequest(PreviewPlanPagoVentaV2PorBloquesRequ
         return self
 
 
+class PrimerVencimientoSugeridoData(BaseModel):
+    fecha_primer_vencimiento_sugerida: date
+
+
+class PrimerVencimientoSugeridoResponse(BaseModel):
+    ok: Literal[True] = True
+    data: PrimerVencimientoSugeridoData
+
+
 class ConfirmVentaRequest(BaseModel):
     observaciones: str | None = None
 

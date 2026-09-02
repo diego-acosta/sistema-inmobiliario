@@ -362,3 +362,23 @@ Limitaciones V2 iniciales:
 - integracion completa con generacion de obligaciones para metodos distintos de
   `CUOTAS_IGUALES_SIMPLE V2` y `ANTICIPO_MAS_CUOTAS_IGUALES V2`
 - tratamiento de ajustes, intereses, indexacion, refinanciacion y cancelacion anticipada
+## Incremento #426 — resolución previa del primer vencimiento
+
+`ResolverPrimerVencimientoSugeridoService` es la única implementación
+Comercial de la regla. Recibe `fecha_venta: date`, obtiene el calendario
+Administrativo aplicable mediante su query service interno y devuelve una
+sugerencia efímera.
+
+- venta hasta el cierre inclusive: mes siguiente;
+- venta posterior al cierre: segundo mes siguiente;
+- día inexistente en el mes destino: último día de ese mes.
+
+La resolución aplica sólo al primer `TRAMO_CUOTAS`. No calcula anticipos,
+refuerzos, otros tramos ni cronogramas arbitrarios. Las cuotas posteriores
+continúan derivándose mensualmente desde la fecha explícita finalmente aceptada.
+Los writes existentes no invocan el resolver: preservan exactamente la fecha
+enviada por el cliente.
+
+Calendario incompleto es una precondición funcional; inconsistencia del
+agregado es error técnico controlado. No existen fallback, acceso SQL
+interdominio, llamada HTTP interna ni uso de reloj funcional.

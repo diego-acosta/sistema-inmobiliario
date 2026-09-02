@@ -1814,3 +1814,48 @@ Si la prevalidación permite confirmar, la venta, objetos, participantes, condic
 La respuesta exitosa mantiene la estructura previa y agrega campos opcionales: `es_venta_historica`, `fecha_corte` y `prevalidacion_historica` con resumen (`puede_confirmar`, `cantidad_historicas_exigibles`, `cantidad_con_indice`, `cantidad_futuras`, `cantidad_bloqueadas`).
 
 Ejemplos: venta actual o plan sin indexación sin `fecha_corte` confirma como antes; venta indexada histórica sin `fecha_corte` devuelve `FECHA_CORTE_REQUERIDA_VENTA_HISTORICA`; histórica válida con índices publicados confirma y genera deuda indexada; histórica bloqueada por publicación incompleta o valor inexistente aborta sin persistencia; histórica mixta confirma históricas con índice y deja futuras proyectadas.
+## Incremento #426 — primer vencimiento sugerido
+
+### `GET /api/v1/ventas/vencimiento-inicial-sugerido`
+
+Consulta read-like previa a los writes de venta y Plan Pago V2:
+
+```http
+GET /api/v1/ventas/vencimiento-inicial-sugerido?fecha_venta=2026-05-10
+```
+
+Respuesta `200`:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "fecha_primer_vencimiento_sugerida": "2026-06-15"
+  }
+}
+```
+
+La fecha efectiva del calendario es la `fecha_venta` civil explícita. Comercial
+consume internamente
+`ObtenerConfiguracionCalendarioComercialQueryService`; no consulta tablas
+administrativas, `configuracion_general` ni reloj del host. Una venta hasta el
+día de cierre inclusive usa el mes siguiente y una venta posterior usa el
+segundo mes siguiente. Si el día configurado no existe, se limita al último día
+del mes destino.
+
+La sugerencia es efímera. La consulta queda disponible como paso previo para los
+flujos directa, desde reserva y granular. Su invocación efectiva corresponde al
+cliente/UI antes del write y permanece pendiente de integración en `#430`. Los
+commands existentes continúan exigiendo `fecha_primer_vencimiento` explícita y
+nunca la recalculan ni sobrescriben.
+
+Errores:
+
+- `409 CONFIGURACION_CALENDARIO_COMERCIAL_INCOMPLETA`: no existe configuración
+  aplicable; es una precondición funcional y no tiene fallback.
+- `500 CONFIGURACION_CALENDARIO_COMERCIAL_INCONSISTENTE`: el snapshot
+  administrativo es técnicamente inconsistente.
+- `422`: `fecha_venta` ausente o inválida.
+
+Decisión CORE-EF: `QUERY_READLIKE`; sin headers write, `If-Match-Version`,
+idempotencia write, outbox, locks, versionado ni efectos persistentes.
