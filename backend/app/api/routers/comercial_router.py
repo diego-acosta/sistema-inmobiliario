@@ -247,6 +247,7 @@ from app.application.comercial.services.prevalidate_venta_historica_indexacion_s
     PrevalidateVentaHistoricaIndexacionService,
 )
 from app.application.comercial.services.resolver_primer_vencimiento_sugerido_service import (
+    PrimerVencimientoSugeridoFueraDeRango,
     ResolverPrimerVencimientoSugeridoService,
 )
 from app.application.comercial.services.update_reserva_venta_service import (
@@ -2087,6 +2088,7 @@ def list_ventas(
     "/api/v1/ventas/vencimiento-inicial-sugerido",
     response_model=PrimerVencimientoSugeridoResponse,
     responses={
+        422: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
         500: {"model": ErrorResponse},
     },
@@ -2102,6 +2104,15 @@ def resolver_primer_vencimiento_sugerido(
     )
     try:
         result = service.resolver(fecha_venta)
+    except PrimerVencimientoSugeridoFueraDeRango as exc:
+        error = ErrorResponse(
+            error_code=exc.code,
+            error_message=(
+                "La fecha de venta produce un primer vencimiento fuera "
+                "del rango representable."
+            ),
+        )
+        return JSONResponse(status_code=422, content=error.model_dump())
     except ConfiguracionCalendarioComercialIncompleta as exc:
         error = ErrorResponse(
             error_code=exc.code,

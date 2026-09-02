@@ -10,6 +10,10 @@ class CalendarioComercialQuery(Protocol):
     def obtener(self, fecha_efectiva: date): ...
 
 
+class PrimerVencimientoSugeridoFueraDeRango(Exception):
+    code = "PRIMER_VENCIMIENTO_SUGERIDO_FUERA_DE_RANGO"
+
+
 @dataclass(frozen=True)
 class PrimerVencimientoSugerido:
     fecha_primer_vencimiento_sugerida: date
@@ -45,5 +49,7 @@ def _construir_fecha_en_mes_destino(
     indice_mes = fecha_venta.month - 1 + meses
     anio_destino = fecha_venta.year + indice_mes // 12
     mes_destino = indice_mes % 12 + 1
+    if anio_destino > date.max.year:
+        raise PrimerVencimientoSugeridoFueraDeRango
     ultimo_dia = calendar.monthrange(anio_destino, mes_destino)[1]
     return date(anio_destino, mes_destino, min(dia, ultimo_dia))

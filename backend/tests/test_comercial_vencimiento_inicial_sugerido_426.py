@@ -10,6 +10,7 @@ from app.application.administrativo.services.obtener_configuracion_calendario_co
     ConfiguracionCalendarioComercialInconsistente,
 )
 from app.application.comercial.services.resolver_primer_vencimiento_sugerido_service import (
+    PrimerVencimientoSugeridoFueraDeRango,
     ResolverPrimerVencimientoSugeridoService,
 )
 from sqlalchemy import text
@@ -60,6 +61,30 @@ def test_resolver_aplica_cierre_cambio_de_anio_y_clamp(
 
     assert result.fecha_primer_vencimiento_sugerida == esperada
     assert query.fecha_efectiva == fecha_venta
+
+
+@pytest.mark.parametrize(
+    ("fecha_venta", "cierre"),
+    [
+        (date(9999, 12, 1), 1),
+        (date(9999, 11, 11), 10),
+    ],
+)
+def test_resolver_rechaza_mes_destino_fuera_de_rango(fecha_venta, cierre):
+    query = _Query(_Calendario(cierre, 15))
+
+    with pytest.raises(PrimerVencimientoSugeridoFueraDeRango):
+        ResolverPrimerVencimientoSugeridoService(query).resolver(fecha_venta)
+
+
+def test_resolver_admite_diciembre_de_date_max():
+    query = _Query(_Calendario(1, 31))
+
+    result = ResolverPrimerVencimientoSugeridoService(query).resolver(
+        date(9999, 11, 1)
+    )
+
+    assert result.fecha_primer_vencimiento_sugerida == date(9999, 12, 31)
 
 
 def _root(db_session):
@@ -116,6 +141,22 @@ def test_api_mes_corto(client, db_session):
 def test_api_rechaza_fecha_invalida(client, fecha_venta):
     response = client.get(ENDPOINT, params={"fecha_venta": fecha_venta})
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize("fecha_venta", ["9999-12-01", "9999-11-11"])
+def test_api_rechaza_mes_destino_fuera_de_rango(client, fecha_venta):
+    with patch(
+        "app.api.routers.comercial_router."
+        "ObtenerConfiguracionCalendarioComercialQueryService.obtener",
+        return_value=_Calendario(10, 15),
+    ):
+        response = client.get(ENDPOINT, params={"fecha_venta": fecha_venta})
+
+    assert response.status_code == 422
+    assert (
+        response.json()["error_code"]
+        == "PRIMER_VENCIMIENTO_SUGERIDO_FUERA_DE_RANGO"
+    )
 
 
 def test_api_calendario_incompleto_es_precondicion(client):
