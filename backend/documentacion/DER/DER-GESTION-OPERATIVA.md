@@ -253,6 +253,124 @@ Los nombres físicos de las FK de instalación permanecen sujetos a la convenci�
 CORE-EF que se confirme al diseñar SQL. La instalación conserva ownership
 Operativo y no define visibilidad ni scope funcional de Tarea.
 
+### 6.7 Identidad humana y creador
+
+En el MVP humano, `origen = USUARIO` vincula obligatoriamente el creador al
+principal autenticado vigente:
+
+```text
+Bearer
+→ AuthenticatedPrincipal vigente
+→ creador local = AuthenticatedPrincipal.id_usuario
+→ creador portable = usuario.uid_global del mismo owner
+```
+
+El creador no es un dato libre del caller. No puede provenir del body/payload,
+`X-Usuario-Id`, query param, path param, login, email, código de usuario, PK
+remota ni otro valor declarado arbitrariamente por el cliente. La FK local sirve
+para persistencia y joins; la portabilidad usa el `usuario.uid_global` del mismo
+owner Administrativo. Esta regla no altera el branch reservado `SISTEMA`:
+creador `NULL`, `generador_sistema` obligatorio y origen aún deshabilitado hasta
+resolver #522, sin usuario SYSTEM, principal ficticio ni service account.
+
+### 6.8 Elegibilidad temporal del responsable
+
+La elegibilidad se evalúa completa usando un único `instante_corte_utc`,
+capturado una sola vez por caso de uso desde un reloj confiable del servidor en
+UTC. No proviene del cliente, navegador, sucursal, instalación ni timezone de la
+sesión PostgreSQL.
+
+Para una Tarea de sucursal deben cumplirse simultáneamente:
+
+```text
+usuario vigente =
+  estado_usuario = ACTIVO
+  AND usuario.deleted_at IS NULL
+  AND usuario.fecha_baja IS NULL
+
+sucursal vigente =
+  estado_sucursal = ACTIVA
+  AND sucursal.deleted_at IS NULL
+  AND sucursal.fecha_baja IS NULL
+
+vínculo usuario_sucursal vigente =
+  usuario_sucursal.deleted_at IS NULL
+  AND estado_vinculo = ACTIVO
+  AND fecha_desde_utc <= instante_corte_utc
+  AND (
+    fecha_hasta_utc IS NULL
+    OR instante_corte_utc < fecha_hasta_utc
+  )
+
+responsable elegible =
+  usuario vigente
+  AND sucursal vigente
+  AND vínculo usuario_sucursal vigente
+  AND puede_operar = true
+  AND autorización efectiva Administrativa suficiente
+```
+
+El intervalo es semiabierto `[fecha_desde, fecha_hasta)`: incluye exactamente
+`fecha_desde` y excluye exactamente `fecha_hasta`. `puede_operar` aislado no
+alcanza. Para Tarea global se requiere el alcance global operativo vigente
+equivalente y autorización Administrativa suficiente; su representación sigue
+bajo ownership Administrativo.
+
+Toda nueva entrada autoritativa de `fecha_desde`/`fecha_hasta` llega con offset
+explícito, se normaliza a UTC y se compara como instante UTC. Si posteriormente
+se persiste como `timestamp without time zone`, sólo puede interpretarse como
+UTC canónico cuando la entrada original tenía offset explícito y fue normalizada
+previamente. El timezone de sesión no es autoridad. Valores legacy naïve sin
+offset no se reinterpretan silenciosamente: antes de autorizar visibilidad,
+elegibilidad, asignación o mutación requieren migración/backfill explícito o una
+regla legacy documentada y validada; este DER no elige entre esas estrategias.
+
+### 6.9 Visibilidad y autorización humana
+
+GOP declara relaciones funcionales habilitantes y consume autorización efectiva
+de Administrativo; no crea ACL, IAM, roles ni tablas de permisos. Toda operación
+humana protegida exige simultáneamente una relación funcional habilitante y
+autorización Administrativa efectiva. Bearer → `AuthenticatedPrincipal` vigente
+y la autorización actual aplicable preceden cualquier respuesta observable de
+`claim_operation` y gatean `EXECUTE`, `REPLAY` y `CONFLICT`; conocer un `op_id` o
+receipt no concede acceso.
+
+Con autorización efectiva correspondiente, son bases independientes de
+visibilidad:
+
+1. ser creador humano;
+2. ser responsable registrado y conservar elegibilidad vigente;
+3. tener consulta vigente sobre la sucursal de una Tarea scoped;
+4. tener administración vigente sobre esa sucursal;
+5. para Tarea global, tener consulta global o administración global vigente;
+6. para Tarea cuyo scope dejó de estar vigente, tener administración global
+   vigente.
+
+`Mis tareas` incluye exclusivamente Tareas cuyo responsable registrado es el
+usuario y sigue elegible. `Tareas creadas por mí` es una consulta independiente
+por autoría: el creador conserva esa base aunque no sea responsable, haya sido
+reasignada o desasignada, siempre sujeto a autorización efectiva.
+
+| Acción | Creador por esa sola relación | Responsable vigente/elegible | Administración aplicable |
+| --- | --- | --- | --- |
+| Ver | Sí | Sí | Sí |
+| Comentar | Sí | Sí | Sí |
+| Modificar título/descripción | No | No | Sí |
+| Asignar/reasignar/desasignar | No | No | Sí |
+| Cambiar prioridad/fecha objetivo | No | No | Sí |
+| Cambiar `PENDIENTE ↔ EN_CURSO` | No | Sí | Sí |
+| Completar | No | Sí | Sí, sólo con responsable elegible |
+| Cancelar | No | No | Sí |
+| Reabrir `COMPLETADA → PENDIENTE` | No | No | Sí |
+
+Administración aplicable significa alcance global para Tarea global,
+administración vigente sobre la sucursal vigente o fallback de administración
+global si esa sucursal dejó de estar vigente. Siempre se respetan autorización,
+lifecycle y elegibilidad. Si el responsable pierde elegibilidad, no se
+desasigna ni cambia estado automáticamente, pero pierde `Mis tareas` y todas las
+capacidades derivadas de ser responsable; sólo conserva acceso por otra base
+independiente válida.
+
 ## 7. ComentarioTarea
 
 ### 7.1 Rol estructural
@@ -522,6 +640,9 @@ instalación.
 - Creador y generador son condicionales y excluyentes según origen: para
   `USUARIO`, creador obligatorio y generador `NULL`; para `SISTEMA`, creador
   `NULL` y generador obligatorio. `SISTEMA` permanece deshabilitado en el MVP.
+- En creación humana, el creador se deriva exclusivamente de Bearer →
+  `AuthenticatedPrincipal.id_usuario`; no se acepta desde payload,
+  `X-Usuario-Id`, parámetros, login, email, código ni PK remota.
 - El título es no nullable, funcionalmente no vacío y conserva contenido textual
   real; su protección física se define después.
 - Prioridad y estado pertenecen a catálogos conceptuales cerrados; prioridad se
@@ -576,6 +697,17 @@ instalación.
   produce `PENDING_DEPENDENCY` sin aplicación parcial, placeholder ni PK remota;
   los `NULL` funcionalmente válidos, la procedencia técnica y los gaps de versión
   no pertenecen a esa clasificación GOP.
+- La elegibilidad usa un único `instante_corte_utc` confiable del servidor y el
+  intervalo `[fecha_desde, fecha_hasta)` normalizado desde entradas con offset;
+  no depende del reloj cliente, timezone de sesión ni reinterpretación silenciosa
+  de valores legacy naïve.
+- Visibilidad y mutación humana exigen relación funcional habilitante y
+  autorización Administrativa efectiva. Creador sólo obtiene ver/comentar;
+  responsable elegible sólo las capacidades operativas de la matriz;
+  administración aplicable conserva el scope global/sucursal/fallback.
+- Tarea tiene criticidad Sync MEDIA: prohíbe LWW, auto-merge genérico y merge
+  campo por campo; conflicto material conserva trazabilidad y toda resolución que
+  modifique datos es una nueva operación con nuevo `op_id`.
 - La futura generación con origen `SISTEMA` combina idempotencia técnica por
   `op_id` con idempotencia funcional por hecho fuente; reprocesar el mismo hecho
   fuente con otro `op_id` no crea una segunda Tarea funcional equivalente.
@@ -602,9 +734,11 @@ Quedan para el diseño físico:
 
 Quedan para servicios y contratos posteriores:
 
-- lifecycle contextual y elegibilidad continua del responsable;
+- implementación del lifecycle contextual y de la elegibilidad continua cuyo
+  predicado temporal y funcional ya está congelado;
 - generación server-side de `fecha_finalizacion` al completar;
-- autorización y visibilidad;
+- implementación técnica de autenticación, autorización y visibilidad cuyas
+  bases y matriz funcional ya están congeladas;
 - implementación concreta de idempotencia y de la frontera transaccional ya
   congelada;
 - lectura y validación de versión esperada, CAS concreto y clasificación del
@@ -688,6 +822,20 @@ porque se perdería silenciosamente su evidencia funcional de HistorialTarea.
 | Misma versión y mismo contenido material, con `op_id` distinto | Operación distinta materialmente convergente: no es replay ni duplicado, no cambia el snapshot y conserva separadamente la trazabilidad y receipt de ambas operaciones |
 | Misma versión y distinto contenido | Conflicto material |
 | Timestamp más nuevo | Sin autoridad para saltar continuidad |
+
+Tarea conserva criticidad de sincronización **MEDIA**. Ante una divergencia
+material real no resuelta por reglas explícitas se prohíben LWW, auto-merge
+genérico y merge automático campo por campo, incluso cuando los campos parezcan
+disjuntos. El conflicto conserva trazabilidad suficiente de las operaciones
+competidoras y ninguna se descarta o sustituye silenciosamente por timestamp.
+Su persistencia técnica reutiliza la infraestructura de conflicto existente; no
+se crea tabla GOP propia.
+
+Si la resolución modifica estado funcional, exige una nueva operación trazable
+con nuevo `op_id`: no edita en lugar de las operaciones originales, no reutiliza
+sus `op_id` ni borra la trazabilidad del conflicto. La criticidad MEDIA no
+transfiere ownership funcional a Técnico; GOP conserva la semántica de Tarea y
+Técnico conserva la infraestructura de Sync/conflicto.
 
 La identidad de operación no equivale al estado material resultante: dos
 operaciones distintas pueden converger al mismo contenido sin convertirse en la
