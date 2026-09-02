@@ -471,9 +471,38 @@ Las clasificaciones conceptuales ya congeladas son:
 
 Crear o mutar snapshot comprende contenido, asignación/reasignación/
 desasignación, prioridad, fecha objetivo, lifecycle, completar, cancelar y
-reabrir. La baja conserva naturaleza técnica aunque afecte Tarea. Permanecen
-diferidos endpoints, métodos HTTP, command/event codes, schemas, routers, SQL y
-middleware; no está diferida la clasificación.
+reabrir. La baja conserva naturaleza técnica aunque afecte Tarea.
+
+Todo write GOP clasificado `SINCRONIZABLE` debe obtener y validar su contexto
+técnico mediante el helper común CORE-EF y exige obligatoriamente
+`X-Op-Id`, `X-Sucursal-Id` y `X-Instalacion-Id`. Esta regla transversal cubre
+la creación y las mutaciones de Tarea, el alta independiente de
+ComentarioTarea y la baja lógica futura:
+
+- `X-Op-Id` aporta la identidad técnica portable `op_id` de la operación y
+  alimenta su contrato de idempotencia; no identifica personas, no autentica y
+  no concede autorización;
+- `X-Sucursal-Id` aporta contexto técnico de ejecución/procedencia; no asigna
+  `Tarea.id_sucursal`, no determina el scope funcional y no concede
+  autorización sobre una sucursal;
+- `X-Instalacion-Id` aporta contexto/procedencia técnica de instalación; no
+  determina scope funcional, sucursal de Tarea, creador, responsable ni
+  autorización humana.
+
+El helper común CORE-EF es la frontera conceptual obligatoria para aplicar este
+contrato uniformemente; los writes sincronizables no definen parsing o
+validación ad hoc por endpoint. `Authorization: Bearer` →
+`AuthenticatedPrincipal` continúa siendo la fuente independiente de identidad
+y autorización humana, y ninguno de los tres headers técnicos la sustituye.
+Sólo la procedencia técnica portable admitida por el contrato transversal puede
+integrar el envelope durable; estos headers no habilitan material de
+autenticación en payload/outbox.
+
+Permanecen diferidos endpoints, métodos HTTP, command/event codes, schemas,
+routers, dependency o middleware concretos, nombre y firma del helper, tipos,
+parsing y validadores físicos, wiring, códigos de error y SQL. No están
+diferidas la clasificación, la reutilización obligatoria del helper común
+CORE-EF ni la obligatoriedad de los tres headers.
 
 Para estas operaciones se congela `lock lógico = NO APLICA`. Esto no elimina ni
 debilita CAS, `If-Match-Version`, `version_registro`, idempotencia, atomicidad,
