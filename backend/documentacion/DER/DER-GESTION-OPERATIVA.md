@@ -105,7 +105,7 @@ versión esperada. Toda mutación material posterior avanza exactamente
 | `generador_sistema` | Condicional | No | Descriptor funcional, no credencial |
 | título | Sí | Sí | Texto no nullable, funcionalmente no vacío y con contenido textual real |
 | descripción | No | Sí | Texto funcional |
-| prioridad | Sí | Sí | `BAJA` / `NORMAL` / `ALTA` / `URGENTE`; al omitirse en creación adopta conceptualmente `NORMAL` |
+| prioridad | Sí | Sí | `BAJA` / `NORMAL` / `ALTA` / `URGENTE`; orden semántico `BAJA < NORMAL < ALTA < URGENTE`; al omitirse en creación adopta conceptualmente `NORMAL` |
 | responsable | No | Sí | FK local a `usuario`; máximo uno |
 | `fecha_objetivo` | No | Sí | `DATE` funcional |
 | estado | Sí | Transición válida | `PENDIENTE` / `EN_CURSO` / `COMPLETADA` / `CANCELADA`; el único estado inicial es `PENDIENTE` |
@@ -119,6 +119,11 @@ decisión funcional ya cerrada. El default conceptual `NORMAL` de prioridad y el
 estado inicial único `PENDIENTE` son reglas de creación, pero este DER no decide
 si se protegerán mediante `DEFAULT` SQL, validación de aplicación u otro
 mecanismo posterior.
+
+La prioridad conserva el orden semántico `BAJA < NORMAL < ALTA < URGENTE`.
+Afecta únicamente ordenamiento, filtros y señalización visual: no cambia estado
+ni vencimiento, no modifica permisos/autorización o locks, no introduce SLA y no
+dispara automatización. La implementación física del orden permanece diferida.
 
 `VENCIDA` no es un estado ni un campo persistido, sino una proyección de consulta
 definida conceptualmente por la regla completa:
@@ -313,9 +318,12 @@ instalación.
   `NULL` y generador obligatorio. `SISTEMA` permanece deshabilitado en el MVP.
 - El título es no nullable, funcionalmente no vacío y conserva contenido textual
   real; su protección física se define después.
-- Prioridad y estado pertenecen a catálogos conceptuales cerrados; la prioridad
-  omitida en creación adopta conceptualmente `NORMAL` y toda Tarea se crea
-  únicamente en `PENDIENTE`.
+- Prioridad y estado pertenecen a catálogos conceptuales cerrados; prioridad se
+  ordena semánticamente como `BAJA < NORMAL < ALTA < URGENTE`, la omitida en
+  creación adopta conceptualmente `NORMAL` y toda Tarea se crea únicamente en
+  `PENDIENTE`. Prioridad sólo afecta ordenamiento, filtros y señalización visual;
+  no altera estado, vencimiento, permisos/autorización, locks, SLA ni dispara
+  automatización.
 - `VENCIDA` es una proyección no persistida que exige `deleted_at` ausente,
   `fecha_objetivo` no nula, estado `PENDIENTE` o `EN_CURSO`, y
   `fecha_objetivo < fecha_corte_local`.
