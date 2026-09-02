@@ -80,7 +80,7 @@ erDiagram
     SUCURSAL o|--o{ TAREA : scope
     TAREA ||--o{ COMENTARIO_TAREA : recibe
     USUARIO ||--o{ COMENTARIO_TAREA : escribe
-    TAREA ||--o{ HISTORIAL_TAREA : registra
+    TAREA ||--|{ HISTORIAL_TAREA : registra
     USUARIO o|--o{ HISTORIAL_TAREA : actua
 ```
 
@@ -95,7 +95,8 @@ Cardinalidades y condiciones:
 - la sucursal funcional es opcional y existe como máximo una; `NULL` significa
   alcance global;
 - todo comentario pertenece a una Tarea y tiene autor humano obligatorio;
-- toda entrada de historial pertenece a una Tarea;
+- toda Tarea confirmada registra `1..N` entradas de historial y toda entrada de
+  historial pertenece exactamente a una Tarea;
 - el actor del historial es condicional por tipo de hecho y obligatorio para
   `REABIERTA`;
 - instalación no es scope funcional y por eso no aparece como relación funcional
@@ -326,6 +327,25 @@ Aplicabilidad explícita:
 No se impone todavía unicidad sobre `op_id`: una operación indivisible puede
 requerir una o más filas de evidencia y esa granularidad pertenece a DEV-SRV/SQL.
 
+Toda creación confirmada de Tarea genera obligatoriamente una entrada
+`HistorialTarea` de tipo `CREADA`. Una Tarea confirmada con cero entradas de
+historial es estructuralmente inválida respecto del contrato GOP. La primera
+entrada pertenece a la misma operación y transacción funcional de creación:
+
+```text
+Tarea
++ HistorialTarea(CREADA)
++ outbox
++ receipt idempotente
+→ misma transacción conceptual
+```
+
+Para el MVP con `origen = USUARIO`, `CREADA` conserva la Tarea obligatoria, el
+actor humano correspondiente, el instante, el `op_id` causal y evidencia
+funcional suficiente para explicar el alta. El actor del futuro origen `SISTEMA`
+no se define aquí ni se habilita ese origen. La forma física de la evidencia y
+del mecanismo transaccional permanece diferida.
+
 ### 8.3 Catálogo conceptual mínimo
 
 El historial debe soportar hechos funcionales equivalentes a:
@@ -409,7 +429,10 @@ instalación.
 - Todo ComentarioTarea nace obligatoriamente con `version_registro = 1`; su
   versión es independiente de Tarea y en el MVP append-only normalmente
   permanece en `1`.
-- ComentarioTarea e HistorialTarea pertenecen siempre a una Tarea.
+- Todo ComentarioTarea pertenece siempre a una Tarea. Toda Tarea confirmada tiene
+  `1..N` entradas HistorialTarea y cada entrada pertenece exactamente a una
+  Tarea; la creación genera obligatoriamente `HistorialTarea(CREADA)` en la misma
+  transacción conceptual que Tarea, outbox y receipt idempotente.
 - El comentario tiene autor humano obligatorio.
 - El historial conserva el `op_id` causal de la operación de Tarea.
 - Responsable y sucursal admiten como máximo una referencia cada uno.
