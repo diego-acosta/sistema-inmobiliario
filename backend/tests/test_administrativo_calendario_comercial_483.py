@@ -5,8 +5,6 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import text
-
 from app.api.authentication import get_authenticated_principal
 from app.application.administrativo.authentication import AuthenticatedPrincipal
 from app.application.administrativo.authorization import (
@@ -20,7 +18,7 @@ from app.application.administrativo.services.obtener_configuracion_calendario_co
 from app.infrastructure.persistence.repositories.calendario_comercial_query_repository import (
     CalendarioComercialQueryRepository,
 )
-
+from sqlalchemy import text
 
 ENDPOINT = "/api/v1/administrativo/configuracion/calendario-comercial"
 CIERRE = "DIA_CIERRE_COMERCIAL"

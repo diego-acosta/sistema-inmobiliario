@@ -8,7 +8,6 @@ from app.infrastructure.persistence.repositories.calendario_comercial_query_repo
     CalendarioComercialQueryRepository,
 )
 
-
 CODIGOS_CALENDARIO = frozenset(
     {
         "DIA_CIERRE_COMERCIAL",
