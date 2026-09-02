@@ -180,7 +180,29 @@ usuario, sucursal y vínculo vigentes, intervalo temporal, `puede_operar` y
 autorización Administrativa efectiva permanece en application layer / DEV-SRV.
 Este DER no decide `CHECK`, trigger ni otro mecanismo físico para estas reglas.
 
-### 6.4 Mutabilidad y terminalidad
+### 6.4 Grafo cerrado de lifecycle
+
+El lifecycle admite exclusivamente las siguientes transiciones conceptuales:
+
+| Desde | Hacia | Condición |
+| --- | --- | --- |
+| `PENDIENTE` | `EN_CURSO` | Responsable vigente/elegible obligatorio |
+| `PENDIENTE` | `COMPLETADA` | Responsable vigente/elegible obligatorio; no exige paso previo por `EN_CURSO` |
+| `PENDIENTE` | `CANCELADA` | Autorización aplicable |
+| `EN_CURSO` | `PENDIENTE` | Responsable vigente/elegible o administración aplicable |
+| `EN_CURSO` | `COMPLETADA` | Responsable vigente/elegible obligatorio |
+| `EN_CURSO` | `CANCELADA` | Autorización aplicable |
+| `COMPLETADA` | `PENDIENTE` | Sólo mediante reapertura explícita `REABIERTA`, con motivo y postestado válido |
+| `CANCELADA` | Ninguno | Terminal; no reabre |
+
+No existe ninguna otra transición. Este grafo es conceptual: no congela
+commands, endpoints, `CHECK`, triggers ni una state machine física. La
+elegibilidad y autorización efectivas continúan en application layer / DEV-SRV.
+La reapertura conserva íntegramente las reglas de actor, motivo,
+`fecha_finalizacion`, evidencia histórica y reparación del responsable descritas
+en HistorialTarea.
+
+### 6.5 Mutabilidad y terminalidad
 
 `PENDIENTE` y `EN_CURSO` son los estados editables del snapshot, siempre sujetos
 a transición válida, autorización y demás reglas funcionales aplicables. Título,
@@ -199,7 +221,7 @@ autorización aplicable lo permita, el comentario sigue siendo válido en
 snapshot, no incrementa `Tarea.version_registro` y no usa su CAS ni
 `If-Match-Version`.
 
-### 6.5 Metadata CORE-EF
+### 6.6 Metadata CORE-EF
 
 Tarea requiere conceptualmente el bloque aplicable completo:
 
@@ -346,7 +368,44 @@ funcional suficiente para explicar el alta. El actor del futuro origen `SISTEMA`
 no se define aquí ni se habilita ese origen. La forma física de la evidencia y
 del mecanismo transaccional permanece diferida.
 
-### 8.3 Catálogo conceptual mínimo
+### 8.3 Fronteras atómicas conceptuales
+
+La frontera de creación anterior es un caso particular de una regla general.
+Toda mutación sincronizable exitosa de Tarea comparte una única unidad atómica:
+
+```text
+claim idempotente
++ efecto funcional sobre Tarea
++ HistorialTarea aplicable
++ outbox
++ receipt idempotente durable
+→ misma transacción conceptual
+```
+
+La regla comprende toda mutación material, incluidas creación, contenido,
+asignación, reasignación, desasignación, prioridad, fecha objetivo, lifecycle,
+completar, cancelar, reabrir y la baja lógica futura. La baja sólo genera una
+entrada funcional de HistorialTarea si un contrato funcional posterior determina
+que corresponde; eso no altera su atomicidad CORE-EF.
+
+Agregar `ComentarioTarea` usa su propia unidad atómica independiente:
+
+```text
+claim idempotente
++ ComentarioTarea
++ outbox
++ receipt idempotente durable
+→ misma transacción conceptual
+```
+
+Un fallo previo al commit revierte todos los efectos de la unidad. No puede
+confirmarse Tarea o ComentarioTarea sin su outbox y receipt, ni historial sin el
+cambio de Tarea correspondiente, ni receipt sin efecto funcional. El comentario
+no muta Tarea, no genera HistorialTarea duplicado, no incrementa
+`Tarea.version_registro` y no usa su CAS. Repository, orden SQL, commit y manejo
+físico de excepciones permanecen diferidos.
+
+### 8.4 Catálogo conceptual mínimo
 
 El historial debe soportar hechos funcionales equivalentes a:
 
@@ -464,6 +523,10 @@ instalación.
 - `PENDIENTE` y `EN_CURSO` admiten edición ordinaria según reglas aplicables;
   `COMPLETADA` y `CANCELADA` congelan el snapshot. `COMPLETADA` sólo admite la
   reapertura explícita a `PENDIENTE`; `CANCELADA` no reabre.
+- El grafo cerrado admite únicamente `PENDIENTE → EN_CURSO`, `PENDIENTE →
+  COMPLETADA`, `PENDIENTE → CANCELADA`, `EN_CURSO → PENDIENTE`, `EN_CURSO →
+  COMPLETADA`, `EN_CURSO → CANCELADA` y `COMPLETADA → PENDIENTE` mediante
+  `REABIERTA`; `CANCELADA` no tiene transición saliente.
 - Los comentarios autorizados en estados terminales siguen siendo appends
   independientes y no mutan, reabren, versionan ni usan el CAS de Tarea.
 - Comentarios confirmados antes de la baja o concurrentes con ella convergen y
@@ -475,6 +538,10 @@ instalación.
 - Instalación expresa procedencia técnica, no scope funcional.
 - Un comentario no versiona Tarea ni usa su CAS.
 - Historial no tiene outbox, retry, consumer, CAS o conflicto autónomos.
+- Toda mutación sincronizable de Tarea confirma atómicamente claim, efecto,
+  historial aplicable, outbox y receipt; agregar comentario confirma
+  atómicamente claim, ComentarioTarea, outbox y receipt. Un fallo pre-commit
+  revierte la unidad completa.
 - La futura generación con origen `SISTEMA` combina idempotencia técnica por
   `op_id` con idempotencia funcional por hecho fuente; reprocesar el mismo hecho
   fuente con otro `op_id` no crea una segunda Tarea funcional equivalente.
@@ -502,8 +569,10 @@ Quedan para servicios y contratos posteriores:
 - lifecycle contextual y elegibilidad continua del responsable;
 - generación server-side de `fecha_finalizacion` al completar;
 - autorización y visibilidad;
-- idempotencia y frontera transaccional concreta;
-- continuidad remota y representación de gaps;
+- implementación concreta de idempotencia y de la frontera transaccional ya
+  congelada;
+- mecanismo técnico de espera, reordenamiento, reentrega y reconciliación de
+  gaps de continuidad; el gate estricto de versión ya está congelado;
 - `PENDING_DEPENDENCY`, retry, replay y conflicto;
 - mecanismo técnico de causalidad comentario/baja y clasificación terminal
   exacta del intento causalmente posterior; la semántica funcional ya está
@@ -523,6 +592,14 @@ La futura persistencia debe permitir:
 - consultar comentarios;
 - consultar historial.
 
+Todas estas consultas ordinarias de Tarea excluyen registros con `deleted_at`
+presente, incluidos obtener, listar, “Mis tareas”, “Tareas creadas por mí”,
+pendientes, vencidas, sin asignar y cualquier filtro ordinario. Sólo vistas
+técnicas o consultas explícitamente autorizadas para registros dados de baja
+pueden incluirlos; este DER no diseña esas vistas ni introduce permisos nuevos.
+La proyección `VENCIDA` conserva su regla única de la sección 6.2, que ya exige
+`deleted_at` ausente.
+
 El índice de `uid_global` de Tarea y ComentarioTarea es obligatorio por CORE-EF;
 sólo su nombre y forma física permanecen diferidos. Son candidatos para evaluar
 índices adicionales: baja lógica, responsable, creador, estado, sucursal,
@@ -540,6 +617,29 @@ congela esos índices adicionales.
   parte de la operación de Tarea para materializarlo determinísticamente.
 - No se transportan ni almacenan PK remotas.
 - Se reutiliza la infraestructura transversal; no se crean tablas Sync GOP.
+
+### 13.1 Gate estricto de continuidad remota de Tarea
+
+Si el receptor conserva Tarea en `Vn`, sólo una entrada `Vn+1` es candidata
+inmediata a aplicar, siempre que resuelva referencias y satisfaga invariantes.
+Una entrada `> Vn+1` constituye un gap: no se aplica inmediatamente ni adelanta
+el snapshot. Un snapshot posterior no sustituye una mutación intermedia faltante,
+porque se perdería silenciosamente su evidencia funcional de HistorialTarea.
+
+| Entrada remota | Resultado conceptual |
+| --- | --- |
+| Versión `Vn+1` sobre local `Vn` | Candidata a aplicar si satisface referencias e invariantes |
+| Versión `> Vn+1` | Gap; no aplicar inmediatamente ni adelantar snapshot |
+| Versión inferior a la local | No revierte snapshot; evaluar obsolescencia/idempotencia según operación conocida |
+| Misma versión, mismo contenido y mismo `op_id`/envelope compatible | Replay o duplicado seguro; no repetir efecto |
+| Misma versión y distinto contenido | Conflicto material |
+| Timestamp más nuevo | Sin autoridad para saltar continuidad |
+
+No se usa LWW. Un gap no se clasifica automáticamente como
+`PENDING_DEPENDENCY`, rechazo o conflicto. Sólo permanecen diferidos el mecanismo
+técnico de espera/reordenamiento/reentrega, la clasificación técnica exacta y la
+reconciliación, reutilizando la infraestructura Técnica existente sin tablas,
+colas, inbox o retry GOP paralelos.
 
 ## 14. Origen SISTEMA reservado
 
@@ -592,7 +692,9 @@ Los siguientes puntos no bloquean el DER y no se deciden aquí:
 - unicidades de HistorialTarea relacionadas con `op_id`;
 - índices finales adicionales;
 - estrategia física de CAS;
-- representación y tratamiento técnico de gaps de continuidad;
+- mecanismo y clasificación técnica de gaps de continuidad: espera,
+  reordenamiento, reentrega y reconciliación; no está diferido el gate que impide
+  aplicar `> Vn+1` o adelantar el snapshot;
 - clasificación terminal de un comentario causalmente posterior a baja;
 - granularidad exacta entre una operación de Tarea y sus filas de historial.
 - representación física de la identidad funcional del hecho fuente para el
