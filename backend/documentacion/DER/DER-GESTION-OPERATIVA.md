@@ -402,8 +402,15 @@ Un fallo previo al commit revierte todos los efectos de la unidad. No puede
 confirmarse Tarea o ComentarioTarea sin su outbox y receipt, ni historial sin el
 cambio de Tarea correspondiente, ni receipt sin efecto funcional. El comentario
 no muta Tarea, no genera HistorialTarea duplicado, no incrementa
-`Tarea.version_registro` y no usa su CAS. Repository, orden SQL, commit y manejo
-físico de excepciones permanecen diferidos.
+`Tarea.version_registro` y no usa su CAS.
+
+El Application Service / Orchestrator es el owner de commit y rollback de toda
+la unidad. Los repositories operan dentro de la `Session` o unidad transaccional
+provista y no hacen commit ni rollback internos. Este ownership conceptual no
+está diferido: un commit interno podría confirmar Tarea sin historial/outbox o
+ComentarioTarea sin receipt. Permanecen diferidos únicamente la implementación
+del Unit of Work, las APIs internas de repository, el manejo físico de `Session`,
+el orden SQL, el framework transaccional y la estrategia concreta de excepciones.
 
 ### 8.4 Catálogo conceptual mínimo
 
@@ -542,6 +549,16 @@ instalación.
   historial aplicable, outbox y receipt; agregar comentario confirma
   atómicamente claim, ComentarioTarea, outbox y receipt. Un fallo pre-commit
   revierte la unidad completa.
+- Application Service / Orchestrator es owner de commit y rollback; los
+  repositories participan en la transacción provista sin commit ni rollback
+  internos.
+- Misma versión y contenido con el mismo `op_id`/envelope compatible es replay;
+  con `op_id` distinto es una operación materialmente convergente diferente que
+  no muta ni versiona el snapshot y conserva trazabilidad/receipt separados.
+- Una referencia funcional portable válida, requerida y temporalmente ausente
+  produce `PENDING_DEPENDENCY` sin aplicación parcial, placeholder ni PK remota;
+  los `NULL` funcionalmente válidos, la procedencia técnica y los gaps de versión
+  no pertenecen a esa clasificación GOP.
 - La futura generación con origen `SISTEMA` combina idempotencia técnica por
   `op_id` con idempotencia funcional por hecho fuente; reprocesar el mismo hecho
   fuente con otro `op_id` no crea una segunda Tarea funcional equivalente.
@@ -573,7 +590,8 @@ Quedan para servicios y contratos posteriores:
   congelada;
 - mecanismo técnico de espera, reordenamiento, reentrega y reconciliación de
   gaps de continuidad; el gate estricto de versión ya está congelado;
-- `PENDING_DEPENDENCY`, retry, replay y conflicto;
+- implementación runtime y mecanismo Técnico de retry/reclaim para
+  `PENDING_DEPENDENCY`; su frontera funcional ya está congelada;
 - mecanismo técnico de causalidad comentario/baja y clasificación terminal
   exacta del intento causalmente posterior; la semántica funcional ya está
   congelada en este DER;
@@ -632,14 +650,49 @@ porque se perdería silenciosamente su evidencia funcional de HistorialTarea.
 | Versión `> Vn+1` | Gap; no aplicar inmediatamente ni adelantar snapshot |
 | Versión inferior a la local | No revierte snapshot; evaluar obsolescencia/idempotencia según operación conocida |
 | Misma versión, mismo contenido y mismo `op_id`/envelope compatible | Replay o duplicado seguro; no repetir efecto |
+| Misma versión y mismo contenido material, con `op_id` distinto | Operación distinta materialmente convergente: no es replay ni duplicado, no cambia el snapshot y conserva separadamente la trazabilidad y receipt de ambas operaciones |
 | Misma versión y distinto contenido | Conflicto material |
 | Timestamp más nuevo | Sin autoridad para saltar continuidad |
+
+La identidad de operación no equivale al estado material resultante: dos
+operaciones distintas pueden converger al mismo contenido sin convertirse en la
+misma operación. Esa convergencia no produce una segunda mutación material ni un
+incremento artificial de `Tarea.version_registro`.
 
 No se usa LWW. Un gap no se clasifica automáticamente como
 `PENDING_DEPENDENCY`, rechazo o conflicto. Sólo permanecen diferidos el mecanismo
 técnico de espera/reordenamiento/reentrega, la clasificación técnica exacta y la
 reconciliación, reutilizando la infraestructura Técnica existente sin tablas,
 colas, inbox o retry GOP paralelos.
+
+### 13.2 Frontera funcional de PENDING_DEPENDENCY
+
+`PENDING_DEPENDENCY` aplica exclusivamente cuando una referencia funcional
+portable, válida, requerida por la operación y temporalmente ausente impide
+aplicar el efecto. No hay aplicación parcial, placeholder ni persistencia de PK
+remota; la misma operación puede reintentarse cuando la dependencia aparezca.
+
+| Referencia funcional | Ausencia temporal válida |
+| --- | --- |
+| Creador cuando la operación lo requiere | `PENDING_DEPENDENCY` |
+| Responsable presente y requerido por el snapshot | `PENDING_DEPENDENCY` |
+| Autor obligatorio de ComentarioTarea | `PENDING_DEPENDENCY` |
+| Sucursal funcional concreta (`sucursal != NULL`) | `PENDING_DEPENDENCY` |
+| Tarea padre requerida por ComentarioTarea | `PENDING_DEPENDENCY` |
+| Actor humano portable obligatorio de `REABIERTA` | `PENDING_DEPENDENCY`; no se materializa la reapertura sin actor |
+
+Una ausencia semánticamente válida no crea dependencia: `responsable = NULL`
+cuando el snapshot lo admite y `sucursal = NULL` para una Tarea global no son
+`PENDING_DEPENDENCY`. La instalación del envelope/metadata es procedencia
+técnica, no referencia funcional GOP, y Técnico la clasifica según su contrato;
+no es `PENDING_DEPENDENCY` GOP por defecto.
+
+Payload inválido o referencia permanentemente inválida recibe la clasificación
+funcional/Técnica correspondiente, no `PENDING_DEPENDENCY` automáticamente. Un
+gap de `version_registro` tampoco es `PENDING_DEPENDENCY`: pertenece a
+continuidad estricta. Scheduler, frecuencia, reentrega, reclaim, lease, operation
+scope y mecanismo concreto de retry permanecen en Técnico/#512; no se crean
+tablas, colas, placeholders ni infraestructura GOP paralela.
 
 ## 14. Origen SISTEMA reservado
 
