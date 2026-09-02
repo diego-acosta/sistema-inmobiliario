@@ -196,7 +196,7 @@ mutable de Tarea.
 | --- | --- | --- | --- |
 | PK local | Sí | No | Identidad local |
 | `uid_global` | Sí | No | Identidad portable propia, única, inmutable y no reutilizable |
-| `version_registro` | Sí | No ordinariamente | Versión propia; normalmente 1 en MVP |
+| `version_registro` | Sí | No ordinariamente | Versión propia e independiente de Tarea; valor inicial obligatorio `1`; en el MVP append-only normalmente permanece en `1` |
 | Tarea | Sí | No | FK local obligatoria a Tarea |
 | autor | Sí | No | FK local obligatoria a `usuario` |
 | texto | Sí | No | Contenido funcional append-only |
@@ -212,11 +212,17 @@ habilita edición ni borrado funcional en el MVP.
 Su unicidad CORE-EF tampoco está diferida; sólo se difieren los nombres físicos
 del constraint y del índice y sus detalles SQL de implementación.
 
+La creación de todo ComentarioTarea establece conceptualmente
+`ComentarioTarea.version_registro = 1` de manera obligatoria. Su evolución es
+una dimensión distinta: por ser append-only en el MVP, normalmente permanece en
+`1`. Esta versión es propia e independiente de `Tarea.version_registro`; el DER
+no decide `DEFAULT`, trigger, `CHECK` ni estrategia SQL de inicialización.
+
 Agregar un comentario:
 
 - no incrementa `Tarea.version_registro`;
 - no participa del CAS de Tarea;
-- no usa versión esperada de Tarea;
+- no usa versión esperada ni `If-Match-Version` de Tarea;
 - no se edita ni se borra funcionalmente;
 - no genera un historial duplicado de comentarios.
 
@@ -330,6 +336,9 @@ instalación.
 - Tarea y ComentarioTarea tienen UID propio, obligatorio, único, inmutable y no
   reutilizable; HistorialTarea no.
 - Tarea y ComentarioTarea tienen versionado propio; HistorialTarea no.
+- Todo ComentarioTarea nace obligatoriamente con `version_registro = 1`; su
+  versión es independiente de Tarea y en el MVP append-only normalmente
+  permanece en `1`.
 - ComentarioTarea e HistorialTarea pertenecen siempre a una Tarea.
 - El comentario tiene autor humano obligatorio.
 - El historial conserva el `op_id` causal de la operación de Tarea.
