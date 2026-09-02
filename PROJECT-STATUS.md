@@ -25,8 +25,8 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 
 | Frente | Estado verificable | Issue/epic principal | Último PR relevante verificado | Próximo foco |
 | --- | --- | --- | --- | --- |
-| A — Comercial / Financiero | Activo. PR #432 está mergeado y #424 cerrado como completado: `INT-FIN-005` es la fuente contractual vigente para la indexación PPV2 mensual; la implementación runtime permanece pendiente. PR #422 conserva la materialización como fuente de `EMITIDA`/`PROYECTADA`. Baseline anterior verificable: `1763 passed`; no hubo nueva ejecución de la suite backend por el PR documental #432. | #425–#431 y #423 conforman el roadmap de implementación; #423 sigue bloqueado por los incrementos de soporte. #345 y #365 conservan alcance relacionado. | #432 mergeado (cierra #424); #422 permanece como fuente vigente para `EMITIDA`/`PROYECTADA`. | #425; luego #426 → #427 → #428/#429 → #423 → #430/#431. |
-| B — Administrativo | #407–#412 y #482–#485 implementados; PR #504 (#484) y PR #506 (#485) están mergeados. #486 está implementado en PR draft #526: validación estática OK; PostgreSQL real confirmó focal (`27 passed`), matriz avanzada (`19 passed`), ejecución conjunta (`46 passed`) y hermeticidad en ambos órdenes sin reset intermedio. #508/PR #509 materializó `usuario.uid_global`; #510/PR #521 completó su replicación portable. | #425 permanece abierto hasta verificar el merge de #486; #426 continúa bloqueado. | PR #506 mergeado (#485); PR #521 mergeado (#510); PR draft #526 listo para revisión formal, aún no mergeado. | Ejecutar `@codex review` sobre #526; sólo después de su merge reconciliar #425. |
+| A — Comercial / Financiero | Activo. #425 y #486 están completados; #426 está en implementación mediante un PR focal de resolución read-like del primer vencimiento sugerido. PR #422 conserva la materialización como fuente de `EMITIDA`/`PROYECTADA`. | #426–#431 y #423 conforman el roadmap restante; #423 sigue bloqueado por los incrementos de soporte. #345 y #365 conservan alcance relacionado. | PR #526 mergeado (completa #486); #425 cerrado; #426 abierto/en implementación. | Completar y validar #426; luego #427 → #428/#429 → #423 → #430/#431. |
+| B — Administrativo | #407–#412 y #482–#486 implementados. PR #526 fue mergeado mediante `8fc23529d6c172c8baf829eee9c2d5bbe265cda2` y completó el sync portable del calendario comercial; #425 y #486 están cerrados. #508/PR #509 materializó `usuario.uid_global`; #510/PR #521 completó su replicación portable. | Sin blocker Administrativo para #426. | PR #526 mergeado (#486); PR #506 mergeado (#485); PR #521 mergeado (#510). | Administrativo mantiene ownership del calendario; Comercial consume el query service temporal interno. |
 | Operativo | #456 incorporó la identidad canónica local read-only para commands técnicos, sin consumidor productivo ni cambios SQL. | #248 abierto. | #456 completado. | `LOCAL_INSTALLATION_CODE` es soporte transversal default-deny; Operativo conserva ownership de `instalacion`. |
 | Transversal — CORE-EF / Técnico | #469/#470 están completados. #511 está cerrado y PR #512 mergeado: `PENDING_DEPENDENCY`, retry, retained envelope, operation scope y fencing están materializados; no incorporan scheduler productivo definitivo. #510/PR #521 reutiliza esa infraestructura para `administrativo.usuario`. | #402 y #507 están cerrados/completados; #461 permanece abierto y separado. #522 está abierto: no bloquea el MVP humano de Tarea y es requerido antes de automatización. | PR #512 mergeado (#511); PR #521 mergeado (#510). | Integrar consumers futuros mediante sus dominios dueños; resolver #522 antes de origen `SISTEMA`. |
 | Gestión Operativa — Tareas | Etapa pre-DER cerrada: #489, #490–#493 y #507 están cerrados/completados. #523 está en curso y materializa `DEV-ARCH-GOP-001` para el MVP humano. | #523 abierto. #522 abierto, no blocker del MVP humano y requerido antes de automatización. | PR #509, PR #512 y PR #521 mergeados como dependencias transversales verificadas. | Revisar y aprobar DEV-ARCH-GOP; DER/SQL/API/runtime permanecen en incrementos posteriores. |
@@ -217,10 +217,11 @@ Implementación relevante verificada:
 
 ### 5.2 Issues activos
 
-- #425 — próximo incremento: configuración general requerida por el contrato
-  mensual vigente en `INT-FIN-005`.
-- #426–#429 — vencimiento, base común, materialización pendiente y período
-  objetivo; incrementos de soporte posteriores a #425.
+- #425 — completado; calendario comercial Administrativo materializado y
+  sincronizado por #486/PR #526.
+- #426 — en implementación: vencimiento inicial sugerido Comercial.
+- #427–#429 — base común, materialización pendiente y período objetivo;
+  incrementos posteriores a #426.
 - #423 — selector financiero definitivo por período objetivo exacto; permanece
   bloqueado hasta que existan los incrementos de soporte.
 - #430/#431 — frontend e integración completa, posteriores a los incrementos base.
@@ -253,8 +254,9 @@ Implementación relevante verificada:
 
 ### 5.4 Próximo foco recomendado
 
-Para el roadmap contractual de indexación PPV2, el próximo foco inmediato es #425.
-El orden recomendado es `#425 → #426 → #427 → #428/#429 → #423 → #430/#431`.
+Para el roadmap contractual de indexación PPV2, #425 está completado y #426 es
+el foco en implementación. El orden restante recomendado es
+`#426 → #427 → #428/#429 → #423 → #430/#431`.
 #423 permanece bloqueado hasta que sus incrementos de soporte estén disponibles.
 Cada issue permanece separado y debe cumplir CORE-EF cuando incorpore commands.
 
@@ -393,7 +395,7 @@ Sub-issues con estado verificable:
 - #409 incorpora sólo el tipo estructural `ENTERO` y el alcance estructural
   `GLOBAL`, con descripciones contractuales, reset DEV/TEST y tests PostgreSQL.
   No crea claves ni valores funcionales de #425.
-- Estado histórico al cierre de #410: quedó preparada exclusivamente la infraestructura SQL CORE-EF. Estado vigente: #482/PR #487 dejó materializadas las dos definiciones y la raíz física; #483 agregó el GET y la resolución temporal; #484/PR #504 implementó bootstrap y `calendario_comercial_creado`; #485/PR #506 implementó programación append-only y `calendario_comercial_programado`; #486 está implementado y validado en PR draft #526, listo para revisión formal y aún no mergeado.
+- Estado histórico al cierre de #410: quedó preparada exclusivamente la infraestructura SQL CORE-EF. Estado vigente: #482/PR #487 dejó materializadas las dos definiciones y la raíz física; #483 agregó el GET y la resolución temporal; #484/PR #504 implementó bootstrap y `calendario_comercial_creado`; #485/PR #506 implementó programación append-only y `calendario_comercial_programado`; #486/PR #526 completó el consumer y sync portable.
 - #469 y #470 completaron el ledger y runtime transversal de idempotencia durable; #412 es su primer consumidor productivo. PR #478 implementó endpoint, permiso, vínculo, seed técnico controlado y EVT-ADM-060. #402 está cerrado/completado.
 - #438 agrega a `parametro_sistema` la metadata física `exponible_api_administrativa` y `es_sensible`, con política default-deny (`false`/`true`) y constraint que impide exposición en claro de definiciones sensibles. #411 implementa únicamente el GET individual del valor GLOBAL marcado vigente para definiciones exponibles y no sensibles, con 404 indistinguible para inexistente/no exponible/sensible, 409 para no GLOBAL, estado `SIN_VALOR` y tipado estricto `ENTERO`. #441 agrega `editable_administrativamente` como metadata física independiente, default-deny (`false`), no editable por API y habilitable sólo por migración versionada. Estado vigente: #412 está implementado, #482 habilita explícitamente la metadata de sus dos definiciones calendario, #484 creó sus valores funcionales iniciales y #485/PR #506 completó las nuevas vigencias append-only; la resolución agregada temporal queda implementada por #483, sin resolver #435.
 - #264 `Administrativo: catálogos maestros e ítems configurables` abierto.
@@ -427,7 +429,7 @@ Los frentes activos verificables son:
 - #264 — catálogos maestros e ítems configurables.
 - #265 — auditoría administrativa básica.
 
-Dentro de #264, el CRUD write de ítems quedó implementado por #399. En configuración, #409 elimina el bloqueo físico de tipo/alcance, #410 prepara `valor_parametro` con CORE-EF SQL, #438/#441 preparan metadata segura, #411/#412 implementan read y write individual, y #482 materializa las dos definiciones calendario, su rango, permiso y raíz física. El GET agregado y el query service temporal están implementados por #483; #484 creó los valores funcionales iniciales y el write de bootstrap, #485/PR #506 completó las nuevas vigencias append-only y #486 está implementado/validado en PR draft #526, pendiente de review y merge.
+Dentro de #264, el CRUD write de ítems quedó implementado por #399. En configuración, #409 elimina el bloqueo físico de tipo/alcance, #410 prepara `valor_parametro` con CORE-EF SQL, #438/#441 preparan metadata segura, #411/#412 implementan read y write individual, y #482 materializa las dos definiciones calendario, su rango, permiso y raíz física. El GET agregado y el query service temporal están implementados por #483; #484 creó los valores funcionales iniciales y el write de bootstrap, #485/PR #506 completó las nuevas vigencias append-only y #486/PR #526 completó el consumer y sync portable. #425 está cerrado.
 
 ### 6.4 Decisiones vigentes
 
@@ -454,13 +456,13 @@ Dentro de #264, el CRUD write de ítems quedó implementado por #399. En configu
 - `parametro_sistema` es la definición canónica y `valor_parametro` la fuente canónica de valores; `configuracion_general` es compatibilidad heredada y `configuracion_local` pertenece a Operativo.
 - `ENTERO` y `GLOBAL` son datos estructurales contractuales no editables por API;
   sus consumidores resuelven IDs por código.
-- #410 deja preparado el CORE-EF SQL reusable de `valor_parametro` para valores GLOBAL (`id_sucursal` e `id_instalacion` nulos). #482 materializa claves, metadata, rango, permiso y raíz física; #483 implementa la lectura agregada temporal; #484 materializa raíz/pareja iniciales y un único outbox `calendario_comercial_creado`; #485/PR #506 completó la programación append-only y su evento `calendario_comercial_programado`; el consumer y la integración remota de #486 están implementados/validados en PR draft #526, aún no mergeado.
+- #410 deja preparado el CORE-EF SQL reusable de `valor_parametro` para valores GLOBAL (`id_sucursal` e `id_instalacion` nulos). #482 materializa claves, metadata, rango, permiso y raíz física; #483 implementa la lectura agregada temporal; #484 materializa raíz/pareja iniciales y un único outbox `calendario_comercial_creado`; #485/PR #506 completó la programación append-only y su evento `calendario_comercial_programado`; #486/PR #526 completó el consumer y la integración remota.
 - Exposición, sensibilidad y editabilidad son metadata separada de `parametro_sistema`: una lectura de valores sólo puede devolver definiciones explícitamente exponibles y no sensibles; la editabilidad administrativa es independiente, default-deny y no expuesta por #407/#411. #438/#441 no implementaron por sí solos autorización ni writes; #412 los implementa posteriormente y #482 excluye de ese command las dos claves calendario.
 
 ### 6.5 Próximo foco recomendado
 
 El CRUD write de `item_catalogo` quedó implementado por #399. Para configuración,
-#409 deja disponibles `ENTERO` y `GLOBAL`, #410 prepara el CORE-EF físico de `valor_parametro`, #438/#441 agregan metadata default-deny y #411 expone el read individual GLOBAL marcado vigente. #469/#470 proveen idempotencia durable y #412, implementado por PR #478, es su primer consumidor productivo. #413 cierra únicamente la alineación documental. #482/PR #487 prepara definiciones y raíz física; #483 implementa GET/resolución; #484, mergeado mediante PR #504, implementa bootstrap y producer local `calendario_comercial_creado`; #485/PR #506 está completado/mergeado e implementó la programación append-only y el producer `calendario_comercial_programado`; #486 implementa consumer, inbox, reentrega, aplicación remota y E2E en PR draft #526, listo para review y pendiente de merge. #425 permanece coordinador abierto. No se mezclan `configuracion_general`, `configuracion_local` ni catálogos.
+#409 deja disponibles `ENTERO` y `GLOBAL`, #410 prepara el CORE-EF físico de `valor_parametro`, #438/#441 agregan metadata default-deny y #411 expone el read individual GLOBAL marcado vigente. #469/#470 proveen idempotencia durable y #412, implementado por PR #478, es su primer consumidor productivo. #413 cierra únicamente la alineación documental. #482/PR #487 prepara definiciones y raíz física; #483 implementa GET/resolución; #484/PR #504 implementa bootstrap y producer local `calendario_comercial_creado`; #485/PR #506 implementa programación append-only y `calendario_comercial_programado`; #486/PR #526 completa consumer, inbox, reentrega, aplicación remota y E2E. #425 está cerrado. No se mezclan `configuracion_general`, `configuracion_local` ni catálogos.
 
 ### 6.6 Fuera de alcance
 
@@ -608,8 +610,9 @@ La replicación es prospectiva: no incorpora backfill ni reparación legacy de #
 
 ## 18. Incremento Administrativo/Técnico #486 — sync de calendario comercial
 
-PR draft #526 integra los producers #484/#485 con el consumer portable
-`administrativo.calendario_comercial` sobre #512/#521. El draft conserva hashes
+PR #526, mergeado mediante `8fc23529d6c172c8baf829eee9c2d5bbe265cda2`,
+integra los producers #484/#485 con el consumer portable
+`administrativo.calendario_comercial` sobre #512/#521. El incremento conserva hashes
 separados, continuidad estricta, singleton físico absoluto y una jerarquía común
 de writers `advisory GLOBAL → raíz total → definiciones → historia`. El transporte
 at-least-once exige sesiones origen/destino separadas, confirma primero la
@@ -627,5 +630,15 @@ no deja contaminación funcional en `inmobiliaria_test`. La suite global inform�
 #486 y sus fallos restantes corresponden a deuda histórica de rutas relativas
 dependientes del cwd, ajena a este PR. La matriz confirma locks, concurrencia
 local/remota, rollback inyectado, commit failure, fencing/takeover, transporte
-entre dos bases y E2E. #486 no está completado hasta merge; #425 permanece
-abierto y #426 continúa bloqueado.
+entre dos bases y E2E. #486 y #425 están completados; #426 está en
+implementación.
+
+## 19. Incremento Comercial #426 — vencimiento inicial sugerido
+
+#426 está en implementación mediante un PR focal. Comercial expone una consulta
+`QUERY_READLIKE` por `fecha_venta` explícita, consume el query service
+Administrativo del calendario y calcula una sugerencia efímera. Los writes de
+venta y PPV2 continúan recibiendo y persistiendo una
+`fecha_primer_vencimiento` explícita, sin recalcularla ni sobrescribirla. La
+política de mes corto limita al último día existente; no hay SQL,
+`configuracion_general`, HTTP interno, frontend ni cambios de indexación.

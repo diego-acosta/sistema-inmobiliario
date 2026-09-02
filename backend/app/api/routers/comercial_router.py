@@ -1,26 +1,23 @@
 from dataclasses import dataclass
 from datetime import date, datetime
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Query
-from fastapi.responses import JSONResponse
-from sqlalchemy.orm import Session
-
 from app.api.core_ef_headers import (
-    CoreEFHeaderValidationError,
     CoreEFHeaders,
+    CoreEFHeaderValidationError,
     parse_core_ef_headers,
 )
 from app.api.dependencies import get_db
 from app.api.schemas.comercial import (
+    CesionData,
     CesionListData,
     CesionListResponse,
-    CesionData,
-    ConfirmVentaDirectaCompletaRequest,
-    ConfirmVentaDirectaCompletaResponse,
     ConfirmVentaCompletaDesdeReservaRequest,
     ConfirmVentaCompletaDesdeReservaResponse,
     ConfirmVentaData,
+    ConfirmVentaDirectaCompletaRequest,
+    ConfirmVentaDirectaCompletaResponse,
     ConfirmVentaRequest,
     ConfirmVentaResponse,
     CreateCesionRequest,
@@ -38,43 +35,45 @@ from app.api.schemas.comercial import (
     EscrituracionListResponse,
     GeneratePlanPagoVentaAnticipoMasCuotasIgualesRequest,
     GeneratePlanPagoVentaAnticipoMasCuotasIgualesResponse,
+    GeneratePlanPagoVentaCuotasIgualesSimpleRequest,
+    GeneratePlanPagoVentaCuotasIgualesSimpleResponse,
     GeneratePlanPagoVentaV2PorBloquesRequest,
     GeneratePlanPagoVentaV2PorBloquesResponse,
-    PlanPagoVentaV2IntegralData,
-    PlanPagoVentaV2IntegralResponse,
     GenerateVentaFromReservaVentaData,
     GenerateVentaFromReservaVentaRequest,
     GenerateVentaFromReservaVentaResponse,
-    GeneratePlanPagoVentaCuotasIgualesSimpleRequest,
-    GeneratePlanPagoVentaCuotasIgualesSimpleResponse,
-    PreviewPlanPagoVentaV2PorBloquesRequest,
-    PreviewPlanPagoVentaV2PorBloquesResponse,
-    PreviewPlanPagoVentaV2SinVentaRequest,
-    PreviewPlanPagoVentaV2SinVentaResponse,
     InstrumentoCompraventaData,
     InstrumentoCompraventaListData,
     InstrumentoCompraventaListResponse,
     InstrumentoCompraventaObjetoData,
+    PlanPagoVentaV2IntegralData,
+    PlanPagoVentaV2IntegralResponse,
+    PreviewPlanPagoVentaV2PorBloquesRequest,
+    PreviewPlanPagoVentaV2PorBloquesResponse,
+    PreviewPlanPagoVentaV2SinVentaRequest,
+    PreviewPlanPagoVentaV2SinVentaResponse,
+    PrimerVencimientoSugeridoData,
+    PrimerVencimientoSugeridoResponse,
     ReservaVentaActivateData,
     ReservaVentaActivateResponse,
     ReservaVentaBajaData,
     ReservaVentaBajaResponse,
     ReservaVentaCancelData,
     ReservaVentaCancelResponse,
-    ReservaVentaExpireData,
-    ReservaVentaExpireResponse,
     ReservaVentaConfirmData,
     ReservaVentaConfirmResponse,
     ReservaVentaCreateData,
-    ReservaVentaObjetoCreateData,
-    ReservaVentaParticipacionData,
     ReservaVentaCreateRequest,
     ReservaVentaCreateResponse,
     ReservaVentaDetailData,
     ReservaVentaDetailResponse,
+    ReservaVentaExpireData,
+    ReservaVentaExpireResponse,
     ReservaVentaListData,
     ReservaVentaListItemData,
     ReservaVentaListResponse,
+    ReservaVentaObjetoCreateData,
+    ReservaVentaParticipacionData,
     ReservaVentaUpdateData,
     ReservaVentaUpdateRequest,
     ReservaVentaUpdateResponse,
@@ -86,6 +85,11 @@ from app.api.schemas.comercial import (
     VentaListItemData,
     VentaListResponse,
     VentaObjetoData,
+)
+from app.application.administrativo.services.obtener_configuracion_calendario_comercial_query_service import (
+    ConfiguracionCalendarioComercialIncompleta,
+    ConfiguracionCalendarioComercialInconsistente,
+    ObtenerConfiguracionCalendarioComercialQueryService,
 )
 from app.application.comercial.commands.activate_reserva_venta import (
     ActivateReservaVentaCommand,
@@ -99,8 +103,8 @@ from app.application.comercial.commands.confirm_reserva_venta import (
 from app.application.comercial.commands.confirm_venta import ConfirmVentaCommand
 from app.application.comercial.commands.confirm_venta_completa_desde_reserva import (
     ConfirmVentaCompletaCondicionCuotaInput,
-    ConfirmVentaCompletaCondicionObjetoInput,
     ConfirmVentaCompletaCondicionesComercialesInput,
+    ConfirmVentaCompletaCondicionObjetoInput,
     ConfirmVentaCompletaConfirmacionInput,
     ConfirmVentaCompletaDesdeReservaCommand,
     ConfirmVentaCompletaGenerarVentaInput,
@@ -110,11 +114,11 @@ from app.application.comercial.commands.confirm_venta_completa_desde_reserva imp
 from app.application.comercial.commands.confirm_venta_directa_completa import (
     ConfirmVentaDirectaCompletaCommand,
     ConfirmVentaDirectaCompletaCompradorInput,
-    ConfirmVentaDirectaCompletaDatosPersonaInput,
-    ConfirmVentaDirectaCompletaDocumentoPersonaInput,
     ConfirmVentaDirectaCompletaCondicionCuotaInput,
     ConfirmVentaDirectaCompletaCondicionesComercialesInput,
     ConfirmVentaDirectaCompletaConfirmacionInput,
+    ConfirmVentaDirectaCompletaDatosPersonaInput,
+    ConfirmVentaDirectaCompletaDocumentoPersonaInput,
     ConfirmVentaDirectaCompletaGenerarVentaInput,
     ConfirmVentaDirectaCompletaObjetoInput,
     ConfirmVentaDirectaCompletaPlanPagoBloqueInput,
@@ -133,30 +137,30 @@ from app.application.comercial.commands.create_reserva_venta import (
     CreateReservaVentaObjetoCommand,
     CreateReservaVentaParticipacionCommand,
 )
-from app.application.comercial.commands.delete_reserva_venta import (
-    DeleteReservaVentaCommand,
-)
 from app.application.comercial.commands.define_condiciones_comerciales_venta import (
     DefineCondicionesComercialesVentaCommand,
     DefineCondicionesComercialesVentaCuotaCommand,
     DefineCondicionesComercialesVentaObjetoCommand,
 )
+from app.application.comercial.commands.delete_reserva_venta import (
+    DeleteReservaVentaCommand,
+)
 from app.application.comercial.commands.expire_reserva_venta import (
     ExpireReservaVentaCommand,
-)
-from app.application.comercial.commands.generate_venta_from_reserva_venta import (
-    GenerateVentaFromReservaVentaCommand,
-)
-from app.application.comercial.commands.generate_plan_pago_venta_cuotas_iguales_simple import (
-    GeneratePlanPagoVentaCuotasIgualesSimpleCommand,
 )
 from app.application.comercial.commands.generate_plan_pago_venta_anticipo_mas_cuotas_iguales import (
     GeneratePlanPagoVentaAnticipoMasCuotasIgualesCommand,
 )
+from app.application.comercial.commands.generate_plan_pago_venta_cuotas_iguales_simple import (
+    GeneratePlanPagoVentaCuotasIgualesSimpleCommand,
+)
 from app.application.comercial.commands.generate_plan_pago_venta_v2_por_bloques import (
-    GeneratePlanPagoVentaV2PorBloquesCommand,
     CuotaRefuerzoInput,
+    GeneratePlanPagoVentaV2PorBloquesCommand,
     PlanPagoVentaBloqueInput,
+)
+from app.application.comercial.commands.generate_venta_from_reserva_venta import (
+    GenerateVentaFromReservaVentaCommand,
 )
 from app.application.comercial.commands.update_reserva_venta import (
     UpdateReservaVentaCommand,
@@ -164,19 +168,24 @@ from app.application.comercial.commands.update_reserva_venta import (
 from app.application.comercial.services.activate_reserva_venta_service import (
     ActivateReservaVentaService,
 )
+from app.application.comercial.services.build_plan_pago_venta_v2_por_bloques_preview_service import (
+    METODO_PLAN_POR_BLOQUES,
+    TIPO_BLOQUE_TRAMO_CUOTAS,
+    BuildPlanPagoVentaV2PorBloquesPreviewService,
+)
 from app.application.comercial.services.cancel_reserva_venta_service import (
     CancelReservaVentaService,
 )
 from app.application.comercial.services.confirm_reserva_venta_service import (
     ConfirmReservaVentaService,
 )
-from app.application.comercial.services.confirm_venta_service import ConfirmVentaService
 from app.application.comercial.services.confirm_venta_completa_desde_reserva_service import (
     ConfirmVentaCompletaDesdeReservaService,
 )
 from app.application.comercial.services.confirm_venta_directa_completa_service import (
     ConfirmVentaDirectaCompletaService,
 )
+from app.application.comercial.services.confirm_venta_service import ConfirmVentaService
 from app.application.comercial.services.create_cesion_service import (
     CreateCesionService,
 )
@@ -189,72 +198,76 @@ from app.application.comercial.services.create_instrumento_compraventa_service i
 from app.application.comercial.services.create_reserva_venta_service import (
     CreateReservaVentaService,
 )
-from app.application.comercial.services.delete_reserva_venta_service import (
-    DeleteReservaVentaService,
-)
 from app.application.comercial.services.define_condiciones_comerciales_venta_service import (
     DefineCondicionesComercialesVentaService,
+)
+from app.application.comercial.services.delete_reserva_venta_service import (
+    DeleteReservaVentaService,
 )
 from app.application.comercial.services.expire_reserva_venta_service import (
     ExpireReservaVentaService,
 )
-from app.application.comercial.services.generate_venta_from_reserva_venta_service import (
-    GenerateVentaFromReservaVentaService,
+from app.application.comercial.services.generate_plan_pago_venta_anticipo_mas_cuotas_iguales_service import (
+    GeneratePlanPagoVentaAnticipoMasCuotasIgualesService,
 )
 from app.application.comercial.services.generate_plan_pago_venta_cuotas_iguales_simple_service import (
     GeneratePlanPagoVentaCuotasIgualesSimpleService,
 )
-from app.application.comercial.services.generate_plan_pago_venta_anticipo_mas_cuotas_iguales_service import (
-    GeneratePlanPagoVentaAnticipoMasCuotasIgualesService,
-)
-from app.application.comercial.services.build_plan_pago_venta_v2_por_bloques_preview_service import (
-    BuildPlanPagoVentaV2PorBloquesPreviewService,
-    METODO_PLAN_POR_BLOQUES,
-    TIPO_BLOQUE_TRAMO_CUOTAS,
-)
 from app.application.comercial.services.generate_plan_pago_venta_v2_por_bloques_service import (
     GeneratePlanPagoVentaV2PorBloquesService,
 )
-from app.application.comercial.services.prevalidate_venta_historica_indexacion_service import (
-    PrevalidateVentaHistoricaIndexacionInput,
-    PrevalidateVentaHistoricaIndexacionService,
+from app.application.comercial.services.generate_venta_from_reserva_venta_service import (
+    GenerateVentaFromReservaVentaService,
+)
+from app.application.comercial.services.get_plan_pago_venta_v2_integral_service import (
+    GetPlanPagoVentaV2IntegralService,
 )
 from app.application.comercial.services.get_reserva_venta_service import (
     GetReservaVentaService,
 )
-from app.application.comercial.services.list_reservas_venta_service import (
-    ListReservasVentaService,
+from app.application.comercial.services.get_venta_detalle_integral_service import (
+    GetVentaDetalleIntegralService,
 )
-from app.application.comercial.services.list_ventas_service import ListVentasService
-from app.application.comercial.services.list_instrumentos_compraventa_service import (
-    ListInstrumentosCompraventaService,
-)
+from app.application.comercial.services.get_venta_service import GetVentaService
 from app.application.comercial.services.list_cesiones_service import (
     ListCesionesService,
 )
 from app.application.comercial.services.list_escrituraciones_service import (
     ListEscrituracionesService,
 )
+from app.application.comercial.services.list_instrumentos_compraventa_service import (
+    ListInstrumentosCompraventaService,
+)
+from app.application.comercial.services.list_reservas_venta_service import (
+    ListReservasVentaService,
+)
+from app.application.comercial.services.list_ventas_service import ListVentasService
+from app.application.comercial.services.prevalidate_venta_historica_indexacion_service import (
+    PrevalidateVentaHistoricaIndexacionInput,
+    PrevalidateVentaHistoricaIndexacionService,
+)
+from app.application.comercial.services.resolver_primer_vencimiento_sugerido_service import (
+    ResolverPrimerVencimientoSugeridoService,
+)
 from app.application.comercial.services.update_reserva_venta_service import (
     UpdateReservaVentaService,
 )
-from app.application.comercial.services.get_venta_service import GetVentaService
-from app.application.comercial.services.get_venta_detalle_integral_service import (
-    GetVentaDetalleIntegralService,
-)
-from app.application.comercial.services.get_plan_pago_venta_v2_integral_service import (
-    GetPlanPagoVentaV2IntegralService,
-)
 from app.application.common.commands import CommandContext
-from app.infrastructure.persistence.repositories.indice_financiero_repository import (
-    IndiceFinancieroRepository,
+from app.infrastructure.persistence.repositories.calendario_comercial_query_repository import (
+    CalendarioComercialQueryRepository,
 )
 from app.infrastructure.persistence.repositories.comercial_repository import (
     ComercialRepository,
 )
+from app.infrastructure.persistence.repositories.indice_financiero_repository import (
+    IndiceFinancieroRepository,
+)
 from app.infrastructure.persistence.repositories.plan_pago_venta_v2_repository import (
     PlanPagoVentaV2Repository,
 )
+from fastapi import APIRouter, Depends, Header, Query
+from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
 
 router = APIRouter(tags=["Comercial"])
 
@@ -2066,6 +2079,52 @@ def list_ventas(
             total=result.data["total"],
             limit=result.data.get("limit"),
             offset=result.data.get("offset"),
+        )
+    )
+
+
+@router.get(
+    "/api/v1/ventas/vencimiento-inicial-sugerido",
+    response_model=PrimerVencimientoSugeridoResponse,
+    responses={
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def resolver_primer_vencimiento_sugerido(
+    fecha_venta: Annotated[date, Query()],
+    db: Annotated[Session, Depends(get_db)],
+) -> PrimerVencimientoSugeridoResponse | JSONResponse:
+    service = ResolverPrimerVencimientoSugeridoService(
+        ObtenerConfiguracionCalendarioComercialQueryService(
+            CalendarioComercialQueryRepository(db)
+        )
+    )
+    try:
+        result = service.resolver(fecha_venta)
+    except ConfiguracionCalendarioComercialIncompleta as exc:
+        error = ErrorResponse(
+            error_code=exc.code,
+            error_message=(
+                "El calendario comercial no posee una configuracion aplicable "
+                "a la fecha de venta."
+            ),
+        )
+        return JSONResponse(status_code=409, content=error.model_dump())
+    except ConfiguracionCalendarioComercialInconsistente as exc:
+        error = ErrorResponse(
+            error_code=exc.code,
+            error_message=(
+                "El calendario comercial no permite resolver una configuracion segura."
+            ),
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    return PrimerVencimientoSugeridoResponse(
+        data=PrimerVencimientoSugeridoData(
+            fecha_primer_vencimiento_sugerida=(
+                result.fecha_primer_vencimiento_sugerida
+            )
         )
     )
 
