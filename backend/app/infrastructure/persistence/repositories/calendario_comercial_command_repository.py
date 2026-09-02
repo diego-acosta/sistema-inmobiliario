@@ -7,7 +7,6 @@ from uuid import UUID, uuid5
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-
 CODIGOS = (
     "DIA_CIERRE_COMERCIAL",
     "DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS",
@@ -35,7 +34,21 @@ class CalendarioComercialCommandRepository:
         # Dos mitades constantes del SHA-256 de CALENDARIO_COMERCIAL/GLOBAL.
         self.session.execute(text("SELECT pg_advisory_xact_lock(759942885, 986974765)"))
 
-    def inspect_bootstrap_state(self) -> tuple[bool, dict[str, int]]:
+    def lock_roots(self) -> list[dict[str, Any]]:
+        return [
+            dict(row)
+            for row in self.session.execute(
+                text("""
+                SELECT id_configuracion_calendario_comercial, uid_global,
+                       version_registro, deleted_at
+                  FROM configuracion_calendario_comercial
+                 ORDER BY id_configuracion_calendario_comercial
+                 FOR UPDATE
+                """)
+            ).mappings()
+        ]
+
+    def lock_definitions(self) -> tuple[bool, dict[str, int]]:
         definitions = (
             self.session.execute(
                 text("""
@@ -46,17 +59,15 @@ class CalendarioComercialCommandRepository:
                   FROM parametro_sistema p
                   JOIN tipo_dato_parametro t USING(id_tipo_dato_parametro)
                   JOIN alcance_parametro a USING(id_alcance_parametro)
-                 WHERE p.codigo_parametro IN (
-                    'DIA_CIERRE_COMERCIAL',
+                 WHERE p.codigo_parametro IN
+                   ('DIA_CIERRE_COMERCIAL',
                     'DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS')
                  ORDER BY p.codigo_parametro
                  FOR UPDATE OF p
-            """),
-            )
-            .mappings()
-            .all()
+                """)
+            ).mappings().all()
         )
-        valid_definitions = len(definitions) == 2 and all(
+        valid = len(definitions) == len(CODIGOS) and all(
             row["codigo_tipo_dato"] == "ENTERO"
             and row["codigo_alcance"] == "GLOBAL"
             and row["exponible_api_administrativa"]
@@ -64,22 +75,39 @@ class CalendarioComercialCommandRepository:
             and row["editable_administrativamente"]
             for row in definitions
         )
-        root_count = self.session.execute(
-            text("SELECT count(*) FROM configuracion_calendario_comercial")
-        ).scalar_one()
-        value_count = self.session.execute(
-            text("""
-                SELECT count(*) FROM valor_parametro v JOIN parametro_sistema p
-                  USING(id_parametro_sistema)
-                 WHERE p.codigo_parametro IN (
-                    'DIA_CIERRE_COMERCIAL',
-                    'DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS')
-            """)
-        ).scalar_one()
-        ids = {
-            row["codigo_parametro"]: row["id_parametro_sistema"] for row in definitions
+        return valid, {
+            row["codigo_parametro"]: row["id_parametro_sistema"]
+            for row in definitions
         }
-        return valid_definitions and root_count == 0 and value_count == 0, ids
+
+    def lock_history(self, *, include_deleted: bool = False) -> list[dict[str, Any]]:
+        deleted_filter = "" if include_deleted else "AND v.deleted_at IS NULL"
+        return [
+            dict(row)
+            for row in self.session.execute(
+                text(f"""
+                SELECT v.id_valor_parametro, v.uid_global, v.version_registro,
+                       v.valor_parametro, v.fecha_desde, v.fecha_hasta,
+                       v.es_valor_vigente, v.deleted_at, p.codigo_parametro
+                  FROM valor_parametro v
+                  JOIN parametro_sistema p USING(id_parametro_sistema)
+                 WHERE p.codigo_parametro IN
+                   ('DIA_CIERRE_COMERCIAL',
+                    'DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS')
+                   AND v.id_sucursal IS NULL AND v.id_instalacion IS NULL
+                   {deleted_filter}
+                 ORDER BY p.codigo_parametro, v.fecha_desde,
+                          v.id_valor_parametro
+                 FOR UPDATE OF v
+                """)
+            ).mappings()
+        ]
+
+    def inspect_bootstrap_state(self) -> tuple[bool, dict[str, int]]:
+        roots = self.lock_roots()
+        valid_definitions, ids = self.lock_definitions()
+        history = self.lock_history(include_deleted=True)
+        return valid_definitions and not roots and not history, ids
 
     def create(
         self,
@@ -136,75 +164,14 @@ class CalendarioComercialCommandRepository:
         return {"root": dict(root), "values": created_values}
 
     def lock_active_root(self) -> dict[str, Any] | None:
-        rows = (
-            self.session.execute(
-                text("""
-            SELECT id_configuracion_calendario_comercial, uid_global,
-                   version_registro
-              FROM configuracion_calendario_comercial
-             WHERE deleted_at IS NULL
-             ORDER BY id_configuracion_calendario_comercial
-             FOR UPDATE
-        """)
-            )
-            .mappings()
-            .all()
-        )
-        return dict(rows[0]) if len(rows) == 1 else None
+        rows = self.lock_roots()
+        return rows[0] if len(rows) == 1 and rows[0]["deleted_at"] is None else None
 
     def lock_and_inspect_history(self) -> tuple[dict[str, int], list[dict[str, Any]]]:
-        definitions = (
-            self.session.execute(
-                text("""
-            SELECT p.id_parametro_sistema, p.codigo_parametro,
-                   p.exponible_api_administrativa, p.es_sensible,
-                   p.editable_administrativamente, t.codigo_tipo_dato,
-                   a.codigo_alcance
-              FROM parametro_sistema p
-              JOIN tipo_dato_parametro t USING(id_tipo_dato_parametro)
-              JOIN alcance_parametro a USING(id_alcance_parametro)
-             WHERE p.codigo_parametro IN
-               ('DIA_CIERRE_COMERCIAL','DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS')
-             ORDER BY p.codigo_parametro FOR UPDATE OF p
-        """)
-            )
-            .mappings()
-            .all()
-        )
-        valid = len(definitions) == 2 and all(
-            row["codigo_tipo_dato"] == "ENTERO"
-            and row["codigo_alcance"] == "GLOBAL"
-            and row["exponible_api_administrativa"]
-            and not row["es_sensible"]
-            and row["editable_administrativamente"]
-            for row in definitions
-        )
+        valid, definitions = self.lock_definitions()
         if not valid:
             return {}, []
-        rows = (
-            self.session.execute(
-                text("""
-            SELECT v.id_valor_parametro, v.uid_global, v.version_registro,
-                   v.valor_parametro, v.fecha_desde, v.fecha_hasta,
-                   v.es_valor_vigente,
-                   p.codigo_parametro
-              FROM valor_parametro v JOIN parametro_sistema p
-                USING(id_parametro_sistema)
-             WHERE p.codigo_parametro IN
-               ('DIA_CIERRE_COMERCIAL','DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS')
-               AND v.deleted_at IS NULL AND v.id_sucursal IS NULL
-               AND v.id_instalacion IS NULL
-             ORDER BY p.codigo_parametro, v.fecha_desde, v.id_valor_parametro
-             FOR UPDATE OF v
-        """)
-            )
-            .mappings()
-            .all()
-        )
-        return (
-            {r["codigo_parametro"]: r["id_parametro_sistema"] for r in definitions},
-            [dict(r) for r in rows],
-        )
+        return definitions, self.lock_history()
 
     def program(
         self,

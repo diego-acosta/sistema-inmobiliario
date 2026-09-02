@@ -781,17 +781,44 @@ commits internos. `CalendarioComercialCommandRepository` concentra el SQL y usa
 un advisory lock transaccional específico del agregado. Sólo `EXECUTE` valida
 sucursal/instalación y consulta persistencia; `REPLAY` retorna inmediatamente el
 snapshot durable. Todo error previo al commit exterior revierte negocio, outbox y
-receipt. La policy del producer es mínima y específica. #485 deberá emitir
+receipt. La policy del producer es mínima y específica. #485 emite
 `calendario_comercial_programado` en su propia transacción. Consumer, inbox,
-reentrega, aplicación remota y sync continúan pendientes en #486.
+reentrega y aplicación remota se integran en #486.
 
 ## Incremento #485 — ProgramarCalendarioComercialService
 
-El servicio ejecuta `claim → contexto → lock raíz → CAS → lock/validación de
-historia → cierre e inserción de pareja → incremento raíz → outbox → completion`.
+El servicio ejecuta `claim → contexto → advisory GLOBAL → raíz total → CAS →
+definiciones → historia → cierre e inserción de pareja → incremento raíz →
+outbox → completion`.
 El target idempotente singleton es `CALENDARIO_COMERCIAL / NULL / GLOBAL` y el
 fingerprint incluye ambos días, `vigente_desde` e `if_match_version`. La fecha
 debe ser estrictamente posterior al inicio de la última vigencia, sin consultar
 el reloj. Los locks de valores usan orden estable por código. El replay no
 consulta contexto ni agregado y el rollback revierte todas las etapas. El único
 evento material es `calendario_comercial_programado`; #486 no se implementa aquí.
+
+## Incremento #486 — CalendarioComercialSyncApplicator
+
+`register_calendario_outbox_delivery` valida el envelope portable y registra
+ambos tipos para `administrativo.calendario_comercial`. Conserva por separado el
+`metadata.payload_hash` del producer y el fingerprint Técnico de #512. El
+transporte mínimo consulta `OutboxRepository.get_pending_events` con los dos
+tipos antes de `ORDER BY/LIMIT` y exige endpoints distintos por
+`(system_identifier PostgreSQL, current_database())`; la interfaz de red no
+participa de la identidad y el rechazo ocurre antes de consultar el outbox.
+Confirma primero el registro inbox destino y después acredita el outbox origen:
+es at-least-once, tolera la pérdida del ack mediante Delivery y no agrega 2PC,
+broker ni scheduler. `scripts/calendario_comercial_sync.py` expone transporte y
+procesamiento manual reusable.
+
+`CalendarioComercialSyncApplicator` resuelve `parametro_sistema` por código,
+valida la historia completa `[fecha_desde, fecha_hasta)` y crea V1 o cierra e
+inserta la pareja siguiente preservando UIDs. Faltantes temporales y saltos usan
+`PENDING_DEPENDENCY`; payload inválido es `REJECTED`; colisiones, corrupción o
+divergencia material son `CONFLICTO`. El processor #512 gobierna operation
+scope, retry, lease, takeover, fencing, receipt, delivery terminal y commit.
+Todos los writers usan `advisory GLOBAL → raíz total → definiciones por código →
+historia por (código, fecha_desde, id)`. La raíz es singleton físico absoluto y
+una raíz soft-deleted adicional es conflicto. Sólo constraints `UNIQUE` conocidas
+habilitan relectura convergente tras `IntegrityError`; las demás fallas SQL se
+propagan al retry técnico de #512.

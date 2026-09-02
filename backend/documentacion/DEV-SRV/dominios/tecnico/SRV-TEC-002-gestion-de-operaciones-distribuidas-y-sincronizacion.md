@@ -317,6 +317,23 @@ El claim portable usa `FOR UPDATE SKIP LOCKED` y `UPDATE ... RETURNING` dentro d
 
 #511 materializa el entry point/job reusable y testeable para ejecución automática una vez y reproceso manual/controlado; no incorpora un scheduler/daemon productivo definitivo ni integra automáticamente todos los consumers futuros.
 
+#486 registra `administrativo.calendario_comercial` como consumer portable de
+`calendario_comercial_creado` y `calendario_comercial_programado`. Reutiliza sin
+extensiones Delivery/Operation/Attempt, retained envelope, retry, lease y fencing;
+la continuidad estricta de versiones y la clasificación de dependencias
+pertenecen al applicator Administrativo. El incremento no incorpora scheduler o
+broker productivo.
+
+Su adaptador de transporte recibe endpoints distintos de origen y destino. Los
+identifica por `system_identifier` persistente del clúster PostgreSQL más
+`current_database()`: IPv4, IPv6, hostname, alias, puerto y hora de arranque no
+son autoridad; dos bases distintas del mismo clúster sí son endpoints distintos.
+El guard se ejecuta antes de leer el outbox. Luego aplica at-least-once: commit de
+la delivery destino antes del ack/publicación en
+origen. No forma parte de la transacción funcional del applicator ni introduce
+2PC. Un ack perdido conserva el outbox reintentable y la reentrega se deduplica
+por `(event_id, consumer)`; un fallo destino nunca acredita el origen.
+
 Cada `run_once()` posee la transacción funcional real de una `Session` dedicada al intento: puede usar savepoints internos, pero no retorna hasta ejecutar el commit exterior. El applicator usa esa Session, no hace commit propio, no confirma otra transacción DB paralela y no produce efectos externos irreversibles antes del commit coordinado. Si falla cualquier mutación fenced, applicator o commit, el processor hace rollback completo antes de propagar. `(event_id, consumer)` identifica la delivery; `(consumer, op_id)` identifica la operación; `attempt_id` identifica una adquisición concreta. `inbox_operation_scope` es la única autoridad del fingerprint, derecho funcional y receipt reusable. Su adquisición/clasificación atómica devuelve exclusivamente `ACQUIRED`, `BUSY`, `REPLAY_PROCESSED`, `REPLAY_CONFLICT` o `INCOMPATIBLE`. El scope guarda `attempt_id`, `worker_id` diagnóstico, expiración y `fence_generation`; finalizarlo exige el mismo `attempt_id` y fence. Un takeover compatible y vencido incrementa el fence e instala el nuevo attempt. No se mantiene advisory lock durante el applicator.
 
 Un resultado pendiente revierte primero el efecto funcional y luego persiste solamente el estado técnico. La misma transición fenced agenda `next_attempt_at` desde el reloj PostgreSQL al finalizar más el backoff. Un follower `BUSY` sólo reprograma su propia delivery: no libera, completa ni renueva el scope ajeno. `PROCESSED` compatible y `CONFLICTO` compatible reutilizan el receipt del scope sin applicator; fingerprint incompatible clasifica la delivery como `CONFLICTO` sin segundo efecto. Después de un `REJECTED`, el scope conserva su fingerprint material sin receipt terminal y queda libre: una entrega compatible puede reintentar y una incompatible se clasifica como conflicto. Los siblings de `inbox_event` no son autoridad de replay, conflicto, ownership ni progreso. No existe elección de leader por menor delivery ni mecanismo equivalente. Una fila inválida sólo puede ser rechazada al procesar su propia delivery y nunca contamina una operación válida. No se incorpora heartbeat automático ni scheduler productivo definitivo.

@@ -742,7 +742,7 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 - tipo_evento: negocio
 - sincronizable: sí
 - genera_trazabilidad_administrativa: sí
-- observaciones: #484 implementa sólo producer y policy mínima; consumo y sync remoto pertenecen a #486.
+- observaciones: #484 implementa producer y policy mínima; #486 los integra con el consumer portable `administrativo.calendario_comercial` sobre #512.
 
 ### EVT-ADM-079 — Calendario comercial programado
 - codigo: calendario_comercial_programado
@@ -752,7 +752,7 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 - tipo_evento: negocio
 - sincronizable: sí
 - genera_trazabilidad_administrativa: sí
-- observaciones: #485 implementa producer y policy default-deny; consumer y sync remoto pertenecen a #486.
+- observaciones: #485 implementa producer y policy default-deny; #486 los integra con el consumer portable `administrativo.calendario_comercial` sobre #512.
 
 ## F. Notas de compatibilidad transversal
 
