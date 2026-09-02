@@ -168,8 +168,18 @@ VENCIDA =
   AND fecha_objetivo < fecha_corte_local
 ```
 
-La `fecha_corte_local` conserva la semántica definida por `DEV-ARCH-GOP-001`.
-Por lo tanto, una Tarea con baja técnica no se proyecta como vencida.
+Para cada caso de uso relevante, `fecha_corte_local` se captura una sola vez
+desde un reloj confiable del servidor y se proyecta en la zona IANA
+`America/Argentina/Buenos_Aires`. No proviene del cliente, la instalación ni el
+timezone de la sesión PostgreSQL. La comparación es estrictamente entre valores
+`DATE`: si `fecha_objetivo == fecha_corte_local`, la Tarea no está vencida durante
+ese día. Una Tarea con baja técnica no se proyecta como vencida y una Tarea
+reabierta puede volver a proyectarse vencida si conserva una fecha objetivo
+anterior al corte.
+
+Esta semántica temporal no está diferida. Sólo permanecen posteriores la
+implementación concreta del reloj, librería/helper, SQL de comparación y manejo
+físico del timezone.
 
 ### 6.3 Coherencia estructural del snapshot por estado
 
@@ -273,6 +283,10 @@ owner Administrativo. Esta regla no altera el branch reservado `SISTEMA`:
 creador `NULL`, `generador_sistema` obligatorio y origen aún deshabilitado hasta
 resolver #522, sin usuario SYSTEM, principal ficticio ni service account.
 
+La baja o desactivación posterior del usuario creador no invalida la Tarea ni
+elimina su identidad histórica: la FK y el UID del owner conservan la
+trazabilidad del alta.
+
 Autenticación/identidad del creador y autorización para elegir el scope son
 precondiciones distintas. Toda creación humana exige además administración
 aplicable sobre el scope funcional propuesto:
@@ -293,6 +307,14 @@ Estar autenticado, ser usuario activo, responsable, creador, tener
 al scope propuesto. `NULL` no omite la validación: significa scope global. Esta
 regla consume autorización de Administrativo y no crea ACL, tabla de scope, FK,
 copia de permisos ni rol GOP.
+
+`X-Sucursal-Id` y `X-Instalacion-Id` expresan contexto/procedencia técnica del
+command; no asignan `Tarea.id_sucursal`, no autentican personas y no convierten
+instalación en scope funcional. El scope se toma exclusivamente de la decisión
+funcional autorizada de creación. Si la sucursal persistida deja de estar
+vigente, la Tarea conserva `id_sucursal` y el resto del snapshot: no se convierte
+en global ni se muta automáticamente. Su gestión residual requiere el alcance
+global administrativo ya definido.
 
 ### 6.8 Elegibilidad temporal del responsable
 
@@ -384,6 +406,11 @@ usuario y sigue elegible. `Tareas creadas por mí` es una consulta independiente
 por autoría: el creador conserva esa base aunque no sea responsable, haya sido
 reasignada o desasignada, siempre sujeto a autorización efectiva.
 
+`puede_administrar` constituye una base propia de visibilidad, pero no implica ni
+deriva `puede_consultar`; este último tampoco habilita mutación por sí solo. Una
+Tarea con `responsable = NULL` sigue siendo visible cuando existe otra base
+independiente válida, como creador o consulta/administración aplicable del scope.
+
 | Acción | Creador por esa sola relación | Responsable vigente/elegible | Administración aplicable |
 | --- | --- | --- | --- |
 | Ver | Sí | Sí | Sí |
@@ -400,11 +427,38 @@ Administración aplicable significa alcance global para Tarea global,
 administración vigente sobre la sucursal vigente o fallback de administración
 global si esa sucursal dejó de estar vigente. Siempre se respetan autorización,
 lifecycle y elegibilidad. Si el responsable pierde elegibilidad, no se
-desasigna ni cambia estado automáticamente, pero pierde `Mis tareas` y todas las
-capacidades derivadas de ser responsable; sólo conserva acceso por otra base
-independiente válida.
+desasigna, reasigna, cancela ni cambia estado automáticamente, pero pierde `Mis
+tareas`, visibilidad por responsabilidad y todas las capacidades derivadas de
+ser responsable; sólo conserva acceso por otra base independiente válida. Toda
+gestión posterior requiere una mutación explícita autorizada.
 
-### 6.10 Clasificación CORE-EF de operaciones
+### 6.10 Envelope e idempotencia conceptual
+
+GOP reutiliza `public.operacion_idempotente`; no crea ledger propio. Cada command
+futuro define conceptualmente como mínimo `command_code`, `target_type`,
+`target_uid` o `target_key`, payload material canonicalizable, versión esperada
+cuando aplica, fingerprint, snapshot durable de replay y completion.
+
+El orden contractual es:
+
+```text
+parseo / normalización suficiente
+→ construcción del fingerprint
+→ claim
+→ efecto material
+```
+
+Todo ocurre dentro de la transacción coordinada. En commands humanos,
+autenticación y autorización actuales preceden cualquier respuesta observable
+del claim. El mismo `op_id` con envelope compatible permite replay conforme a la
+sección anterior; el mismo `op_id` con envelope materialmente incompatible
+produce `CONFLICT` y no se trata como replay.
+
+Permanecen diferidos schema, hash y versión de canonicalización concretos,
+clases, repository, DTO y códigos HTTP. No están diferidos la composición
+conceptual del envelope, el orden del claim ni la distinción replay/conflicto.
+
+### 6.11 Clasificación CORE-EF de operaciones
 
 Las clasificaciones conceptuales ya congeladas son:
 
@@ -711,7 +765,9 @@ instalación.
   automatización.
 - `VENCIDA` es una proyección no persistida que exige `deleted_at` ausente,
   `fecha_objetivo` no nula, estado `PENDIENTE` o `EN_CURSO`, y
-  `fecha_objetivo < fecha_corte_local`.
+  `fecha_objetivo < fecha_corte_local`; el corte se captura una vez desde reloj
+  de servidor y se proyecta a `America/Argentina/Buenos_Aires`, con comparación
+  `DATE` estricta e igualdad no vencida.
 - `deleted_at` es independiente de `CANCELADA` y del lifecycle.
 - `REABIERTA` exige actor y motivo, además de evidencia del estado/finalización
   anteriores; cambia `COMPLETADA → PENDIENTE`, limpia la
@@ -735,6 +791,10 @@ instalación.
 - La metadata CORE-EF no duplica semántica funcional.
 - Las referencias externas persisten FK local y no copian UID del owner.
 - La sucursal funcional es nullable, inmutable en MVP y `NULL` significa global.
+- Los headers técnicos de sucursal/instalación no asignan scope funcional; una
+  sucursal que pierde vigencia no globaliza ni muta automáticamente la Tarea.
+- La baja o desactivación posterior del creador no invalida la Tarea ni elimina
+  su identidad histórica.
 - Instalación expresa procedencia técnica, no scope funcional.
 - Un comentario no versiona Tarea ni usa su CAS.
 - Historial no tiene outbox, retry, consumer, CAS o conflicto autónomos.
@@ -767,9 +827,15 @@ instalación.
   autorización Administrativa efectiva. Creador sólo obtiene ver/comentar;
   responsable elegible sólo las capacidades operativas de la matriz;
   administración aplicable conserva el scope global/sucursal/fallback.
+- Administración y consulta son capacidades distintas; una Tarea sin responsable
+  puede permanecer visible por creador o scope, y la pérdida de elegibilidad no
+  desasigna, reasigna, cancela ni transiciona automáticamente.
 - Autenticación y autorización actuales siempre gatean `EXECUTE`, `REPLAY` y
   `CONFLICT`; después de superarlas, un replay durable compatible no repite
   efecto/outbox y puede omitir precondiciones mutables de la ejecución original.
+- Cada command define envelope idempotente conceptual, fingerprint y resultado
+  durable; normaliza antes del claim y un mismo `op_id` con envelope incompatible
+  produce `CONFLICT`.
 - Tarea writes y ComentarioTarea son `COMMAND_WRITE_NEGOCIO + SINCRONIZABLE`;
   baja futura es `COMMAND_WRITE_TECNICO + SINCRONIZABLE`; consultas son
   `QUERY_READLIKE` sin outbox. `lock lógico = NO APLICA` sin debilitar CAS,
@@ -780,6 +846,12 @@ instalación.
 - La futura generación con origen `SISTEMA` combina idempotencia técnica por
   `op_id` con idempotencia funcional por hecho fuente; reprocesar el mismo hecho
   fuente con otro `op_id` no crea una segunda Tarea funcional equivalente.
+- Un hecho humano remoto confirmado en origen no se reautoriza contra roles,
+  permisos, asignaciones o vínculos actuales; el receptor valida integridad,
+  referencias, causalidad, continuidad, convergencia e invariantes materiales.
+- El payload portable es allowlist/default-deny, excluye material de
+  autenticación y PK locales y rechaza ese contenido antes de persistencia
+  durable; timestamps no deciden autoridad.
 
 ## 11. Responsabilidades posteriores
 
@@ -819,13 +891,16 @@ Quedan para servicios y contratos posteriores:
 - mecanismo técnico de causalidad comentario/baja y clasificación terminal
   exacta del intento causalmente posterior; la semántica funcional ya está
   congelada en este DER;
-- fecha de corte para `VENCIDA`;
+- implementación concreta del reloj, helper, librería y comparación física para
+  `VENCIDA`; su corte único de servidor, zona Buenos Aires y semántica `DATE` ya
+  están congelados;
 - auth/authz antes de cualquier replay o conflicto observable;
 - nombres y granularidad de commands/eventos.
 
 ## 12. Consultas que la estructura debe soportar
 
-La futura persistencia debe permitir:
+La futura persistencia debe permitir, siempre bajo la política de visibilidad de
+la sección 6.9:
 
 - obtener y listar Tareas;
 - “Mis tareas” y “Tareas creadas por mí”;
@@ -841,6 +916,10 @@ técnicas o consultas explícitamente autorizadas para registros dados de baja
 pueden incluirlos; este DER no diseña esas vistas ni introduce permisos nuevos.
 La proyección `VENCIDA` conserva su regla única de la sección 6.2, que ya exige
 `deleted_at` ausente.
+
+Estas operaciones son `QUERY_READLIKE`: no generan outbox, locks ni efectos
+persistentes. La falta de responsable no elimina una Tarea de las consultas si
+el caller conserva otra base válida de visibilidad.
 
 El índice de `uid_global` de Tarea y ComentarioTarea es obligatorio por CORE-EF;
 sólo su nombre y forma física permanecen diferidos. Son candidatos para evaluar
@@ -864,8 +943,8 @@ congela esos índices adicionales.
 
 Cuando no existe localmente una Tarea para el `Tarea.uid_global` recibido, una
 operación de creación válida con `version_registro = 1` es candidata a
-crear/materializar la Tarea local si resuelve referencias, satisface invariantes
-y supera idempotencia/convergencia. Esta creación inicial no es un gap porque no
+crear/materializar la Tarea local si supera las validaciones remotas definidas
+abajo. Esta creación inicial no es un gap porque no
 existe un snapshot local previo ni una versión intermedia faltante. Debe
 materializar atómicamente la evidencia funcional `HistorialTarea(CREADA)` ya
 exigida para toda creación confirmada; si falta temporalmente una referencia
@@ -876,7 +955,7 @@ Si el mismo `uid_global` ya existe, el caso deja de ser creación sobre UID
 inexistente y se evalúa mediante continuidad, replay, convergencia, obsolescencia
 o conflicto; nunca crea una segunda Tarea con el mismo UID. Para una Tarea local
 existente en `Vn`, sólo una entrada `Vn+1` es candidata inmediata a aplicar,
-siempre que resuelva referencias y satisfaga invariantes.
+siempre que supere las validaciones remotas definidas abajo.
 Una entrada `> Vn+1` constituye un gap: no se aplica inmediatamente ni adelanta
 el snapshot. Un snapshot posterior no sustituye una mutación intermedia faltante,
 porque se perdería silenciosamente su evidencia funcional de HistorialTarea.
@@ -917,6 +996,19 @@ técnico de espera/reordenamiento/reentrega, la clasificación técnica exacta y
 reconciliación, reutilizando la infraestructura Técnica existente sin tablas,
 colas, inbox o retry GOP paralelos.
 
+Un hecho humano confirmado válidamente en origen no se reautoriza
+retrospectivamente en el receptor. El applicator no reevalúa contra el estado
+humano actual roles, permisos, asignación, responsabilidad, vínculo
+usuario-sucursal, otras relaciones humanas modificadas después ni la
+autorización que hoy tendría el actor para ejecutar nuevamente el command.
+
+El receptor sí valida integridad del payload, referencias portables requeridas,
+causalidad, continuidad, idempotencia/convergencia, invariantes
+estructurales/materiales del snapshot resultante y `PENDING_DEPENDENCY` cuando
+corresponda. Esta regla de recepción remota es distinta del caller HTTP local
+actual: en un command humano local, autenticación y autorización actuales siguen
+gateando `EXECUTE`, `REPLAY` y `CONFLICT` antes de toda respuesta observable.
+
 ### 13.2 Frontera funcional de PENDING_DEPENDENCY
 
 `PENDING_DEPENDENCY` aplica exclusivamente cuando una referencia funcional
@@ -932,6 +1024,7 @@ remota; la misma operación puede reintentarse cuando la dependencia aparezca.
 | Sucursal funcional concreta (`sucursal != NULL`) | `PENDING_DEPENDENCY` |
 | Tarea padre requerida por ComentarioTarea | `PENDING_DEPENDENCY` |
 | Actor humano portable obligatorio de `REABIERTA` | `PENDING_DEPENDENCY`; no se materializa la reapertura sin actor |
+| Actor de HistorialTarea en otro hecho cuyo tipo exija actor humano | `PENDING_DEPENDENCY` mientras su UID portable requerido no pueda resolverse |
 
 Una ausencia semánticamente válida no crea dependencia: `responsable = NULL`
 cuando el snapshot lo admite y `sucursal = NULL` para una Tarea global no son
@@ -970,6 +1063,24 @@ padre portable, autor portable, texto, instante, `op_id` y causalidad suficiente
 no se convierte en snapshot de Tarea. Permanecen diferidos nombre/código EVT,
 routing, tópico, schema/JSON físico, broker, batching y transporte, pero ningún
 batching futuro puede impedir reproducir cada transición o versión necesaria.
+
+### 13.4 Frontera segura del payload/envelope portable
+
+La política portable es allowlist explícita y `default-deny`. El payload durable
+sólo puede transportar identidades portables, versiones, datos funcionales
+necesarios, `op_id`, causalidad y la procedencia técnica necesaria del envelope
+transversal.
+
+No transporta ni persiste PK locales, Bearer tokens, access tokens, refresh
+tokens, passwords, hashes de contraseña, credenciales, sesiones, cookies, roles,
+permisos, secretos, DSN, SQL ni cualquier otro material de autenticación. Un
+payload/envelope que contenga material de autenticación prohibido debe rechazarse
+antes de persistirse en outbox o envelope durable. Los timestamps transportados
+no deciden autoridad, precedencia ni continuidad.
+
+Permanecen diferidos schema JSON, middleware, validator concreto y error HTTP;
+no están diferidas la allowlist, la prohibición, el rechazo pre-persistencia ni
+la política `default-deny`.
 
 ## 14. Origen SISTEMA reservado
 
