@@ -4,7 +4,7 @@
 
 - Issue de diseño: `#424` (no se cierra con este documento).
 - Estado: **decisión contractual cerrada; implementación pendiente**.
-- Fecha: 2026-07-30.
+- Fecha: 2026-07-30; reconciliación física/API de `#427`: 2026-09-02.
 - Dominio responsable: Financiero, con integración contractual desde Comercial y
   configuración general desde Administrativo.
 - Entidad raíz conceptual: configuración contractual de indexación de una venta y
@@ -68,9 +68,11 @@ Toda venta indexada posee una sola base común. Todos sus tramos indexados compa
 tramo indexado no crea otra base. Un tramo no indexado intermedio no reinicia la
 referencia ni la secuencia temporal.
 
-No es obligatorio persistir `id_indice_financiero_valor` para el valor base si el
-período y el valor congelados permiten reproducir y auditar el cálculo. La decisión
-física definitiva de conservar además ese id queda para `#427`.
+La identidad del valor base publicado se conserva mediante
+`id_indice_financiero_valor_base` nullable. Período, identidad y valor congelados
+permiten reproducir y auditar el cálculo. Si el valor todavía no existe, tanto la
+identidad como el valor permanecen nulos; no se persiste un estado intermedio
+incompleto.
 
 ### 4.2 Sugerencia del período base
 
@@ -250,77 +252,167 @@ Con base 09/2026, la última fila sería inválida por producir 08/2026.
 
 Un mismo plan puede contener legítimamente obligaciones `EMITIDA` y `PROYECTADA`.
 
-## 6. Propuesta física futura (no implementada)
+## 6. Contrato físico y de aplicación de #427 (no implementado)
 
-### 6.1 SQL
+### 6.1 Entidad y campos
 
-Propuesta para resolver en `#427` y `#429`, sin DDL en `#424`:
+La única fuente contractual de la base será
+`plan_pago_venta_indexacion`, entidad Comercial opcional y 1:1 con
+`plan_pago_venta`. Se elige una tabla específica porque un plan no indexado no
+posee base, la base tiene lifecycle y versión propios, y sus columnas nullable no
+deben contaminar `venta` ni `plan_pago_venta`. Una venta puede conservar planes
+eliminados lógicamente, pero cada plan vivo posee como máximo una base activa.
 
-1. Ubicar la cabecera/base común a nivel venta o plan de venta, nunca como una
-   base semánticamente independiente por bloque. La tabla exacta queda
-   `NO CONFIRMADA` hasta auditar cardinalidades y migración.
-2. Persistir `id_indice_financiero`, `periodo_base` normalizado y
-   `valor_base_indice NULL`. `id_indice_financiero_valor_base` sería opcional.
-3. Persistir en cada obligación indexada `periodo_objetivo` normalizado y el origen
-   de vencimiento (`SUGERIDO`/`EDITADO`) o datos equivalentes que conserven el
-   vencimiento sugerido original.
-4. Considerar `CHECK` de normalización al primer día del mes, valor base positivo
-   cuando no sea nulo, unicidad de una base activa por venta/plan y coherencia del
-   índice entre cabecera y trazabilidad.
-5. Garantizar en el modelo futuro un único valor publicado por
-   `(id_indice_financiero, período_mensual)`, mediante constraint o índice único
-   físico una vez auditados y saneados los datos existentes.
-6. Considerar índices por `(id_indice_financiero, periodo_objetivo)` para pendientes
-   y por venta/plan para consumir la base común.
+La entidad incorpora metadata CORE-EF completa y estos campos funcionales:
 
-La ubicación exacta, nombres, nulabilidad de campos auxiliares, FK y estrategia de
-backfill son propuestas, no contratos físicos implementados.
+| Campo | Nulabilidad | Contrato |
+| --- | --- | --- |
+| `id_plan_pago_venta` | `NOT NULL` | FK al plan Comercial dueño |
+| `id_indice_financiero` | `NOT NULL` | FK al catálogo Financiero |
+| `periodo_base` | `NOT NULL` | `DATE` canónica con día `1` |
+| `id_indice_financiero_valor_base` | `NULL` | FK al valor publicado exacto del mismo índice |
+| `valor_base_indice` | `NULL` | snapshot positivo del valor publicado |
 
-### 6.2 Compatibilidad y migración
+`periodo_base=2026-05-01` representa inequívocamente mayo de 2026. Ningún otro día
+es válido. No se crean columnas de año/mes separadas.
 
-- Los actuales `fecha_base_indice` y `valor_base_indice` por bloque son
-  compatibilidad heredada; no se expanden como núcleo.
-- Antes del backfill, verificar que todos los bloques indexados de una venta tengan
-  el mismo índice/base. Divergencias deben marcarse para saneamiento, no resolverse
-  eligiendo silenciosamente una fila.
-- Normalizar solo períodos mensuales con evidencia inequívoca. Registros ambiguos
-  quedan `NO CONFIRMADOS` y requieren decisión de migración.
-- Auditar antes de migrar si un mismo índice posee más de un valor en el mismo mes,
-  incluso cuando sus `fecha_valor` sean días distintos. No elegir uno de manera
-  arbitraria: duplicados, fechas no normalizadas y valores divergentes requieren
-  saneamiento previo y una regla de migración explícita.
-- Mantener lectura compatible durante una transición, pero toda venta nueva luego
-  del corte deberá usar la base común.
-- No deducir períodos objetivo históricos únicamente desde vencimientos si se
-  perdió el ancla sugerida original.
+El estado no se persiste: se deriva sin ambigüedad.
 
-### 6.3 API y schemas futuros
+```text
+id_indice_financiero_valor_base IS NULL AND valor_base_indice IS NULL
+→ BASE_PENDIENTE
 
-Sin modificar contratos vigentes, los issues posteriores deberán evaluar:
+id_indice_financiero_valor_base IS NOT NULL AND valor_base_indice IS NOT NULL
+→ BASE_DISPONIBLE
+```
 
-- request/response comercial: `periodo_base` (año/mes), vencimiento sugerido,
-  vencimiento elegido y origen automático/editado;
-- valor base nullable y estado explícito `PENDIENTE` sin simular publicación;
-- response por obligación: `periodo_objetivo`, valor objetivo y condición
-  definitiva/proyectada;
-- configuración administrativa: día de cierre y día de vencimiento predeterminado;
-- preview con los mismos datos derivados, sin efectos laterales.
+Los estados mixtos quedan prohibidos. `BASE_PENDIENTE` y `BASE_DISPONIBLE` son
+proyecciones de lectura, no un nuevo lifecycle mutable.
 
-Los nombres finales, endpoints exactos y envelopes quedan pendientes de `#425`,
-`#426`, `#429` y `#430`; no se inventan aquí.
+### 6.2 Constraints y validaciones
 
-### 6.4 Services futuros
+SQL debe imponer:
+
+- FK `id_plan_pago_venta → plan_pago_venta` con borrado restrictivo;
+- FK `id_indice_financiero → indice_financiero` con borrado restrictivo;
+- unicidad parcial de una base activa por `id_plan_pago_venta`;
+- `CHECK` que exija día `1` en `periodo_base`;
+- `CHECK valor_base_indice IS NULL OR valor_base_indice > 0`;
+- `CHECK` de nulabilidad conjunta entre id y snapshot del valor base;
+- FK compuesta que garantice que el valor base pertenece al mismo índice;
+- metadata, checks temporales, UID único, índices y triggers CORE-EF equivalentes a
+  las entidades Comerciales vigentes;
+- soft delete mediante `deleted_at`; no se permite una segunda base activa.
+
+Aplicación debe imponer, antes de cualquier persistencia:
+
+- `base_indexacion` obligatoria si existe al menos un bloque `INDEXACION`;
+- `base_indexacion` prohibida si no existe ningún bloque `INDEXACION`;
+- `INDEXACION` continúa permitida sólo en `TRAMO_CUOTAS`;
+- todos los tramos indexados consumen la misma entidad común;
+- los bloques no reciben índice, período ni valor independientes;
+- replay con la misma base es idempotente y una base diferente es conflicto;
+- preview y write ejecutan la misma validación funcional.
+
+La obligación de que todo plan con tramos indexados posea base común es una
+invariante transaccional de aplicación: una FK no puede expresar por sí sola esa
+condición entre el método del bloque y una fila opcional del plan.
+
+### 6.3 API y schemas de #427
+
+Los requests PPV2 reciben en la raíz del plan:
+
+```json
+{
+  "base_indexacion": {
+    "id_indice_financiero": 1,
+    "periodo_base": "2026-05-01"
+  },
+  "bloques": []
+}
+```
+
+`periodo_base` usa string civil `YYYY-MM-01` y se rechaza si el día no es `01`.
+El cliente no envía `valor_base_indice` ni
+`id_indice_financiero_valor_base`: Financiero los resuelve.
+
+Se eliminan como input de cada bloque `id_indice_financiero`,
+`fecha_base_indice` y `valor_base_indice`. No se aceptan como alias, compatibilidad
+ni fallback. Las políticas propias del tramo (`modo_indexacion`,
+`base_calculo_indexacion`, `tipo_generacion_indexada`,
+`politica_valor_no_disponible`, `conserva_capital_original` y
+`genera_ajuste_por_diferencia`) permanecen por bloque mientras conserven contrato
+vigente.
+
+El mismo shape raíz se usa en preview sin venta, preview con venta, generación
+granular y los planes anidados en confirmación directa y desde reserva. No se crea
+endpoint nuevo. La consulta integral PPV2 expone una sola `base_indexacion` a nivel
+plan con los cinco campos funcionales y `estado_base`, mientras cada bloque expone
+sólo su configuración de método y las obligaciones conservan su trazabilidad
+financiera aplicada.
+
+### 6.4 Valor publicado al alta y frontera #428
+
+`#427` aplica la alternativa A: Comercial recibe índice y período pactados y
+consume un query service interno de Financiero que busca el valor `PUBLICADO`
+exactamente correspondiente al período mensual. No usa HTTP interno ni consulta
+SQL financiero desde el service Comercial.
+
+- cero valores exactos: persiste `BASE_PENDIENTE`;
+- un valor exacto: persiste su id y snapshot como `BASE_DISPONIBLE`;
+- más de un valor dentro del mismo período: inconsistencia técnica controlada;
+- un valor anterior, aunque sea el último publicado: no es valor base aplicable.
+
+El query normaliza el período recibido y busca `fecha_valor >= periodo_base` y
+`fecha_valor < periodo_base + 1 mes`; no modifica el selector objetivo heredado.
+La identidad y el snapshot resultantes se persisten en la misma transacción del
+write Comercial. `#428` completa posteriormente sólo bases pendientes y
+materializa sus efectos de manera idempotente.
+
+### 6.5 Migración estructural sin datos preservables
+
+No existe backfill de filas. El entorno se recrea desde cero después del cambio.
+
+- se crea `plan_pago_venta_indexacion` como fuente única;
+- de `plan_pago_venta_bloque_indexacion` se eliminan
+  `id_indice_financiero`, `fecha_base_indice` y `valor_base_indice`;
+- `plan_pago_venta_bloque_indexacion` se conserva reducida a las políticas del
+  método propias del tramo, sin FK duplicada a la base común;
+- Financiero obtiene la base mediante
+  `plan_pago_venta_bloque → plan_pago_venta → plan_pago_venta_indexacion`;
+- `obligacion_financiera_indexacion` se conserva: es snapshot de la aplicación
+  efectiva por obligación, no autoridad de la cláusula;
+- `corrida_indexacion_financiera` y su detalle se conservan: son trazabilidad de
+  ejecución; sus writers/readers se adaptan a la base común;
+- seeds, bootstrap, demo, fixtures y helpers SQL se reescriben para el nuevo
+  modelo; no se agrega compatibilidad de lectura de filas anteriores;
+- los scripts documentados de reset/bootstrap deben construir exclusivamente el
+  nuevo esquema.
+
+### 6.6 Bloques
+
+- Sólo `TRAMO_CUOTAS` puede declarar `metodo_liquidacion=INDEXACION` en este
+  incremento.
+- `ANTICIPO`, `CONTADO`, `SALDO` y `REFUERZO` independientes continúan no
+  indexados.
+- Un bloque no indexado no crea, cambia ni reinicia la base.
+- Varios tramos indexados consumen la misma base del plan.
+- Los refuerzos internos de un tramo indexado heredan la base de ese tramo; nunca
+  crean una configuración de base propia.
+
+### 6.7 Services
 
 - Administrativo provee la configuración general vigente.
 - Comercial calcula la sugerencia de período base y vencimiento con fecha de venta
   explícita, conserva la selección/edición y arma la cláusula pactada.
-- Financiero desplaza el período objetivo a partir del ancla original, resuelve el
-  valor exacto publicado, calcula coeficiente/ajuste y materializa pendientes.
+- Financiero resuelve el valor base exacto al alta mediante el query interno de
+  `#427`. El desplazamiento del período objetivo, la resolución del valor objetivo
+  y la materialización permanecen en `#429`, `#423` y `#428` respectivamente.
 - La materialización de `#428` debe ser transaccional e idempotente y no crear
   trazabilidad aplicada hasta tener ambos valores válidos.
 - Ninguna política financiera debe leer el reloj global con `date.today()`.
 
-### 6.5 Repository/selector futuro
+### 6.8 Repository/selector futuro
 
 Para deuda definitiva no es suficiente ni válido:
 
@@ -338,8 +430,9 @@ información/estimación explícita.
 Contractualmente debe existir un único valor publicado por índice y período
 mensual. Si se detectan varios, el selector futuro debe informar incompatibilidad:
 no puede desempatar por día, fecha de publicación, id ni orden de inserción. La
-auditoría de duplicados históricos, saneamiento, migración, normalización física y
-constraint/índice único mensual permanecen pendientes de implementación.
+normalización/unicidad global del catálogo y el selector objetivo continúan
+fuera de `#427`. El query base de `#427` rechaza múltiples valores del mismo mes;
+no desempata ni modifica el catálogo.
 
 ## 7. Responsabilidades por issue
 
@@ -347,7 +440,7 @@ constraint/índice único mensual permanecen pendientes de implementación.
 | --- | --- |
 | `#425` | define los dos días configurables, su ownership administrativo y cálculo dinámico |
 | `#426` | fija algoritmo y editabilidad del vencimiento sugerido; confirma que un día inexistente se limita al último día válido del mes destino |
-| `#427` | fija una única base por venta y la migración desde bases heredadas por bloque |
+| `#427` | materializa una única base en `plan_pago_venta_indexacion` y elimina la autoridad base por bloque |
 | `#428` | fija cuándo una base pendiente puede materializar obligaciones y qué no debe persistirse antes |
 | `#429` | fija período objetivo persistido, secuencia global y desplazamiento contra el ancla original |
 | `#423` | reemplaza fallback abierto por selección exacta del período objetivo |
@@ -379,14 +472,35 @@ del mismo mes sin desplazamiento; y cambio de mes con desplazamiento del objetiv
 Cada PR write deberá completar la checklist CORE-EF y sus tests reales. Esta matriz
 no declara cobertura existente.
 
-## 9. Decisión CORE-EF de este incremento
+## 9. Decisión CORE-EF
 
-- Clasificación: documentación/diseño, sin command ejecutable.
-- Preview PPV2 vigente: `PREVIEW_READLIKE`; no cambia headers ni produce efectos.
-- Generación PPV2 vigente: `COMMAND_WRITE_NEGOCIO`; sin cambios.
-- Headers, `If-Match-Version`, idempotencia, outbox, lock, versionado y frontera
-  transaccional/rollback: **sin cambios**.
-- Tests CORE-EF ejecutables: **NO APLICA**, porque no se modifica ningún endpoint.
+- Esta reconciliación es documentación/diseño y no ejecuta commands.
+- Preview PPV2 con y sin venta permanece `PREVIEW_READLIKE`: sin headers write,
+  `If-Match-Version`, receipt, outbox, locks ni efectos persistentes.
+- Generación granular, confirmación directa completa y confirmación completa desde
+  reserva son `COMMAND_WRITE_NEGOCIO`.
+- Los tres writes preservan `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id` y
+  `X-Instalacion-Id` según su contrato heredado vigente. `#427` no migra identidad
+  humana ni introduce Bearer. Si un endpoint se migra a Bearer en otro incremento,
+  deberá usar `AuthenticatedPrincipal` y prohibir `X-Usuario-Id` como identidad.
+- Confirmación desde reserva conserva `If-Match-Version` sobre la reserva. La
+  confirmación directa y la generación granular no incorporan
+  `If-Match-Version`: crean/reutilizan el plan y su base dentro del command; no se
+  agrega CAS sin una mutación versionada/race demostrada.
+- `plan_pago_venta_indexacion` posee `version_registro` y metadata CORE-EF. Su alta
+  y replay quedan incluidos en la idempotencia del command dueño, no crean un
+  receipt paralelo.
+- Mismo `op_id` y mismo payload reutiliza plan/base; mismo `op_id` con otra base
+  devuelve conflicto y no muta. Se conservan las claves vigentes de generación y
+  `clave_funcional_origen` para obligaciones.
+- La generación granular no agrega outbox. Las confirmaciones conservan el outbox
+  vigente de venta; no se crea un evento exclusivo para la base.
+- Venta, plan, base común, bloques, obligaciones, trazabilidad financiera y outbox
+  aplicable comparten la transacción exterior. Cualquier error produce rollback
+  completo.
+- No se agrega lock nuevo. La unicidad física y la compatibilidad de replay son la
+  protección requerida; una carrera concreta que no quede cubierta deberá
+  demostrarse antes de introducir lock/CAS.
 
 ## 10. Fuera de alcance y NO CONFIRMADO
 
@@ -395,12 +509,14 @@ No se implementan SQL, backend, frontend, selector `#423`, jobs, ni los issues
 `determine_initial_obligation_state()`, fórmula, redondeo ni lógica temporal de
 `#420/#422`.
 
-Continúa `NO CONFIRMADO`:
+Para `#427` quedan confirmados tabla, campos, nulabilidad, estado derivado, API,
+consulta exacta inicial, reducción de la tabla por bloque, ausencia de backfill,
+constraints y comportamiento CORE-EF. Continúa fuera de alcance o `NO CONFIRMADO`:
 
-- tabla y nombres físicos definitivos de la base común;
-- necesidad de persistir el id del valor base además de período y valor;
-- tratamiento migratorio de ventas cuyos bloques heredados discrepen;
-- auditoría, saneamiento y migración de valores duplicados por índice/mes;
-- constraint o índice único físico mensual y tratamiento de fechas no normalizadas;
+- constraint/índice único mensual global del catálogo y tratamiento general de
+  fechas de valor no normalizadas, reservados para su incremento financiero;
 - reglas para periodicidades distintas de la mensual;
-- endpoints/envelopes definitivos de los incrementos futuros.
+- período objetivo y envelopes de `#429`;
+- materialización posterior de `#428`;
+- selector objetivo definitivo de `#423`;
+- presentación e integración frontend de `#430/#431`.
