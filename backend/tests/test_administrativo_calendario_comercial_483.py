@@ -5,8 +5,6 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import text
-
 from app.api.authentication import get_authenticated_principal
 from app.application.administrativo.authentication import AuthenticatedPrincipal
 from app.application.administrativo.authorization import (
@@ -20,7 +18,7 @@ from app.application.administrativo.services.obtener_configuracion_calendario_co
 from app.infrastructure.persistence.repositories.calendario_comercial_query_repository import (
     CalendarioComercialQueryRepository,
 )
-
+from sqlalchemy import text
 
 ENDPOINT = "/api/v1/administrativo/configuracion/calendario-comercial"
 CIERRE = "DIA_CIERRE_COMERCIAL"
@@ -145,7 +143,7 @@ def test_fixture_raiz_no_consume_identity_sequence(db_session):
 
 
 @pytest.mark.parametrize("historical_ids", [(483_000_010,), (483_000_010, 483_000_011)])
-def test_query_service_usa_unica_raiz_activa_con_historicas(
+def test_query_service_rechaza_raiz_activa_con_historicas(
     db_session, historical_ids
 ):
     for fixture_id in historical_ids:
@@ -153,10 +151,8 @@ def test_query_service_usa_unica_raiz_activa_con_historicas(
     _root(db_session, fixture_id=483_000_012)
     _period(db_session, "2026-01-01", None)
 
-    snapshot = _service(db_session).obtener(date(2026, 2, 1))
-
-    # Las históricas quedaron en versión 2 al aplicar su baja; la activa es v1.
-    assert snapshot.version_agregada == 1
+    with pytest.raises(ConfiguracionCalendarioComercialInconsistente):
+        _service(db_session).obtener(date(2026, 2, 1))
 
 
 def test_query_service_rechaza_si_solo_hay_raiz_historica(db_session):
