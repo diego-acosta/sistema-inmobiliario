@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Annotated
@@ -272,6 +273,8 @@ from sqlalchemy.orm import Session
 
 router = APIRouter(tags=["Comercial"])
 
+_FECHA_CIVIL_PATTERN = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+
 _CORE_EF_REQUIRED_HEADERS_OPENAPI = {
     "parameters": [
         {
@@ -326,6 +329,15 @@ def _core_ef_error_response(exc: CoreEFHeaderValidationError) -> JSONResponse:
         details={"header": exc.header_name},
     )
     return JSONResponse(status_code=400, content=error.model_dump())
+
+
+def _parse_fecha_civil_query(value: str | None) -> date | None:
+    if value is None or _FECHA_CIVIL_PATTERN.fullmatch(value) is None:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
 
 
 def _parse_core_ef_headers_or_error(
@@ -2094,16 +2106,24 @@ def list_ventas(
     },
 )
 def resolver_primer_vencimiento_sugerido(
-    fecha_venta: Annotated[date, Query()],
     db: Annotated[Session, Depends(get_db)],
+    fecha_venta: Annotated[str | None, Query()] = None,
 ) -> PrimerVencimientoSugeridoResponse | JSONResponse:
-    service = ResolverPrimerVencimientoSugeridoService(
-        ObtenerConfiguracionCalendarioComercialQueryService(
-            CalendarioComercialQueryRepository(db)
+    fecha_venta_parseada = _parse_fecha_civil_query(fecha_venta)
+    if fecha_venta_parseada is None:
+        error = ErrorResponse(
+            error_code="VALIDATION_ERROR",
+            error_message="fecha_venta debe tener formato YYYY-MM-DD",
         )
-    )
+        return JSONResponse(status_code=422, content=error.model_dump())
+
     try:
-        result = service.resolver(fecha_venta)
+        service = ResolverPrimerVencimientoSugeridoService(
+            ObtenerConfiguracionCalendarioComercialQueryService(
+                CalendarioComercialQueryRepository(db)
+            )
+        )
+        result = service.resolver(fecha_venta_parseada)
     except PrimerVencimientoSugeridoFueraDeRango as exc:
         error = ErrorResponse(
             error_code=exc.code,
@@ -2127,6 +2147,14 @@ def resolver_primer_vencimiento_sugerido(
             error_code=exc.code,
             error_message=(
                 "El calendario comercial no permite resolver una configuracion segura."
+            ),
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+    except Exception:  # noqa: BLE001 - frontera HTTP sanitizada
+        error = ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            error_message=(
+                "No fue posible resolver el vencimiento inicial sugerido."
             ),
         )
         return JSONResponse(status_code=500, content=error.model_dump())

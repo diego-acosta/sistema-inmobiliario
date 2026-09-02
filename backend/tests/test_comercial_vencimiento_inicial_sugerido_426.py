@@ -137,10 +137,43 @@ def test_api_mes_corto(client, db_session):
     assert response.json()["data"]["fecha_primer_vencimiento_sugerida"] == "2027-02-28"
 
 
-@pytest.mark.parametrize("fecha_venta", ["", "no-es-fecha", "2026-02-30"])
+@pytest.mark.parametrize(
+    "fecha_venta",
+    [
+        None,
+        "",
+        "no-es-fecha",
+        "2026-02-30",
+        "2026-05-10T00:00:00",
+        "0",
+        "1746835200",
+        "２０２６-０５-１０",
+    ],
+)
 def test_api_rechaza_fecha_invalida(client, fecha_venta):
-    response = client.get(ENDPOINT, params={"fecha_venta": fecha_venta})
+    params = {} if fecha_venta is None else {"fecha_venta": fecha_venta}
+    response = client.get(ENDPOINT, params=params)
+
     assert response.status_code == 422
+    assert response.json()["error_code"] == "VALIDATION_ERROR"
+    assert response.json()["error_message"] == (
+        "fecha_venta debe tener formato YYYY-MM-DD"
+    )
+    assert "detail" not in response.json()
+
+
+def test_api_acepta_fecha_venta_civil_estricta(client):
+    with patch(
+        "app.api.routers.comercial_router."
+        "ObtenerConfiguracionCalendarioComercialQueryService.obtener",
+        return_value=_Calendario(10, 15),
+    ):
+        response = client.get(ENDPOINT, params={"fecha_venta": "2026-05-10"})
+
+    assert response.status_code == 200
+    assert response.json()["data"]["fecha_primer_vencimiento_sugerida"] == (
+        "2026-06-15"
+    )
 
 
 @pytest.mark.parametrize("fecha_venta", ["9999-12-01", "9999-11-11"])
@@ -179,6 +212,23 @@ def test_api_inconsistencia_es_error_tecnico_controlado(client):
         response.json()["error_code"]
         == "CONFIGURACION_CALENDARIO_COMERCIAL_INCONSISTENTE"
     )
+
+
+def test_api_error_inesperado_es_error_tecnico_sanitizado(client):
+    with patch(
+        "app.api.routers.comercial_router."
+        "ObtenerConfiguracionCalendarioComercialQueryService.obtener",
+        side_effect=RuntimeError("db failure"),
+    ):
+        response = client.get(ENDPOINT, params={"fecha_venta": "2026-05-10"})
+
+    assert response.status_code == 500
+    assert response.json()["error_code"] == "INTERNAL_ERROR"
+    assert response.json()["error_message"] == (
+        "No fue posible resolver el vencimiento inicial sugerido."
+    )
+    assert "db failure" not in response.text
+    assert "detail" not in response.json()
 
 
 def test_resolver_no_degrada_errores_administrativos():
