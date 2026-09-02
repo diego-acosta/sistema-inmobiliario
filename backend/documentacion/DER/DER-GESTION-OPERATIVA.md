@@ -42,6 +42,25 @@ en documentos operativos es una diferencia de seguimiento, no de diseño.
 
 ## 4. Clasificación y ownership
 
+### 4.1 Clasificación semántica
+
+| Elemento | Clasificación semántica |
+| --- | --- |
+| `Tarea` | Núcleo del dominio |
+| `ComentarioTarea` | Núcleo del dominio |
+| `HistorialTarea` | Núcleo del dominio |
+| Identidad, autenticación y autorización provistas por Administrativo | Soporte transversal |
+| Metadata y versionado CORE-EF, idempotencia, procedencia técnica, outbox, inbox, sync, retry, `PENDING_DEPENDENCY`, fencing, lease y operation scope aplicables | Soporte transversal |
+| Antiguos `CU-OPER-*` y cualquier modelo legacy de tareas | Compatibilidad heredada / documentación histórica desalineada; no se adopta como modelo principal de Gestión Operativa |
+
+Esta clasificación semántica no modifica aggregate boundaries ni naturaleza
+técnica: `Tarea` continúa como aggregate root, `ComentarioTarea` como append
+sincronizable independiente e `HistorialTarea` como append funcional interno.
+Clasificar una capacidad como soporte transversal tampoco transfiere su
+ownership a GOP.
+
+### 4.2 Ownership
+
 | Dominio owner | Responsabilidad |
 | --- | --- |
 | Gestión Operativa | `Tarea`, `ComentarioTarea`, `HistorialTarea` y lifecycle funcional de Tarea |
@@ -105,11 +124,11 @@ versión esperada. Toda mutación material posterior avanza exactamente
 | `origen` | Sí | No | `USUARIO`; `SISTEMA` reservado |
 | creador | Condicional | No | FK local a `usuario` |
 | `generador_sistema` | Condicional | No | Descriptor funcional, no credencial |
-| título | Sí | Sí | Texto no nullable, funcionalmente no vacío y con contenido textual real |
-| descripción | No | Sí | Texto funcional |
-| prioridad | Sí | Sí | `BAJA` / `NORMAL` / `ALTA` / `URGENTE`; orden semántico `BAJA < NORMAL < ALTA < URGENTE`; al omitirse en creación adopta conceptualmente `NORMAL` |
-| responsable | Condicional por estado | Sí | FK local a `usuario`; máximo uno; obligatorio en `EN_CURSO` y `COMPLETADA` |
-| `fecha_objetivo` | No | Sí | `DATE` funcional |
+| título | Sí | Sólo si lifecycle editable | Texto no nullable, funcionalmente no vacío y con contenido textual real |
+| descripción | No | Sólo si lifecycle editable | Texto funcional |
+| prioridad | Sí | Sólo si lifecycle editable | `BAJA` / `NORMAL` / `ALTA` / `URGENTE`; orden semántico `BAJA < NORMAL < ALTA < URGENTE`; al omitirse en creación adopta conceptualmente `NORMAL` |
+| responsable | Condicional por estado | Sólo si lifecycle editable | FK local a `usuario`; máximo uno; obligatorio en `EN_CURSO` y `COMPLETADA` |
+| `fecha_objetivo` | No | Sólo si lifecycle editable | `DATE` funcional |
 | estado | Sí | Transición válida | `PENDIENTE` / `EN_CURSO` / `COMPLETADA` / `CANCELADA`; el único estado inicial es `PENDIENTE` |
 | `fecha_finalizacion` | Sólo en `COMPLETADA` | Derivada | Instante vigente generado por servidor al completar; `NULL` en los demás estados |
 | sucursal | No | No en MVP | FK local a `sucursal`; `NULL` global |
@@ -160,7 +179,26 @@ usuario, sucursal y vínculo vigentes, intervalo temporal, `puede_operar` y
 autorización Administrativa efectiva permanece en application layer / DEV-SRV.
 Este DER no decide `CHECK`, trigger ni otro mecanismo físico para estas reglas.
 
-### 6.4 Metadata CORE-EF
+### 6.4 Mutabilidad y terminalidad
+
+`PENDIENTE` y `EN_CURSO` son los estados editables del snapshot, siempre sujetos
+a transición válida, autorización y demás reglas funcionales aplicables. Título,
+descripción, prioridad, responsable y fecha objetivo sólo admiten modificación
+ordinaria mientras el lifecycle sea editable. El campo estado nunca es edición
+libre: cambia únicamente mediante una transición válida de lifecycle.
+
+`COMPLETADA` y `CANCELADA` congelan el snapshot funcional. Mientras una Tarea
+permanece `COMPLETADA` no admite edición ordinaria; la única mutación de Tarea
+permitida es la reapertura explícita `COMPLETADA → PENDIENTE` con sus invariantes
+ya definidas. `CANCELADA` no reabre y no admite mutación ordinaria del snapshot.
+
+Congelar el snapshot de Tarea no prohíbe agregar `ComentarioTarea`: cuando la
+autorización aplicable lo permita, el comentario sigue siendo válido en
+`COMPLETADA` y `CANCELADA` como append independiente. No reabre ni modifica el
+snapshot, no incrementa `Tarea.version_registro` y no usa su CAS ni
+`If-Match-Version`.
+
+### 6.5 Metadata CORE-EF
 
 Tarea requiere conceptualmente el bloque aplicable completo:
 
@@ -225,6 +263,9 @@ Agregar un comentario:
 - no usa versión esperada ni `If-Match-Version` de Tarea;
 - no se edita ni se borra funcionalmente;
 - no genera un historial duplicado de comentarios.
+
+Puede agregarse, con autorización aplicable, aunque la Tarea esté `COMPLETADA` o
+`CANCELADA`; esa operación no altera la terminalidad ni el snapshot de Tarea.
 
 ## 8. HistorialTarea
 
@@ -368,6 +409,11 @@ instalación.
 - `COMPLETADA` exige `fecha_finalizacion` vigente, generada por servidor al
   completar; `PENDIENTE`, `EN_CURSO` y `CANCELADA` exigen
   `fecha_finalizacion = NULL`.
+- `PENDIENTE` y `EN_CURSO` admiten edición ordinaria según reglas aplicables;
+  `COMPLETADA` y `CANCELADA` congelan el snapshot. `COMPLETADA` sólo admite la
+  reapertura explícita a `PENDIENTE`; `CANCELADA` no reabre.
+- Los comentarios autorizados en estados terminales siguen siendo appends
+  independientes y no mutan, reabren, versionan ni usan el CAS de Tarea.
 - La metadata CORE-EF no duplica semántica funcional.
 - Las referencias externas persisten FK local y no copian UID del owner.
 - La sucursal funcional es nullable, inmutable en MVP y `NULL` significa global.
