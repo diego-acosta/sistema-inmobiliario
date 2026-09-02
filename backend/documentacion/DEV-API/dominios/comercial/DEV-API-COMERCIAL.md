@@ -1843,9 +1843,11 @@ día de cierre inclusive usa el mes siguiente y una venta posterior usa el
 segundo mes siguiente. Si el día configurado no existe, se limita al último día
 del mes destino.
 
-La sugerencia es efímera. Directa, desde reserva y granular usan esta misma
-consulta antes del write; los commands existentes continúan exigiendo
-`fecha_primer_vencimiento` explícita y nunca la recalculan ni sobrescriben.
+La sugerencia es efímera. La consulta queda disponible como paso previo para los
+flujos directa, desde reserva y granular. Su invocación efectiva corresponde al
+cliente/UI antes del write y permanece pendiente de integración en `#430`. Los
+commands existentes continúan exigiendo `fecha_primer_vencimiento` explícita y
+nunca la recalculan ni sobrescriben.
 
 Errores:
 

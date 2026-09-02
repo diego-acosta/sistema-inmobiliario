@@ -110,9 +110,9 @@ si día(F) <= C: primer vencimiento = día V del mes(F) + 1 mes
 si día(F) >  C: primer vencimiento = día V del mes(F) + 2 meses
 ```
 
-La fecha sugerida es editable antes de confirmar. La política para `V` cuando el
-día no existe en el mes (por ejemplo, 31 de febrero) queda `NO CONFIRMADA`; `#426`
-debe cerrarla con evidencia funcional antes de implementar.
+La fecha sugerida es editable antes de confirmar. Política confirmada por `#426`:
+si el día de vencimiento configurado no existe en el mes destino, se utiliza el
+último día válido de dicho mes (por ejemplo, 31 en febrero resulta en 28 o 29).
 
 ### 4.5 Período objetivo por obligación
 
@@ -346,7 +346,7 @@ constraint/índice único mensual permanecen pendientes de implementación.
 | Issue | Habilitación proporcionada por #424 |
 | --- | --- |
 | `#425` | define los dos días configurables, su ownership administrativo y cálculo dinámico |
-| `#426` | fija algoritmo y editabilidad del vencimiento sugerido; deja explícito el día inexistente como `NO CONFIRMADO` |
+| `#426` | fija algoritmo y editabilidad del vencimiento sugerido; confirma que un día inexistente se limita al último día válido del mes destino |
 | `#427` | fija una única base por venta y la migración desde bases heredadas por bloque |
 | `#428` | fija cuándo una base pendiente puede materializar obligaciones y qué no debe persistirse antes |
 | `#429` | fija período objetivo persistido, secuencia global y desplazamiento contra el ancla original |
@@ -363,7 +363,7 @@ resuelve fecha operativa transversal, no reabre la temporalidad corregida en
 | Issue | Aceptaciones ejecutables futuras mínimas |
 | --- | --- |
 | `#425` | límites de días; venta en/antes/después del cierre; cambio de mes/año; ausencia de job |
-| `#426` | primer/segundo mes; edición permitida; fin de mes una vez cerrada su regla |
+| `#426` | primer/segundo mes; edición permitida; fin de mes con límite al último día válido |
 | `#427` | varios bloques comparten base; bloque no indexado no reinicia; rechazo de divergencias |
 | `#428` | base pendiente no materializa; publicación exacta materializa una vez; rollback e idempotencia |
 | `#429` | secuencia mensual; tramo intermedio; ediciones 0/+1/+N/-1; rechazo anterior a base |
@@ -397,7 +397,6 @@ No se implementan SQL, backend, frontend, selector `#423`, jobs, ni los issues
 
 Continúa `NO CONFIRMADO`:
 
-- política para un día de vencimiento inexistente en el mes;
 - tabla y nombres físicos definitivos de la base común;
 - necesidad de persistir el id del valor base además de período y valor;
 - tratamiento migratorio de ventas cuyos bloques heredados discrepen;
