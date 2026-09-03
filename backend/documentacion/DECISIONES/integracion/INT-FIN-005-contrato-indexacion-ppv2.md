@@ -514,6 +514,75 @@ normalización/unicidad global del catálogo y el selector objetivo continúan
 fuera de `#427`. El query base de `#427` rechaza múltiples valores del mismo mes;
 no desempata ni modifica el catálogo.
 
+### 6.9 Outbox portable y recepción remota
+
+La generación granular es `COMMAND_WRITE_NEGOCIO + SINCRONIZABLE`. El evento
+contractual nuevo queda congelado como:
+
+```text
+event_type = plan_pago_venta_generado
+aggregate_type = plan_pago_venta
+owner/publicador = Comercial
+```
+
+El nombre sigue el catálogo `EVT-COM`, que usa hechos de negocio en pasado.
+`#427` deberá incorporarlo formalmente al catálogo al implementar runtime.
+Comercial publica el resultado causal del command y conserva ownership de
+`plan_pago_venta` y `base_indexacion`; incluir snapshots financieros necesarios
+para convergencia no transfiere a Comercial el ownership de obligaciones,
+conceptos ni trazabilidad, que continúa en Financiero.
+
+El evento usa el envelope portable y la canonicalización/hash Sync vigentes. Su
+aggregate distribuido es `plan_pago_venta.uid_global`; cualquier `aggregate_id`
+local de la fila técnica outbox no se transporta ni se interpreta como identidad
+remota. El payload mínimo contiene:
+
+- metadata: `uid_instalacion_origen` y `payload_hash` según el contrato
+  transversal;
+- raíz: `aggregate_uid`, `version_registro` final del plan y `op_id`;
+- venta: `venta.uid_global`, sólo como referencia portable requerida;
+- plan: snapshot contractual material completo, con su `uid_global`,
+  `version_registro`, estado y campos del PPV2;
+- base común, cuando existe: `plan_pago_venta_indexacion.uid_global`,
+  `version_registro`, período, snapshot/estado y
+  `indice_financiero.uid_global`; si existe valor base publicado, usa
+  `indice_financiero_valor.uid_global`, nunca sus PK locales;
+- bloques: `plan_pago_venta_bloque.uid_global`, `version_registro`, orden,
+  importes, fechas, método y políticas materiales;
+- relación generadora y generación: sus `uid_global`, `version_registro` y
+  campos materiales necesarios para reconstrucción;
+- obligaciones, composiciones y obligados/participantes generados: `uid_global`,
+  `version_registro`, snapshots materiales y referencias por los `uid_global`
+  de plan, bloque, concepto financiero y persona/rol que correspondan.
+
+No se incluyen PK locales como identidad distribuida ni campos ajenos a la
+reconstrucción del grafo. Los conceptos, participantes, índice y valor del índice
+se referencian mediante la identidad portable definida por su owner; el consumer
+no los redefine desde este evento.
+
+La estrategia de emisión es única:
+
+- generación granular exitosa: emite exactamente un
+  `plan_pago_venta_generado`;
+- confirmación directa: conserva `venta_confirmada` y emite además exactamente
+  un `plan_pago_venta_generado` por el plan creado;
+- confirmación desde reserva: conserva `venta_confirmada` y emite además
+  exactamente un `plan_pago_venta_generado` por el plan creado.
+
+No se amplía `venta_confirmada` para duplicar el grafo PPV2: ese evento mantiene
+el lifecycle de la venta, mientras `plan_pago_venta_generado` representa el
+snapshot del agregado plan y sus efectos causales. Son eventos de agregados
+distintos. En directa/reserva ambos se confirman atómicamente; si el evento de
+plan llega antes que la venta o que otra referencia portable, el receiver no crea
+placeholders.
+
+El futuro consumer reutiliza `#511/#512` y la infraestructura Sync vigente:
+deduplica por delivery/operation, valida envelope y fingerprint, resuelve cada
+`uid_global` a su PK local, devuelve `PENDING_DEPENDENCY` ante una dependencia
+portable requerida ausente, respeta `version_registro`, aplica el grafo completo
+atómicamente y no usa LWW por timestamps ni copia PK remotas. No crea inbox,
+ledger, retry ni deduplicación paralelos.
+
 ## 7. Responsabilidades por issue
 
 | Issue | Habilitación proporcionada por #424 |
@@ -537,7 +606,7 @@ resuelve fecha operativa transversal, no reabre la temporalidad corregida en
 | --- | --- |
 | `#425` | límites de días; venta en/antes/después del cierre; cambio de mes/año; ausencia de job |
 | `#426` | primer/segundo mes; edición permitida; fin de mes con límite al último día válido |
-| `#427` | varios bloques comparten base; bloque no indexado no reinicia; rechazo de divergencias; base disponible + objetivo exacto ausente + valor anterior publicado conserva `PROYECTADA`; el selector `<= fecha` no materializa; creación sin CAS y reutilización granular con CAS |
+| `#427` | varios bloques comparten base; bloque no indexado no reinicia; rechazo de divergencias; base disponible + objetivo exacto ausente + valor anterior publicado conserva `PROYECTADA`; el selector `<= fecha` no materializa; creación sin CAS y reutilización granular con CAS; outbox portable, rollback, replay sin duplicado, conflicto sin evento y recepción con `PENDING_DEPENDENCY` |
 | `#428` | base pendiente no materializa; publicación exacta materializa una vez; rollback e idempotencia |
 | `#429` | secuencia mensual; tramo intermedio; ediciones 0/+1/+N/-1; rechazo anterior a base |
 | `#423` | exacto publicado; exacto ausente; anterior no aplicado; dos publicados del mismo índice/mes rechazados; normalización mensual |
@@ -551,6 +620,22 @@ del mismo mes sin desplazamiento; y cambio de mes con desplazamiento del objetiv
 
 Cada PR write deberá completar la checklist CORE-EF y sus tests reales. Esta matriz
 no declara cobertura existente.
+
+Para el outbox de `#427` son obligatorios, como mínimo:
+
+1. granular exitoso genera exactamente un `plan_pago_venta_generado`;
+2. outbox y grafo persistido confirman en la misma transacción;
+3. fallo al persistir outbox revierte plan, base, bloques, relación/generación,
+   obligaciones, composiciones, obligados y receipt;
+4. replay exacto no duplica el evento;
+5. conflicto idempotente no muta ni crea evento;
+6. payload no usa PK remotas como identidad portable;
+7. receiver resuelve todas las referencias portables a PK locales;
+8. dependencia portable ausente produce `PENDING_DEPENDENCY` sin placeholders;
+9. directa y reserva emiten `venta_confirmada` y
+   `plan_pago_venta_generado` de forma atómica, con convergencia equivalente al
+   granular;
+10. ningún write sincronizable de PPV2 confirma sin evento distribuible.
 
 ## 9. Decisión CORE-EF
 
@@ -603,11 +688,19 @@ no declara cobertura existente.
   conflicto. Si el receipt ya fue completado, un payload distinto produce
   conflicto. Se conservan las claves vigentes de generación y
   `clave_funcional_origen` para obligaciones.
-- La generación granular no agrega outbox. Las confirmaciones conservan el outbox
-  vigente de venta; no se crea un evento exclusivo para la base.
-- Venta, plan, base común, bloques, obligaciones, trazabilidad financiera y outbox
-  aplicable comparten la transacción exterior. Cualquier error produce rollback
-  completo.
+- La generación granular es sincronizable y persiste exactamente un
+  `plan_pago_venta_generado`. Directa y desde reserva conservan
+  `venta_confirmada` y agregan exactamente un `plan_pago_venta_generado`; no
+  duplican el grafo PPV2 dentro del evento de venta.
+- En granular, plan, base común, bloques, relación/generación, obligaciones,
+  composiciones, obligados, receipt/completion y outbox comparten la transacción
+  exterior. En directa se suman venta y su outbox; desde reserva se suman reserva,
+  venta y sus outbox. No existen commits internos.
+- Cualquier fallo, incluido persistir cualquiera de los eventos, produce rollback
+  completo. Está prohibido un commit funcional sincronizable sin outbox.
+- Mismo `op_id` y payload completo en `REPLAY` devuelve el snapshot durable y
+  no duplica eventos; payload distinto produce conflicto, no muta y no emite un
+  nuevo evento. Completion/receipt y outbox quedan en la misma transacción.
 - No se agrega lock nuevo. La unicidad física, el replay y el CAS focal sobre el
   plan versionado son las protecciones requeridas; una carrera distinta que no
   quede cubierta deberá demostrarse antes de introducir otro lock.
