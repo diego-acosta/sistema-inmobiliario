@@ -564,17 +564,42 @@ La estrategia de emisión es única:
 
 - generación granular exitosa: emite exactamente un
   `plan_pago_venta_generado`;
-- confirmación directa: conserva `venta_confirmada` y emite además exactamente
-  un `plan_pago_venta_generado` por el plan creado;
+- confirmación directa: emite `persona_creada` y
+  `documento_identificatorio_agregado` por cada dependencia inline nueva,
+  `venta_confirmada` V2 y exactamente un `plan_pago_venta_generado`;
 - confirmación desde reserva: conserva `venta_confirmada` y emite además
   exactamente un `plan_pago_venta_generado` por el plan creado.
 
-No se amplía `venta_confirmada` para duplicar el grafo PPV2: ese evento mantiene
-el lifecycle de la venta, mientras `plan_pago_venta_generado` representa el
-snapshot del agregado plan y sus efectos causales. Son eventos de agregados
-distintos. En directa/reserva ambos se confirman atómicamente; si el evento de
-plan llega antes que la venta o que otra referencia portable, el receiver no crea
-placeholders.
+`venta_confirmada` conserva su `event_type` y evoluciona al schema portable `2`
+del envelope Sync vigente. Es el evento autoritativo Comercial que crea o converge
+Venta donde aún no existe. Su snapshot contiene `venta.uid_global`,
+`version_registro`, estado, fecha contractual, código, monto/moneda y demás campos
+no derivados necesarios; referencia reserva y objetos sólo por identidades
+portables de sus owners e incluye `op_id` y procedencia. No transporta
+`id_venta`, `id_reserva_venta`, `id_inmueble`, `id_unidad_funcional` ni otra PK
+de origen como identidad distribuida.
+
+Se mantiene el nombre porque es el mismo hecho y owner; `schema_version = 2`
+evita otra familia semántica. `#427` actualiza conjuntamente producers y todos
+los consumers vigentes, incluidos Financiero e Inmuebles, con default-deny. Como
+no hay deliveries productivos que preservar y la DB se recrea, V1 no es contrato
+de recepción posterior al corte de `#427` ni se infieren sus campos locales.
+`venta_confirmada` crea/converge Venta; `plan_pago_venta_generado` crea/converge
+plan, base y efectos causales y sólo referencia `venta.uid_global`.
+
+La directa que crea `compradores[].datos_persona` reutiliza los eventos Personas
+ya catalogados `persona_creada` y `documento_identificatorio_agregado`. Personas
+conserva ownership y publicación contractual aunque Comercial coordine el caso.
+Se elige la estrategia A mediante el prerequisito transversal `#534`, que
+materializa sus producers/consumers portables mínimos sobre Sync vigente. Luego
+la directa de `#427` persiste ambos outbox, con snapshots Personas-owned,
+UID, versión, referencias portables y envelope versionado, en la misma transacción
+exterior. Venta y plan nunca redefinen Persona.
+
+No se exige FIFO global. Si plan o venta llegan antes que Persona/documento u
+otra dependencia, se registra `PENDING_DEPENDENCY` y `#511/#512` reintenta cuando
+llega el evento del owner. Sólo se admite para dependencias con vía autoritativa
+real, no como espera de una entidad que jamás se publica.
 
 El futuro consumer reutiliza `#511/#512` y la infraestructura Sync vigente:
 deduplica por delivery/operation, valida envelope y fingerprint, resuelve cada
@@ -582,6 +607,47 @@ deduplica por delivery/operation, valida envelope y fingerprint, resuelve cada
 portable requerida ausente, respeta `version_registro`, aplica el grafo completo
 atómicamente y no usa LWW por timestamps ni copia PK remotas. No crea inbox,
 ledger, retry ni deduplicación paralelos.
+
+### 6.10 Identidades portables y resolubilidad física
+
+Toda identidad remota por `uid_global` debe ser `NOT NULL` y tener `UNIQUE`
+físico antes de habilitar su consumer. Un índice ordinario no alcanza. La
+auditoría del SQL vigente congela esta matriz:
+
+| Entidad | Se transporta | UID portable | UNIQUE físico actual | Acción #427/prerequisito |
+| --- | --- | --- | --- | --- |
+| `venta` | raíz de venta; referencia del plan | `uid_global` | sí | conservar |
+| `reserva_venta` | referencia opcional de Venta | `uid_global` | sí | conservar; resolver por owner |
+| `inmueble` / `unidad_funcional` | referencias de Venta | `uid_global` | sí | conservar; resolver por owner |
+| `plan_pago_venta` | raíz del plan | `uid_global` | **no: índice ordinario** | `UNIQUE NOT NULL` en #427, coordinado con #534 |
+| `plan_pago_venta_indexacion` | hija del plan | `uid_global` nuevo | no existe aún | `UNIQUE NOT NULL` en #427 |
+| `plan_pago_venta_bloque` | hija del plan | `uid_global` | **no: índice ordinario** | `UNIQUE NOT NULL` en #427, coordinado con #534 |
+| política técnica de bloque | embebida, no entidad remota | no aplica | no aplica | no crear identidad paralela |
+| `relacion_generadora` | hija financiera causal | `uid_global` | sí | conservar |
+| `generacion_cronograma_financiero` | hija financiera causal | `uid_global` | **no: índice ordinario** | `UNIQUE NOT NULL` antes del consumer; coordinar #534/#427 |
+| `obligacion_financiera` | hija financiera causal | `uid_global` | sí | conservar |
+| `composicion_obligacion` | hija independiente | `uid_global` | sí | conservar |
+| `obligacion_obligado` | relación independiente | `uid_global` | sí | conservar |
+| `persona` | referencia/raíz Personas | `uid_global` | sí | publicar/resolver con `persona_creada` |
+| `persona_documento` | hija Personas | `uid_global` | sí | publicar/resolver con `documento_identificatorio_agregado` |
+| `indice_financiero` | referencia de base | `uid_global` | sí | resolver por owner Financiero |
+| `indice_financiero_valor` | referencia de base disponible | `uid_global` | sí | resolver por owner Financiero |
+| `concepto_financiero` | referencia de composición | `uid_global` | sí | resolver por catálogo owner |
+| `rol_participacion` / `relacion_persona_rol` | referencia/participación | `uid_global` | sí | resolver por owner Personas |
+
+Los `UNIQUE` faltantes son endurecimiento estructural focal de `#427`. Como no
+hay datos productivos, no se diseña saneamiento histórico; resets, seeds y tests
+nacen cumpliéndolos. El receiver hace lookup exacto por UID, obtiene cero o una
+fila y jamás desempata duplicados.
+
+La vía de resolución es finita: Venta por `venta_confirmada` V2;
+Persona/documento inline por sus eventos Personas; plan, base, bloques,
+relación/generación, obligaciones, composiciones y obligados por
+`plan_pago_venta_generado`; índices, valores, conceptos, objetos y roles por el
+estado/evento portable autoritativo de su owner. Si todavía no llegó, permanece
+`PENDING_DEPENDENCY`; ningún consumer marca `APPLIED` ni crea placeholders.
+`#427` reutiliza inbox, retry, fencing, retained envelope, operation scope y
+default-deny de `#511/#512`; no crea plataforma Sync paralela.
 
 ## 7. Responsabilidades por issue
 
@@ -621,7 +687,7 @@ del mismo mes sin desplazamiento; y cambio de mes con desplazamiento del objetiv
 Cada PR write deberá completar la checklist CORE-EF y sus tests reales. Esta matriz
 no declara cobertura existente.
 
-Para el outbox de `#427` son obligatorios, como mínimo:
+Para la portabilidad/outbox de `#427` son obligatorios, como mínimo:
 
 1. granular exitoso genera exactamente un `plan_pago_venta_generado`;
 2. outbox y grafo persistido confirman en la misma transacción;
@@ -636,6 +702,17 @@ Para el outbox de `#427` son obligatorios, como mínimo:
    `plan_pago_venta_generado` de forma atómica, con convergencia equivalente al
    granular;
 10. ningún write sincronizable de PPV2 confirma sin evento distribuible.
+11. `venta_confirmada` V2 crea Venta sin fila previa ni PK de origen y su replay
+    converge por UID único;
+12. directa inline publica `persona_creada` y
+    `documento_identificatorio_agregado`; plan antes de Persona queda pendiente y
+    pasa a `APPLIED` tras delivery y retry;
+13. los eventos Comercial no redefinen Persona;
+14. cada UID transportado tiene `NOT NULL UNIQUE`; insertar un duplicado falla en
+    DB y el lookup del receiver retorna como máximo una fila;
+15. venta y plan, o Persona, venta y plan, convergen ante cualquier orden de
+    llegada mediante `PENDING_DEPENDENCY`/retry;
+16. ninguna dependencia queda pendiente por falta de publicador contractual.
 
 ## 9. Decisión CORE-EF
 
@@ -688,14 +765,15 @@ Para el outbox de `#427` son obligatorios, como mínimo:
   conflicto. Si el receipt ya fue completado, un payload distinto produce
   conflicto. Se conservan las claves vigentes de generación y
   `clave_funcional_origen` para obligaciones.
-- La generación granular es sincronizable y persiste exactamente un
-  `plan_pago_venta_generado`. Directa y desde reserva conservan
-  `venta_confirmada` y agregan exactamente un `plan_pago_venta_generado`; no
-  duplican el grafo PPV2 dentro del evento de venta.
+- La generación granular persiste exactamente un `plan_pago_venta_generado`.
+  Directa agrega los eventos Personas de cada comprador inline nuevo,
+  `venta_confirmada` V2 y exactamente un evento de plan; desde reserva agrega
+  `venta_confirmada` V2 y exactamente un evento de plan. Venta no duplica PPV2.
 - En granular, plan, base común, bloques, relación/generación, obligaciones,
   composiciones, obligados, receipt/completion y outbox comparten la transacción
-  exterior. En directa se suman venta y su outbox; desde reserva se suman reserva,
-  venta y sus outbox. No existen commits internos.
+  exterior. En directa se suman Personas/documentos inline, venta y todos sus
+  outbox; desde reserva se suman reserva, venta y sus outbox. No hay commits
+  internos.
 - Cualquier fallo, incluido persistir cualquiera de los eventos, produce rollback
   completo. Está prohibido un commit funcional sincronizable sin outbox.
 - Mismo `op_id` y payload completo en `REPLAY` devuelve el snapshot durable y
@@ -704,6 +782,14 @@ Para el outbox de `#427` son obligatorios, como mínimo:
 - No se agrega lock nuevo. La unicidad física, el replay y el CAS focal sobre el
   plan versionado son las protecciones requeridas; una carrera distinta que no
   quede cubierta deberá demostrarse antes de introducir otro lock.
+
+`#427` queda bloqueado por `#534`: una declaración documental de evento no prueba
+un lifecycle portable runtime, y hoy faltan la Venta V2, los producers/consumers
+Personas inline y una vía end-to-end verificada para dependencias externas del
+plan. `#534` implementa ese prerequisito transversal reutilizando Sync vigente;
+`#427` conserva las constraints y la emisión propia del grafo PPV2. No se habilita
+`plan_pago_venta_generado` hasta que `#534` demuestre que toda espera puede
+resolverse eventualmente.
 
 ## 10. Fuera de alcance y NO CONFIRMADO
 
