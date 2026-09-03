@@ -218,7 +218,10 @@ Attempt   = attempt_id
 ## 7. NO COPIAR ESTOS PATRONES
 
 - `X-Usuario-Id` en código nuevo.
-- Endpoints nuevos sin Bearer y autorización explícita.
+- Endpoints humanos nuevos sin la autenticación y autorización exigidas por su
+  contrato. Cuando usan Bearer, la identidad humana proviene exclusivamente de
+  `AuthenticatedPrincipal`; no inventar Bearer ni un Usuario humano para login,
+  endpoints preautenticados, commands técnicos u `origen=SISTEMA` (#522).
 - `commit()` o `rollback()` dentro de un repository nuevo.
 - PK local en payloads como identidad remota.
 - Consumers payload-less que dependen de la DB del emisor.
