@@ -224,16 +224,19 @@ Alcance auditado: `backend/documentacion`, `backend/app`, `backend/tests`, `back
 
 ## 6) Documental / numeración
 
-**Estado actual:** **parcial**.
+**Estado actual:** **inicial (diseño y SQL preparatorio; sin subsistema runtime)**.
 
 ### Evidencias del repo
 - Diseño documental en `SRV-DOC-*`, `SRV-COM-007`, `SRV-ANA-006`.
 - Implementaciones comerciales relacionadas (instrumentos/escrituración) visibles en comandos/servicios comerciales.
 - Tests de instrumentos/escrituraciones (`test_instrumentos_compraventa_*`, `test_escrituraciones_*`).
+- Existen datos estructurados y soporte preparatorio de numeración, pero no una
+  capa canónica de archivo, storage, upload o download.
 
 ### Brechas principales
 - Numeración/documento lógico transversal consolidado (sin invadir dominios).
 - Plantillas y asociaciones documentales con contrato unificado.
+- Storage, metadata binaria, autorización documental y estrategia de Sync/offline.
 
 ### Riesgos
 - Duplicidad de numeraciones o documentos huérfanos.
@@ -376,16 +379,21 @@ Alcance auditado: `backend/documentacion`, `backend/app`, `backend/tests`, `back
 
 ## 10) Reportes / analítico
 
-**Estado actual:** **pendiente/parcial (diseño amplio, implementación no confirmada integralmente)**.
+**Estado actual:** **no iniciado en runtime (diseño amplio y queries fuente operativas)**.
 
 ### Evidencias del repo
 - Arquitectura analítica explícita read-only (`DEV-ARCH-ANA-001`, `SRV-ANA-*`).
 - Existe documentación extensa de consultas analíticas por dominio.
-- En esta pasada no se verificó una superficie de routers/services analíticos equiparable al volumen documental.
+- La auditoría consolidada sobre `main` en
+  `01fdce84ef488f1d2a1c432bd33302684e438e9f` confirmó que no existen router,
+  services, SQL views/marts ni tests propios de Analítico.
+- Estado de cuenta, deuda consolidada y detalles integrales son queries
+  operativas reutilizables de sus dominios productores, no runtime Analítico.
 
 ### Brechas principales
 - Materializar consultas analíticas prioritarias con contratos API verificables.
 - Definir estrategia de consistencia de datos para reportes cross-domain.
+- Definir ownership, scope por sucursal y fecha de corte antes del primer runtime.
 
 ### Riesgos
 - Invadir dominios write al implementar reportes (violación de arquitectura).
@@ -493,4 +501,3 @@ Se prioriza en este orden:
 3. Definir y aprobar **frontera OPE-FIN** (caja operativa vs caja financiera) antes de nuevos features de pago.
 4. Cerrar **e2e crítico de reconciliación financiera** con datos semilla reproducibles.
 5. Publicar **matriz priorizada de issues** con responsables, dependencias y criterio de aceptación por dominio.
-

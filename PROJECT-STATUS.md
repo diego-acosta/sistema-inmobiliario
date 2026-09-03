@@ -1,6 +1,6 @@
 # PROJECT-STATUS — Estado operativo del proyecto
 
-Actualizado: 2026-09-01
+Actualizado: 2026-09-03
 **Repositorio:** `diego-acosta/sistema-inmobiliario`
 
 ## 1. Propósito
@@ -25,11 +25,16 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 
 | Frente | Estado verificable | Issue/epic principal | Último PR relevante verificado | Próximo foco |
 | --- | --- | --- | --- | --- |
-| A — Comercial / Financiero | Activo. #425 y #486 están completados; #426 está en implementación mediante un PR focal de resolución read-like del primer vencimiento sugerido. PR #422 conserva la materialización como fuente de `EMITIDA`/`PROYECTADA`. | #426–#431 y #423 conforman el roadmap restante; #423 sigue bloqueado por los incrementos de soporte. #345 y #365 conservan alcance relacionado. | PR #526 mergeado (completa #486); #425 cerrado; #426 abierto/en implementación. | Completar y validar #426; luego #427 → #428/#429 → #423 → #430/#431. |
-| B — Administrativo | #407–#412 y #482–#486 implementados. PR #526 fue mergeado mediante `8fc23529d6c172c8baf829eee9c2d5bbe265cda2` y completó el sync portable del calendario comercial; #425 y #486 están cerrados. #508/PR #509 materializó `usuario.uid_global`; #510/PR #521 completó su replicación portable. | Sin blocker Administrativo para #426. | PR #526 mergeado (#486); PR #506 mergeado (#485); PR #521 mergeado (#510). | Administrativo mantiene ownership del calendario; Comercial consume el query service temporal interno. |
-| Operativo | #456 incorporó la identidad canónica local read-only para commands técnicos, sin consumidor productivo ni cambios SQL. | #248 abierto. | #456 completado. | `LOCAL_INSTALLATION_CODE` es soporte transversal default-deny; Operativo conserva ownership de `instalacion`. |
+| A — Comercial / Financiero | Activo. #425 y #426 están completados; PR #531 materializó la consulta read-like del primer vencimiento sugerido. Venta directa, PPV2 actual y materialización financiera tienen runtime; PR #422 conserva la fuente de `EMITIDA`/`PROYECTADA`. | #427–#429, #423 y #430/#431 conforman el roadmap restante; #423 sigue bloqueado por los incrementos de soporte. #534 coordina las dependencias portables del grafo PPV2. | PR #531 mergeado (#426); PR #526 mergeado (#486); #425 cerrado. | Continuar #427 → #428/#429 → #423 → #430/#431, preservando #534 como coordinación portable. |
+| B — Administrativo | #407–#412 y #482–#486 implementados. PR #526 completó el Sync portable del calendario comercial; #508/PR #509 materializó `usuario.uid_global` y #510/PR #521 su replicación portable. | #461 mantiene la migración de identidad humana; roles/scope conservan adopción parcial. | PR #526 mergeado (#486); PR #506 mergeado (#485); PR #521 mergeado (#510). | Preservar el calendario como owner Administrativo y extender Bearer/autorización sin ampliar legacy. |
+| Personas | Runtime amplio para Persona, documentos estructurados, domicilios, contactos y relaciones; conserva adopción parcial de seguridad, lifecycle, CAS e idempotencia. | Deuda legacy transversal y lifecycle/deduplicación pendientes. | Verificar PRs por capacidad antes de retomar. | No confundir Persona con Usuario; migrar incrementalmente sin ampliar `X-Usuario-Id`. |
+| Inmobiliario | Runtime amplio para Inmueble/UF, edificación, disponibilidad, ocupación y servicios. Sync portable, lifecycle y seguridad siguen parciales. | Pendientes de consistencia, portabilidad y migración legacy. | Verificar PRs por capacidad antes de retomar. | Mantener ownership de disponibilidad/ocupación y no usar `terreno` como aggregate nuevo. |
+| Locativo | Existe el flujo solicitud/reserva/contrato, activación financiera y entrega/restitución básica. Garantías, lifecycle y Sync portable siguen parciales. | #519 abierto para entrega/restitución portable; #282 conserva el patrón contextual de partes. | Verificar PRs por capacidad antes de retomar. | Migrar la frontera Locativo–Inmobiliario sin transportar PK locales. |
+| Operativo | Existen sucursal, instalación, configuración local y caja básica; #456 incorporó el resolver local read-only. Arqueo, jornada, fecha operativa e integración financiera no están completos. | #248, #256–#258 y #365 abiertos. | #456 completado. | `LOCAL_INSTALLATION_CODE` es default-deny; completar caja/jornada sin absorber ownership Financiero. |
 | Transversal — CORE-EF / Técnico | #469/#470 están completados. #511 está cerrado y PR #512 mergeado: `PENDING_DEPENDENCY`, retry, retained envelope, operation scope y fencing están materializados; no incorporan scheduler productivo definitivo. #510/PR #521 reutiliza esa infraestructura para `administrativo.usuario`. | #402 y #507 están cerrados/completados; #461 permanece abierto y separado. #522 está abierto: no bloquea el MVP humano de Tarea y es requerido antes de automatización. | PR #512 mergeado (#511); PR #521 mergeado (#510). | Integrar consumers futuros mediante sus dominios dueños; resolver #522 antes de origen `SISTEMA`. |
-| Gestión Operativa — Tareas | Etapa pre-DER y arquitectura cerradas: #489, #490–#493, #507 y #523 están cerrados/completados; PR #524 está mergeado y `DEV-ARCH-GOP-001` vigente. #528 materializa el DER del MVP humano. | #528 en curso. #527 conserva el backlog post-MVP. #522 abierto, no blocker humano y requerido antes de automatización. | PR #524 mergeado (#523); PR #509, PR #512 y PR #521 permanecen como dependencias transversales verificadas. | Completar y revisar el DER de #528; SQL/API/runtime permanecen en incrementos posteriores. |
+| Gestión Operativa — Tareas | DEV-ARCH y DER del MVP humano están cerrados: #523/PR #524 y #528/PR #529 mergeados. No existen SQL, API, runtime ni tests GOP. | #527 conserva el backlog post-MVP. #522 no bloquea el MVP humano y sí es requerido antes de `origen = SISTEMA`. | PR #529 mergeado (#528); PR #524 mergeado (#523). | Producir DEV-SRV GOP; DEV-API y SQL/runtime/tests son posteriores. |
+| Documental | Existen diseño, numeración/datos estructurados y SQL preparatorio disperso; no existe un subsistema de archivos. | Sin storage, upload/download, autorización documental ni Sync binario. | Sin PR de runtime documental integral. | Definir un contrato mínimo antes de implementar; dato estructurado no equivale a documento digital. |
+| Analítico | DEV-ARCH/DEV-SRV documentan un dominio read-only; no existen router, SQL analítico, views/marts, KPIs ni tests propios. | Sólo hay queries operativas reutilizables en dominios productores. | Sin PR de runtime analítico integral. | Definir MVP, ownership, scope y corte; query agregada no equivale a Analítico. |
 
 ## 4. Reglas para trabajo paralelo
 
@@ -78,8 +83,9 @@ outbox y receipt. #461 permanece abierto como migración transversal separada.
 
 Estado documental verificable: #489 y la etapa pre-DER están cerrados/completados.
 `Tarea` es el concepto principal del dominio `gestion_operativa`, separado de
-`operativo`. #523 está cerrado/completado y PR #524 mergeado; #528 está en curso
-y materializa el DER del MVP inicial. No existen todavía SQL, migrations, API,
+`operativo`. #523 está cerrado/completado y PR #524 mergeado; #528 está
+cerrado/completado y PR #529 mergeado, materializando el DER del MVP inicial.
+No existen todavía SQL, migrations, API,
 router, schema, service, repository, frontend ni tests runtime de Tarea.
 
 #491 está completado por PR #494. `GOP-FREEZE-001` congela que toda
@@ -158,11 +164,12 @@ regla. Si comentario y baja son concurrentes sin relación causal, ambos efectos
 convergen a Tarea dada de baja más comentario presente, sin LWW ni conflicto
 automático. Agregarlo no incrementa `Tarea.version_registro` ni requiere
 `If-Match-Version` de Tarea; la atomicidad futura abarca comentario/outbox/receipt.
-La etapa pre-DER y arquitectura están cerradas: #489, #490–#493, #507 y #523
-están cerrados/completados; PR #524 está mergeado y `DEV-ARCH-GOP-001` vigente.
-#528 materializa el DER del MVP inicial. #527 conserva el backlog post-MVP.
-SQL/API/runtime permanecen en incrementos posteriores. #522 continúa abierto,
-no bloquea el MVP humano y debe resolverse antes de automatización.
+La etapa pre-DER, arquitectura y DER están cerradas: #489, #490–#493, #507,
+#523 y #528 están cerrados/completados; PR #524 y PR #529 están mergeados,
+`DEV-ARCH-GOP-001` y el DER GOP están vigentes. #527 conserva el backlog
+post-MVP. El siguiente incremento es DEV-SRV GOP; DEV-API y SQL/API/runtime/tests
+permanecen en incrementos posteriores. #522 continúa abierto, no bloquea el MVP
+humano y debe resolverse antes de automatización.
 
 ## 5. Frente A — Comercial / Financiero
 
@@ -220,7 +227,7 @@ Implementación relevante verificada:
 
 - #425 — completado; calendario comercial Administrativo materializado y
   sincronizado por #486/PR #526.
-- #426 — en implementación: vencimiento inicial sugerido Comercial.
+- #426 — cerrado/completado por PR #531: vencimiento inicial sugerido Comercial.
 - #427–#429 — base común, materialización pendiente y período objetivo;
   incrementos posteriores a #426.
 - #423 — selector financiero definitivo por período objetivo exacto; permanece
@@ -242,6 +249,9 @@ Implementación relevante verificada:
   cerró #424 como completado y estableció `INT-FIN-005` como fuente contractual
   vigente. Fue exclusivamente documental y no originó una nueva ejecución de la
   suite backend.
+- #531 `feat(comercial): resolver vencimiento inicial sugerido (#426)` —
+  mergeado; cerró #426 y materializó la consulta `QUERY_READLIKE` por
+  `fecha_venta` explícita, con calendario Administrativo y clamping de mes corto.
 - #415 `[Backend/CORE-EF] Persistir atómicamente confirmación completa de venta` —
   mergeado; corrigió la frontera transaccional backend de confirmación directa y
   desde reserva y permitió aprobar la validación transaccional.
@@ -255,9 +265,9 @@ Implementación relevante verificada:
 
 ### 5.4 Próximo foco recomendado
 
-Para el roadmap contractual de indexación PPV2, #425 está completado y #426 es
-el foco en implementación. El orden restante recomendado es
-`#426 → #427 → #428/#429 → #423 → #430/#431`.
+Para el roadmap contractual de indexación PPV2, #425 y #426 están completados.
+El orden restante recomendado es
+`#427 → #428/#429 → #423 → #430/#431`.
 #423 permanece bloqueado hasta que sus incrementos de soporte estén disponibles.
 Cada issue permanece separado y debe cumplir CORE-EF cuando incorpore commands.
 
@@ -321,9 +331,10 @@ infiere valores y no duplica reglas financieras.
 
 ### 5.6 Pendientes y orden sugerido
 
-- #425: implementar primero la configuración general definida en `INT-FIN-005`.
-- #426 → #427 → #428/#429: continuar con vencimiento, base común, valor pendiente,
-  materialización y período objetivo, sin combinar alcances.
+- #425 y #426: completados; no reabrir sus alcances dentro de los siguientes
+  incrementos.
+- #427 → #428/#429: continuar con base común, valor pendiente, materialización y
+  período objetivo, sin combinar alcances.
 - #423: reemplazar el selector heredado por resolución exacta después de contar con
   el soporte de período objetivo; hasta entonces permanece bloqueado.
 - #430/#431: frontend e integración completa después de los incrementos backend.
@@ -370,7 +381,7 @@ infiere valores y no duplica reglas financieras.
 Antes de continuar #405 o ampliar la venta histórica:
 
 1. tomar `INT-FIN-005` como fuente contractual vigente de los incrementos PPV2 mensuales;
-2. comenzar por #425 y continuar `#426 → #427 → #428/#429`, sin combinar alcances;
+2. tratar #425/#426 como completados y continuar `#427 → #428/#429`, sin combinar alcances;
 3. mantener #423 bloqueado hasta contar con ese soporte e implementarlo después
    sobre período objetivo persistido, sin fallback materializable;
 4. mantener `INVALID_DISPONIBILIDAD_STATE` y conflictos vigentes;
@@ -631,12 +642,13 @@ no deja contaminación funcional en `inmobiliaria_test`. La suite global inform�
 #486 y sus fallos restantes corresponden a deuda histórica de rutas relativas
 dependientes del cwd, ajena a este PR. La matriz confirma locks, concurrencia
 local/remota, rollback inyectado, commit failure, fencing/takeover, transporte
-entre dos bases y E2E. #486 y #425 están completados; #426 está en
-implementación.
+entre dos bases y E2E. #486, #425 y #426 están completados; este último por
+PR #531.
 
 ## 19. Incremento Comercial #426 — vencimiento inicial sugerido
 
-#426 está en implementación mediante un PR focal. Comercial expone una consulta
+#426 está cerrado/completado mediante PR #531, mergeado en
+`65aec549bfebea6072f3e664a15b61778a1c0a58`. Comercial expone una consulta
 `QUERY_READLIKE` por `fecha_venta` explícita, consume el query service
 Administrativo del calendario y calcula una sugerencia efímera. Los writes de
 venta y PPV2 continúan recibiendo y persistiendo una

@@ -13,6 +13,7 @@ El repositorio reúne actualmente un backend HTTP en FastAPI/PostgreSQL y una ap
 │   └── flet_app/            # Aplicación desktop Flet
 ├── AGENTS.md                 # Reglas obligatorias de arquitectura y trabajo
 ├── CODEX-WORKFLOW.md         # Flujo de desarrollo y revisión
+├── DEVELOPER-ONBOARDING.md   # Guía técnica para incorporarse al proyecto
 └── PROJECT-STATUS.md         # Estado operativo verificable del proyecto
 ```
 
@@ -52,6 +53,10 @@ La arquitectura formal contempla, entre otros, los siguientes frentes:
 - Analítico y reportes.
 
 El grado de implementación no es uniforme entre dominios. Para conocer el estado verificable y el próximo foco de cada frente, consultar [PROJECT-STATUS.md](PROJECT-STATUS.md).
+
+Para incorporarse al proyecto y distinguir contratos vigentes, runtime, baseline
+moderno y compatibilidad heredada, consultar
+[`DEVELOPER-ONBOARDING.md`](DEVELOPER-ONBOARDING.md).
 
 ## Puesta en marcha rápida
 
