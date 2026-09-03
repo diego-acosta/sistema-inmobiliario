@@ -138,14 +138,17 @@ identidad o autorización.
 
 ### 6.2 CORE-EF
 
-Clasificar primero el endpoint con una categoría de `AGENTS.md`. En un write
-sincronizable, documentar según corresponda:
+Clasificar primero el endpoint con una categoría de `AGENTS.md`. Todo write
+sincronizable usa el helper común CORE-EF de headers y exige `X-Op-Id`,
+`X-Sucursal-Id` y `X-Instalacion-Id`. Si modifica una entidad
+existente/versionada, también exige `If-Match-Version`; este header no se fuerza
+en creaciones.
 
-- `uid_global` como identidad portable;
-- `version_registro` y CAS mediante `If-Match-Version`;
-- procedencia `X-Sucursal-Id` / `X-Instalacion-Id`;
-- `X-Op-Id` como identidad de operación;
-- idempotencia, outbox, lock lógico, transacción y rollback;
+Además, el command debe declarar y documentar explícitamente, según corresponda:
+
+- `uid_global` como identidad portable y el uso de `version_registro`;
+- idempotencia, outbox y lock lógico;
+- frontera de transacción y rollback;
 - tests de headers, versión, idempotencia, rollback y outbox.
 
 No declarar cumplimiento profundo porque existan columnas: debe haber evidencia
