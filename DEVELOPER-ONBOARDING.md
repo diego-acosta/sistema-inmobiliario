@@ -159,9 +159,13 @@ Reutilizar `operacion_idempotente` y el flujo:
 claim → EXECUTE | REPLAY | CONFLICT → complete
 ```
 
-El fingerprint se calcula sobre el envelope semántico canónico. El mismo `op_id`
-con payload compatible reproduce el receipt; una diferencia material produce
-conflicto. No crear un ledger paralelo por dominio o entidad.
+El `payload_hash` se calcula de forma determinista sobre el payload canónico, pero
+la equivalencia no depende sólo de ese hash. El mismo `op_id` produce `REPLAY`
+únicamente cuando `command`, `target` y payload canónico son compatibles; las
+diferencias se clasifican como `ConflictKind.COMMAND`, `ConflictKind.TARGET` o
+`ConflictKind.PAYLOAD`. El target se declara en el claim y no se esconde
+accidentalmente dentro del payload. No crear un ledger paralelo por dominio o
+entidad.
 
 ### 6.4 Transacción
 
@@ -476,4 +480,3 @@ Verificar siempre su estado actual en GitHub antes de trabajar.
 8. DEV-API.
 9. Tests focales.
 10. Issue, dependencias y PRs relacionados.
-

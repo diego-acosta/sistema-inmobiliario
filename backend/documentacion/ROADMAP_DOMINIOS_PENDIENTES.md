@@ -3,6 +3,15 @@
 Fecha de auditoría: 2026-05-25  
 Alcance auditado: `backend/documentacion`, `backend/app`, `backend/tests`, `backend/database`.
 
+> **Snapshot histórico.** Este documento conserva el mapa auditado al
+> 2026-05-25. Para estado vigente y prioridades actuales consultar
+> [`PROJECT-STATUS.md`](../../PROJECT-STATUS.md) y
+> [`DEVELOPER-ONBOARDING.md`](../../DEVELOPER-ONBOARDING.md). Las recomendaciones
+> históricas restantes no deben interpretarse como issues pendientes actuales
+> sin revalidarlas contra `main` y GitHub. Los bloques Administrativo, Operativo,
+> CORE-EF, Documental y Analítico incluyen debajo una reconciliación mínima al
+> 2026-09-03 porque su lectura original resultaba materialmente engañosa.
+
 ## Criterios de lectura del estado
 
 - **implementado**: existe cobertura funcional visible en routers + servicios + persistencia + tests.
@@ -185,7 +194,13 @@ Alcance auditado: `backend/documentacion`, `backend/app`, `backend/tests`, `back
 
 ## 5) Administrativo / usuarios / sucursales / instalación
 
-**Estado actual:** **parcial / no auditado en profundidad**.
+**Snapshot 2026-05-25:** **parcial / no auditado en profundidad**.
+
+**Reconciliación 2026-09-03:** **avanzado con adopción parcial**. Bearer y
+`AuthenticatedPrincipal`, autorización GLOBAL reusable/default-deny, Usuario
+portable y calendario comercial portable están implementados. La adopción
+transversal de Bearer/autorización, el scope uniforme por sucursal, lifecycle y
+partes de roles/permisos continúan parciales; #461 permanece abierto.
 
 ### Evidencias del repo
 - Diseño en `SRV-ADM-*` y `SRV-OPE-001` (sucursales), `SRV-OPE-002` (instalaciones).
@@ -205,6 +220,9 @@ Alcance auditado: `backend/documentacion`, `backend/app`, `backend/tests`, `back
 - Operativo para sucursales/instalaciones.
 
 ### Próximos issues sugeridos
+Estas recomendaciones pertenecen al snapshot de mayo y no constituyen el backlog
+vigente. Revalidar contra `PROJECT-STATUS.md` y GitHub.
+
 1. Auditoría de implementación ADM/OPE administrativa (doc vs código vs tests).
 2. Plan incremental de usuarios/roles/permisos por contratos API explícitos.
 3. Tests de autorización por endpoint crítico.
@@ -266,7 +284,13 @@ Alcance auditado: `backend/documentacion`, `backend/app`, `backend/tests`, `back
 
 ## 7) Operativo
 
-**Estado actual:** **pendiente/parcial (según subárea)**.
+**Snapshot 2026-05-25:** **pendiente/parcial (según subárea)**.
+
+**Reconciliación 2026-09-03:** **intermedio**. Existen Sucursal, Instalación,
+Configuración local, Caja base, Apertura, cierre básico y Movimiento. Permanecen
+pendientes el arqueo/control formal (#256), Jornada (#257), integración read-like
+Caja–Financiero (#258) y fecha operativa (#365); lifecycle, seguridad y Sync no
+tienen adopción uniforme.
 
 ### Evidencias del repo
 - Diseño en `DEV-ARCH-OPE-001` y `SRV-OPE-*` (caja operativa, cierres, sucursales, instalaciones).
@@ -285,14 +309,14 @@ Alcance auditado: `backend/documentacion`, `backend/app`, `backend/tests`, `back
 - Financiero (interfaz de registración contable).
 
 ### Próximos issues sugeridos
-1. Diseño técnico API+servicios mínimos de caja operativa.
-2. Implementación de cierre de caja con invariantes y auditoría.
-3. Tests de frontera operativo-financiero.
+1. Completar arqueo/control formal de caja bajo #256.
+2. Implementar Jornada bajo #257 y resolver su dependencia temporal con #365.
+3. Cerrar la integración read-like Caja–Financiero bajo #258.
 
 ### Orden recomendado de implementación
-1. Contrato de frontera OPE-FIN.
-2. Caja operativa mínima.
-3. Cierre y reportes operativos.
+1. Arqueo y cierre formal sobre la caja básica existente.
+2. Jornada y fecha operativa.
+3. Integración Caja–Financiero sin trasladar ownership.
 
 ### Qué NO tocar todavía
 - Mezclar lógica de obligaciones financieras dentro de caja operativa.
@@ -304,7 +328,13 @@ Alcance auditado: `backend/documentacion`, `backend/app`, `backend/tests`, `back
 
 ## 8) CORE-EF / infraestructura transversal / sincronización
 
-**Estado actual:** **parcial (mínimo operativo, falta cierre integral)**.
+**Snapshot 2026-05-25:** **parcial (mínimo operativo, falta cierre integral)**.
+
+**Reconciliación 2026-09-03:** **avanzado con adopción desigual**. #469/#470
+materializaron `operacion_idempotente` y su runtime reusable. #511 está cerrado y
+PR #512 mergeado: `PENDING_DEPENDENCY`, retry, retained envelope, operation
+scope, lease y fencing están implementados. No existe scheduler productivo
+definitivo y persisten consumers legacy y dominios sin Sync end-to-end.
 
 ### Evidencias del repo
 - Documentos `CORE-EF-001*`, matriz de cumplimiento write, validación CORE-EF.

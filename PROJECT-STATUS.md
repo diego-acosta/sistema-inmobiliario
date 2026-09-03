@@ -210,8 +210,8 @@ también están presentes en `main`:
   posterior y restauró la materialización como fuente de verdad.
 - #346, #348, #349, #365, #374 y #405 conservan frentes previos; verificar su
   estado actual en GitHub antes de retomarlos.
-- #424 está cerrado como completado por el merge de PR #432. #423 y #425–#431
-  conservan la implementación runtime pendiente; #425 es el próximo incremento y
+- #424 está cerrado como completado por el merge de PR #432. #425 y #426 también
+  están completados. #427–#429 y #430/#431 conservan implementación pendiente;
   #423 sigue bloqueado hasta contar con los incrementos de soporte.
 
 Implementación relevante verificada:
@@ -452,7 +452,11 @@ Dentro de #264, el CRUD write de ítems quedó implementado por #399. En configu
 - El vínculo usuario-persona, si se implementa, es asociación explícita; no fusiona identidades.
 - `rol_seguridad` y `permiso` no son `rol_participacion` ni roles de negocio.
 - `usuario_sucursal` referencia alcance operativo, pero no convierte Administrativo en dueño de `sucursal` o `instalacion`.
-- La autenticación mínima ya cuenta con login/sesión (#446) y principal `/seguridad/me` (#447); no hay autorización, OAuth/SSO ni menú dinámico. La migración transversal de endpoints permanece pendiente en #461.
+- La autenticación mínima ya cuenta con login/sesión (#446) y principal
+  `/seguridad/me` (#447). Existe autorización administrativa GLOBAL reusable y
+  default-deny (#443), pero no hay adopción productiva transversal ni scope
+  uniforme por sucursal/instalación; #461 permanece abierto. OAuth/SSO y menú
+  dinámico no están implementados.
 - `catalogo_maestro` ya tiene CRUD write mínimo.
 - `item_catalogo` tiene lectura y CRUD write implementados; jerarquías e historial funcional permanecen fuera de alcance.
 - Los únicos estados físicos permitidos de `item_catalogo` son `ACTIVO` e `INACTIVO`; su estado inicial es `ACTIVO`.
@@ -481,7 +485,8 @@ El CRUD write de `item_catalogo` quedó implementado por #399. Para configuraci�
 - Redefinir Personas.
 - Implementar Operativo dentro de Administrativo.
 - Usar `sucursal` e `instalacion` como si fueran entidades administrativas.
-- Crear autenticación real, sesiones o credenciales persistidas sin issue y auditoría previa.
+- Crear un mecanismo paralelo de autenticación, sesiones o credenciales fuera de
+  los contratos e issues vigentes.
 - Declarar outbox, locks o autorización real si no hay evidencia en repository, SQL y tests.
 - Implementar jerarquías o historial funcional de ítems; esas capacidades no forman parte del CRUD vigente.
 - Implementar defaults avanzados, vigencias o UI de configuración sin incremento específico.
@@ -511,17 +516,25 @@ El CRUD write de `item_catalogo` quedó implementado por #399. Para configuraci�
 - #364 `feat(administrativo): preparar catálogos CORE-EF` — mergeado.
 - #362 `feat(administrativo): consulta read-only de catálogos e ítems (#360)` — mergeado.
 
-### 6.9 Regla de continuidad
+### 6.9 Continuidad vigente
 
-Para continuar #425 después de #485:
+#425 está completado. #484/PR #504 materializó el bootstrap y producer local
+transaccional `calendario_comercial_creado`; #485/PR #506 completó la
+programación append-only y el producer `calendario_comercial_programado`;
+#486/PR #526 está completado/mergeado y materializa consumer, inbox, reentrega,
+aplicación remota y E2E. #426/PR #531 también está completado/mergeado.
 
-1. revisar #263, #407, #408, #425, PR #414 y el estado materializado por #482;
-2. releer el freeze Administrativo, DEV-API y SRV-ADM-005;
-3. validar nuevamente SQL, implementación y tests reales;
-4. mantener `configuracion_local` en Operativo y no usar catálogos como parámetros;
-5. no declarar resuelta la semántica contextual futura;
-6. preservar #484/PR #504 como bootstrap mergeado con producer local transaccional `calendario_comercial_creado`, #485/PR #506 como programación append-only completada/mergeada con producer `calendario_comercial_programado` y #486 como consumo/sync remoto implementado/validado en PR draft #526; mantener #425 abierto hasta verificar el merge de #486, sin revertir #482 ni la lectura agregada temporal de #483;
-7. marcar `NO CONFIRMADO` todo lo no respaldado.
+Para continuar el frente:
+
+1. tratar #425, #426, #485 y #486 como completados y no reabrir sus alcances;
+2. continuar el roadmap PPV2 por `#427 → #428/#429 → #423`, manteniendo #423
+   bloqueado hasta contar con sus soportes;
+3. mantener `configuracion_local` en Operativo y no usar catálogos como
+   parámetros;
+4. preservar los producers y el consumer portable existentes sin inferir que
+   todo Administrativo está sincronizado;
+5. validar SQL, runtime, tests e issues vigentes antes de cada incremento y
+   marcar `NO CONFIRMADO` todo dato sin respaldo.
 
 ## 7. Dependencias entre frentes
 
