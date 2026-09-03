@@ -139,17 +139,33 @@ identidad o autorización.
 ### 6.2 CORE-EF
 
 Clasificar primero el endpoint con una categoría de `AGENTS.md`. Todo write
-sincronizable usa el helper común CORE-EF de headers y exige `X-Op-Id`,
-`X-Sucursal-Id` y `X-Instalacion-Id`. Si modifica una entidad
+sincronizable usa el helper común CORE-EF de headers, sin parseo manual, y exige
+`X-Op-Id`, `X-Sucursal-Id` y `X-Instalacion-Id`. Si modifica una entidad
 existente/versionada, también exige `If-Match-Version`; este header no se fuerza
-en creaciones.
+en creaciones. Los errores de esos headers preservan el `ErrorResponse` estándar
+y no devuelven `{"detail": "..."}`.
 
-Además, el command debe declarar y documentar explícitamente, según corresponda:
+Todo command sincronizable debe declarar explícitamente cada dimensión del
+checklist como `APLICA` o `NO APLICA`; un `NO APLICA` nunca se omite y lleva una
+justificación breve y trazable:
 
-- `uid_global` como identidad portable y el uso de `version_registro`;
-- idempotencia, outbox y lock lógico;
-- frontera de transacción y rollback;
-- tests de headers, versión, idempotencia, rollback y outbox.
+- **Identidad/versionado:** si aplica, `uid_global` como identidad portable,
+  entidad versionada, uso de `version_registro` y CAS/`If-Match-Version` de
+  acuerdo con el contrato.
+- **Idempotencia:** criterio de payload/fingerprint, resultado para el mismo
+  `op_id` con la misma operación y payload, conflicto ante diferencias de
+  operación o payload, y retry posterior a error.
+- **Outbox:** evento emitido y atomicidad con el efecto de negocio.
+- **Lock lógico:** entidad o recurso bloqueado y operaciones incompatibles.
+- **Transacción/rollback:** owner de `commit()`/`rollback()`, frontera atómica y
+  rollback esperado.
+- **Tests:** headers faltantes o inválidos y happy path; `If-Match-Version`
+  faltante o inválido y mismatch real cuando aplica; idempotencia, rollback,
+  outbox y locks cuando sus decisiones aplican.
+
+El PR incluye una sección `Decisión CORE-EF` con clasificación, headers, cada
+decisión anterior y tests ejecutados. Una operación read-like declara por qué no
+se fuerzan headers write.
 
 No declarar cumplimiento profundo porque existan columnas: debe haber evidencia
 en router, service, repository, SQL y tests.
