@@ -352,6 +352,28 @@ plan con los cinco campos funcionales y `estado_base`, mientras cada bloque expo
 sólo su configuración de método y las obligaciones conservan su trazabilidad
 financiera aplicada.
 
+Para `POST /api/v1/ventas/{id_venta}/plan-pago-v2/generar`,
+`If-Match-Version` es un header condicional, sin sentinel ni versión ficticia:
+
+- si la venta no posee un `plan_pago_venta` vivo, el command crea el plan y el
+  header no aplica;
+- si existe un plan vivo y el command va a reutilizarlo o mutarlo, el header es
+  obligatorio y contiene la versión esperada de ese plan;
+- header ausente en el segundo caso, formato inválido o versión distinta producen
+  error controlado; el mismatch devuelve `CONCURRENCY_ERROR` y no muta.
+
+El service resuelve la condición dentro de la transacción: un plan existente se
+actualiza mediante CAS contra `plan_pago_venta.version_registro`. Cada `UPDATE`
+posterior del mismo command usa como versión esperada la versión retornada por el
+CAS anterior. Así, la transición interna de `BORRADOR` a `GENERADO` no reutiliza
+la versión inicial ya consumida.
+
+Confirmación directa y confirmación desde reserva crean una venta nueva y luego su
+primer plan dentro de la misma transacción; no aceptan ni reutilizan un plan previo
+y por eso no requieren versión del plan. Desde reserva conserva además
+`If-Match-Version` de `reserva_venta`. Un replay exacto completado se resuelve por
+su receipt durable antes de reejecutar esas mutaciones.
+
 ### 6.4 Valor publicado al alta y frontera #428
 
 `#427` aplica la alternativa A: Comercial recibe índice y período pactados y
@@ -395,6 +417,35 @@ aplicable. La identidad y el snapshot resultantes se persisten en la misma
 transacción del write Comercial. `#428` completa posteriormente sólo bases
 pendientes y materializa sus efectos de manera idempotente.
 
+#### 6.4.1 Guarda transitoria de materialización objetivo
+
+El valor base exacto y el valor objetivo exacto son contratos distintos. Que la
+cláusula quede `BASE_DISPONIBLE` no habilita por sí solo un importe definitivo:
+
+```text
+BASE_DISPONIBLE
++ selector objetivo exacto todavía no implementado
+→ obligación indexada permanece PROYECTADA
+```
+
+Mientras `#429/#423` no estén implementados, `#427` debe incorporar una guarda
+transitoria en preview/generación PPV2, confirmación directa, confirmación desde
+reserva y preparación/materialización financiera. Para toda obligación que
+requiera indexación y aún no tenga resolución contractual exacta del objetivo:
+
+- permanece `PROYECTADA`;
+- no usa `fecha_valor <= fecha_vencimiento` ni el último valor anterior;
+- no calcula coeficiente con un valor de otro período;
+- no persiste `obligacion_financiera_indexacion` como aplicación definitiva;
+- no convierte una estimación del preview en deuda materializada.
+
+La guarda es obligación funcional de `#427`, aunque su implementación concreta se
+defina en el PR runtime. No implementa el selector completo: `#429` persiste y
+resuelve el período objetivo mensual, y `#423` selecciona el valor publicado
+exacto de ese período y reemplaza definitivamente el selector legacy. `#428`
+completa bases pendientes y materializa efectos sólo cuando exista soporte
+contractual completo de base y objetivo.
+
 ### 6.5 Migración estructural sin datos preservables
 
 No existe backfill de filas. El entorno se recrea desde cero después del cambio.
@@ -434,6 +485,9 @@ No existe backfill de filas. El entorno se recrea desde cero después del cambio
 - Financiero resuelve el valor base exacto al alta mediante el query interno de
   `#427`. El desplazamiento del período objetivo, la resolución del valor objetivo
   y la materialización permanecen en `#429`, `#423` y `#428` respectivamente.
+- Hasta implementar `#429/#423`, `#427` bloquea toda materialización definitiva de
+  obligaciones indexadas: una base disponible sin objetivo exacto conserva
+  `PROYECTADA` y no crea trazabilidad de aplicación.
 - La materialización de `#428` debe ser transaccional e idempotente y no crear
   trazabilidad aplicada hasta tener ambos valores válidos.
 - Ninguna política financiera debe leer el reloj global con `date.today()`.
@@ -450,8 +504,8 @@ LIMIT 1
 
 `#423` debe consultar el índice común y el período objetivo exacto, exigir estado
 publicado y aplicar las validaciones contractuales. La consulta heredada puede
-seguir existiendo hasta su reemplazo, pero un resultado anterior solo sirve como
-información/estimación explícita.
+seguir existiendo hasta su reemplazo sólo para información/estimación explícita:
+la guarda de `#427` prohíbe que decida una materialización definitiva.
 
 Contractualmente debe existir un único valor publicado por índice y período
 mensual. Si se detectan varios, el selector futuro debe informar incompatibilidad:
@@ -466,10 +520,10 @@ no desempata ni modifica el catálogo.
 | --- | --- |
 | `#425` | define los dos días configurables, su ownership administrativo y cálculo dinámico |
 | `#426` | fija algoritmo y editabilidad del vencimiento sugerido; confirma que un día inexistente se limita al último día válido del mes destino |
-| `#427` | materializa una única base en `plan_pago_venta_indexacion` y elimina la autoridad base por bloque |
-| `#428` | fija cuándo una base pendiente puede materializar obligaciones y qué no debe persistirse antes |
-| `#429` | fija período objetivo persistido, secuencia global y desplazamiento contra el ancla original |
-| `#423` | reemplaza fallback abierto por selección exacta del período objetivo |
+| `#427` | materializa una única base en `plan_pago_venta_indexacion`, elimina la autoridad por bloque e impide materialización legacy mientras no exista objetivo exacto |
+| `#428` | completa bases pendientes y materializa los efectos correspondientes sólo con soporte contractual completo |
+| `#429` | persiste/resuelve el período objetivo mensual, su secuencia global y desplazamiento contra el ancla original |
+| `#423` | selecciona el valor publicado exacto del período objetivo y reemplaza definitivamente el fallback `<= fecha` |
 | `#430` | define qué datos puede editar/presentar frontend sin calcular deuda |
 | `#431` | provee invariantes para la integración completa Comercial–Financiero–Administrativo |
 
@@ -483,7 +537,7 @@ resuelve fecha operativa transversal, no reabre la temporalidad corregida en
 | --- | --- |
 | `#425` | límites de días; venta en/antes/después del cierre; cambio de mes/año; ausencia de job |
 | `#426` | primer/segundo mes; edición permitida; fin de mes con límite al último día válido |
-| `#427` | varios bloques comparten base; bloque no indexado no reinicia; rechazo de divergencias |
+| `#427` | varios bloques comparten base; bloque no indexado no reinicia; rechazo de divergencias; base disponible + objetivo exacto ausente + valor anterior publicado conserva `PROYECTADA`; el selector `<= fecha` no materializa; creación sin CAS y reutilización granular con CAS |
 | `#428` | base pendiente no materializa; publicación exacta materializa una vez; rollback e idempotencia |
 | `#429` | secuencia mensual; tramo intermedio; ediciones 0/+1/+N/-1; rechazo anterior a base |
 | `#423` | exacto publicado; exacto ausente; anterior no aplicado; dos publicados del mismo índice/mes rechazados; normalización mensual |
@@ -509,10 +563,14 @@ no declara cobertura existente.
   `X-Instalacion-Id` según su contrato heredado vigente. `#427` no migra identidad
   humana ni introduce Bearer. Si un endpoint se migra a Bearer en otro incremento,
   deberá usar `AuthenticatedPrincipal` y prohibir `X-Usuario-Id` como identidad.
-- Confirmación desde reserva conserva `If-Match-Version` sobre la reserva. La
-  confirmación directa y la generación granular no incorporan
-  `If-Match-Version`: crean/reutilizan el plan y su base dentro del command; no se
-  agrega CAS sin una mutación versionada/race demostrada.
+- Confirmación desde reserva conserva `If-Match-Version` sobre la reserva. Directa
+  y desde reserva crean una venta y su primer plan dentro de la transacción, no
+  reutilizan un plan anterior y no requieren una versión adicional del plan.
+- Generación granular acepta `If-Match-Version` condicional: no aplica al crear un
+  plan inexistente y es obligatorio al reutilizar/mutar un plan vivo. El primer
+  `UPDATE` usa CAS contra la versión recibida; cada mutación posterior encadena la
+  versión retornada por la anterior. Cero filas afectadas produce
+  `CONCURRENCY_ERROR` y rollback completo.
 - `plan_pago_venta_indexacion` posee `version_registro` y metadata CORE-EF. Su alta
   y replay quedan incluidos en la idempotencia del command dueño, no crean un
   receipt paralelo.
@@ -535,6 +593,10 @@ no declara cobertura existente.
   `REPLAY`/reutilización del snapshot durable, sin repetir efectos ni outbox.
   Mismo `op_id` con cualquier diferencia material del payload produce
   `CONFLICTO` y no muta, aunque la `base_indexacion` coincida.
+- Idempotencia por `op_id` y concurrencia por `version_registro` son controles
+  independientes: el fingerprint no sustituye el CAS. Un `REPLAY` exacto ya
+  completado devuelve el receipt durable sin volver a ejecutar CAS; un claim
+  `EXECUTE` que muta un plan existente debe validar su versión esperada.
 - Si un intento anterior falló antes de completion/commit y no dejó receipt
   durable, el mismo `op_id` puede reintentarse conforme al contrato vigente y
   vuelve a `EXECUTE`; la mera existencia de un intento abortado no constituye
@@ -546,9 +608,9 @@ no declara cobertura existente.
 - Venta, plan, base común, bloques, obligaciones, trazabilidad financiera y outbox
   aplicable comparten la transacción exterior. Cualquier error produce rollback
   completo.
-- No se agrega lock nuevo. La unicidad física y la compatibilidad de replay son la
-  protección requerida; una carrera concreta que no quede cubierta deberá
-  demostrarse antes de introducir lock/CAS.
+- No se agrega lock nuevo. La unicidad física, el replay y el CAS focal sobre el
+  plan versionado son las protecciones requeridas; una carrera distinta que no
+  quede cubierta deberá demostrarse antes de introducir otro lock.
 
 ## 10. Fuera de alcance y NO CONFIRMADO
 
