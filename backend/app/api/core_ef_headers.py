@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from uuid import UUID
 
+from app.application.common.local_command_headers import LocalCommandCoreEFHeaders
 from fastapi import Header, Request
 
 
@@ -165,6 +166,45 @@ def parse_technical_core_ef_headers(
         x_instalacion_id=_parse_required_positive_int(
             "X-Instalacion-Id", x_instalacion_id
         ),
+    )
+
+
+def parse_local_command_core_ef_headers(
+    x_op_id: str | None,
+    x_sucursal_id: str | None,
+    x_instalacion_id: str | None,
+    if_match_version: str | None,
+    *,
+    require_installation_assertion: bool,
+    require_if_match_version: bool,
+) -> LocalCommandCoreEFHeaders:
+    """Parsea sólo sintaxis; la autoridad de instalación se resuelve después."""
+    if x_op_id is None:
+        raise _missing_header_error("X-Op-Id")
+    try:
+        parsed_op_id = UUID(x_op_id)
+    except (TypeError, ValueError) as exc:
+        raise _invalid_header_error("X-Op-Id") from exc
+
+    if x_instalacion_id is None:
+        if require_installation_assertion:
+            raise _missing_header_error("X-Instalacion-Id")
+        parsed_installation_id = None
+    else:
+        parsed_installation_id = _parse_required_positive_int(
+            "X-Instalacion-Id", x_instalacion_id
+        )
+
+    version = _parse_if_match(if_match_version, require_if_match_version)
+    if version is not None and version < 1:
+        raise _invalid_header_error("If-Match-Version")
+    return LocalCommandCoreEFHeaders(
+        x_op_id=parsed_op_id,
+        x_sucursal_id=_parse_required_positive_int(
+            "X-Sucursal-Id", x_sucursal_id
+        ),
+        x_instalacion_id=parsed_installation_id,
+        if_match_version=version,
     )
 
 
