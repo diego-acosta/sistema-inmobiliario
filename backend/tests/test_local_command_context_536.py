@@ -13,6 +13,7 @@ from app.application.common.local_command_context import (
     HumanPrincipalRequired,
     InstallationAssertionMismatch,
     InstallationBranchMismatch,
+    InvalidLocalCommandContextPolicy,
     LocalCommandActor,
     LocalCommandContextPolicy,
     LocalCommandContextTechnicalError,
@@ -33,6 +34,7 @@ from app.infrastructure.persistence.repositories.technical_context_repository im
 
 OP_ID = UUID("550e8400-e29b-41d4-a716-446655440000")
 INSTALLATION_UID = UUID("9e602174-8c8b-4f67-a723-2142c6756b6a")
+_PRINCIPAL_NOT_PROVIDED = object()
 
 
 def _policy(
@@ -78,7 +80,13 @@ def _projection(**changes):
     )
 
 
-def _resolve(*, policy=None, headers=None, principal=None, projection=None):
+def _resolve(
+    *,
+    policy=None,
+    headers=None,
+    principal=_PRINCIPAL_NOT_PROVIDED,
+    projection=None,
+):
     session = Mock()
     installation = LocalInstallationIdentity(
         30, INSTALLATION_UID, "INST-LOCAL", "Instalación local"
@@ -97,7 +105,11 @@ def _resolve(*, policy=None, headers=None, principal=None, projection=None):
             SimpleNamespace(local_installation_code="INST-LOCAL"),
             policy=policy or _policy(),
             headers=headers or _headers(),
-            principal=principal if principal is not None else _principal(),
+            principal=(
+                _principal()
+                if principal is _PRINCIPAL_NOT_PROVIDED
+                else principal
+            ),
         )
     return session, local, repository, result
 
@@ -175,6 +187,57 @@ def test_contexto_tecnico_no_inventa_usuario_humano():
     repository.return_value.resolve_operational_context.assert_called_once_with(
         id_sucursal=20, id_instalacion=30, id_usuario=None
     )
+
+
+@pytest.mark.parametrize("actor", ["HUMAN", object()])
+def test_application_rechaza_actor_que_no_sea_enum_sin_consultar(actor):
+    session = Mock()
+    with pytest.raises(InvalidLocalCommandContextPolicy):
+        resolve_local_command_context(
+            session,
+            Mock(),
+            policy=_policy(actor),
+            headers=_headers(),
+            principal=_principal(),
+        )
+    session.execute.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("policy", "headers"),
+    [
+        (_policy(require_if_match_version=True), _headers(version=None)),
+        (
+            _policy(require_installation_assertion=True),
+            _headers(installation=None),
+        ),
+    ],
+)
+def test_application_rechaza_policy_requerida_incoherente_sin_consultar(
+    policy, headers
+):
+    session = Mock()
+    with pytest.raises(InvalidLocalCommandContextPolicy):
+        resolve_local_command_context(
+            session,
+            Mock(),
+            policy=policy,
+            headers=headers,
+            principal=_principal(),
+        )
+    session.execute.assert_not_called()
+
+
+def test_application_permite_cas_y_assertion_opcionales_ausentes():
+    _, _, _, result = _resolve(
+        policy=_policy(
+            require_if_match_version=False,
+            require_installation_assertion=False,
+        ),
+        headers=_headers(installation=None, version=None),
+    )
+    assert result.if_match_version is None
+    assert result.id_instalacion == 30
 
 
 def test_contexto_humano_requiere_principal_antes_de_consultar():
