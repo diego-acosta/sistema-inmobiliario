@@ -16,6 +16,8 @@ from app.application.common.local_command_context import (
 )
 from sqlalchemy import text
 
+_PRINCIPAL_NOT_PROVIDED = object()
+
 
 def _principal(id_usuario=1):
     return AuthenticatedPrincipal(
@@ -45,13 +47,23 @@ def _headers(branch=1, installation="1", version=None, *, assertion=True, cas=Fa
     )
 
 
-def _resolve(db_session, *, policy=None, headers=None, principal=None):
+def _resolve(
+    db_session,
+    *,
+    policy=None,
+    headers=None,
+    principal=_PRINCIPAL_NOT_PROVIDED,
+):
     return resolve_local_command_context(
         db_session,
         SimpleNamespace(local_installation_code="INST-TEST-001"),
         policy=policy or _policy(),
         headers=headers or _headers(),
-        principal=principal if principal is not None else _principal(),
+        principal=(
+            _principal()
+            if principal is _PRINCIPAL_NOT_PROVIDED
+            else principal
+        ),
     )
 
 
