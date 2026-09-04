@@ -51,7 +51,7 @@ class TechnicalContextRepository:
             text(
                 """
                 WITH reloj AS MATERIALIZED (
-                    SELECT clock_timestamp()::timestamp without time zone AS ahora
+                    SELECT clock_timestamp() AT TIME ZONE 'UTC' AS ahora
                 )
                 SELECT
                     EXISTS (
