@@ -63,8 +63,9 @@ def _insert_branch(db_session, *, state="ACTIVA", allows=True, deleted=False):
                 codigo_sucursal, nombre_sucursal, estado_sucursal,
                 permite_operacion, fecha_baja, deleted_at
             ) VALUES (
-                :code, 'Sucursal contexto 536', :state, :allows,
-                CASE WHEN :state = 'ACTIVA' THEN NULL ELSE now() END,
+                :code, 'Sucursal contexto 536', CAST(:state AS varchar), :allows,
+                CASE WHEN CAST(:state AS varchar) = 'ACTIVA'
+                     THEN NULL ELSE now() END,
                 CASE WHEN :deleted THEN now() ELSE NULL END
             ) RETURNING id_sucursal
             """
@@ -93,6 +94,41 @@ def _insert_installation(db_session, branch_id):
         ),
         {"branch": branch_id, "code": f"INST-536-{uuid4()}"},
     ).scalar_one()
+
+
+def _configure_baseline_scope(
+    db_session,
+    *,
+    start_offset: str,
+    end_offset: str | None,
+    can_operate: bool,
+) -> None:
+    db_session.execute(
+        text(
+            """
+            WITH reloj AS MATERIALIZED (
+                SELECT clock_timestamp()::timestamp without time zone AS ahora
+            )
+            UPDATE usuario_sucursal us
+               SET fecha_desde = reloj.ahora + CAST(:start_offset AS interval),
+                   fecha_hasta = CASE
+                       WHEN CAST(:end_offset AS interval) IS NULL THEN NULL
+                       ELSE reloj.ahora + CAST(:end_offset AS interval)
+                   END,
+                   puede_operar = :can_operate,
+                   estado_vinculo = 'ACTIVO',
+                   deleted_at = NULL
+              FROM reloj
+             WHERE us.id_usuario = 1
+               AND us.id_sucursal = 1
+            """
+        ),
+        {
+            "start_offset": start_offset,
+            "end_offset": end_offset,
+            "can_operate": can_operate,
+        },
+    )
 
 
 def test_postgres_humano_resuelve_nodo_canonico_scope_y_cas(db_session):
@@ -174,3 +210,39 @@ def test_postgres_rechaza_principal_sin_alcance_operativo(db_session):
     with pytest.raises(OperationalBranchScopeDenied):
         _resolve(db_session, principal=_principal(987654321))
 
+
+def test_postgres_permite_vinculo_operativo_vigente(db_session):
+    _configure_baseline_scope(
+        db_session,
+        start_offset="-1 hour",
+        end_offset=None,
+        can_operate=True,
+    )
+
+    context = _resolve(db_session, principal=_principal(1))
+
+    assert context.id_usuario == 1
+    assert context.id_sucursal == 1
+
+
+@pytest.mark.parametrize(
+    ("start_offset", "end_offset", "can_operate"),
+    [
+        pytest.param("1 hour", None, True, id="future"),
+        pytest.param("-2 hours", "-1 hour", True, id="expired"),
+        pytest.param("-1 hour", "0 seconds", True, id="exclusive-end"),
+        pytest.param("-1 hour", None, False, id="cannot-operate"),
+    ],
+)
+def test_postgres_rechaza_vinculo_no_vigente_o_no_operativo(
+    db_session, start_offset, end_offset, can_operate
+):
+    _configure_baseline_scope(
+        db_session,
+        start_offset=start_offset,
+        end_offset=end_offset,
+        can_operate=can_operate,
+    )
+
+    with pytest.raises(OperationalBranchScopeDenied):
+        _resolve(db_session, principal=_principal(1))
