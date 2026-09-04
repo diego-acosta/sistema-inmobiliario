@@ -454,8 +454,8 @@ mínima, fecha operativa, pagos, caja controlada, backup/restore ni errores segu
 
 ## 23. Roadmap orientativo por fases
 
-1. **FASE 1 — Estabilización transversal.** Incorporar el contrato reusable de
-   #536 cuando quede verificado y avanzar incrementalmente #461; delimitar #365,
+1. **FASE 1 — Estabilización transversal.** Adoptar incrementalmente el contrato
+   reusable ya integrado por PR #537 en los writes alcanzados por #536/#461; delimitar #365,
    transaction ownership, seguridad de errores y owner para worker/infra. El
    cierre total de #461 y #536 no es gate absoluto para todo trabajo posterior.
 2. **FASE 2 — Cierre de dominios core y GOP humano en paralelo.** Caja/pagos,
