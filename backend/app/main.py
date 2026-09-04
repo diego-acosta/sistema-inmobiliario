@@ -1,3 +1,4 @@
+from app.api.local_command_context import LocalCommandHeaderError
 from app.api.routers.administrativo_router import router as administrativo_router
 from app.api.routers.comercial_router import router as comercial_router
 from app.api.routers.desarrollos_router import router as desarrollos_router
@@ -17,6 +18,16 @@ from app.application.administrativo.authentication import (
 from app.application.administrativo.authorization import (
     AdministrativeAuthorizationTechnicalError,
     InsufficientAdministrativeAuthorization,
+)
+from app.application.common.local_command_context import (
+    HumanPrincipalRequired,
+    InstallationAssertionMismatch,
+    InstallationBranchMismatch,
+    LocalCommandContextTechnicalError,
+    LocalInstallationUnavailable,
+    OperationalBranchNotEligible,
+    OperationalBranchNotFound,
+    OperationalBranchScopeDenied,
 )
 from app.config.settings import get_settings
 from fastapi import FastAPI, Request
@@ -182,6 +193,85 @@ async def administrative_authorization_technical_error_handler(
         content=ErrorResponse(
             error_code="inconsistencia_roles_permisos",
             error_message="No fue posible resolver la autorización administrativa.",
+            details={},
+        ).model_dump(),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.exception_handler(LocalCommandHeaderError)
+async def local_command_header_error_handler(
+    _request: Request, exc: LocalCommandHeaderError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=400,
+        content=ErrorResponse(
+            error_code=exc.code,
+            error_message="El contexto técnico contiene un header inválido.",
+            details={"header": exc.header_name, "reason": exc.reason},
+        ).model_dump(),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.exception_handler(OperationalBranchScopeDenied)
+async def local_command_scope_denied_handler(
+    _request: Request, exc: OperationalBranchScopeDenied
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=403,
+        content=ErrorResponse(
+            error_code=exc.code,
+            error_message="El principal no posee alcance operativo suficiente.",
+            details={},
+        ).model_dump(),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.exception_handler(InstallationAssertionMismatch)
+@app.exception_handler(InstallationBranchMismatch)
+@app.exception_handler(OperationalBranchNotFound)
+@app.exception_handler(OperationalBranchNotEligible)
+async def local_command_context_conflict_handler(
+    _request: Request, exc
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=409,
+        content=ErrorResponse(
+            error_code=exc.code,
+            error_message="El contexto operativo declarado es incompatible.",
+            details={},
+        ).model_dump(),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.exception_handler(LocalInstallationUnavailable)
+async def local_installation_unavailable_handler(
+    _request: Request, exc: LocalInstallationUnavailable
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=503,
+        content=ErrorResponse(
+            error_code=exc.code,
+            error_message="La instalación local no está disponible.",
+            details={},
+        ).model_dump(),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.exception_handler(LocalCommandContextTechnicalError)
+@app.exception_handler(HumanPrincipalRequired)
+async def local_command_context_technical_error_handler(
+    _request: Request, exc: LocalCommandContextTechnicalError | HumanPrincipalRequired
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=500,
+        content=ErrorResponse(
+            error_code=exc.code,
+            error_message="No fue posible validar el contexto local.",
             details={},
         ).model_dump(),
         headers={"Cache-Control": "no-store"},
