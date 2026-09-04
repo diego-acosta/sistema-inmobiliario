@@ -85,6 +85,33 @@ class LocalCommandContextTechnicalError(LocalCommandContextError):
     code = "LOCAL_COMMAND_CONTEXT_TECHNICAL_ERROR"
 
 
+class InvalidLocalCommandContextPolicy(LocalCommandContextTechnicalError):
+    code = "LOCAL_COMMAND_CONTEXT_POLICY_INVALID"
+
+
+def _validate_policy(
+    policy: LocalCommandContextPolicy, headers: LocalCommandCoreEFHeaders
+) -> None:
+    if not isinstance(policy.actor, LocalCommandActor):
+        raise InvalidLocalCommandContextPolicy(
+            "La policy del contexto local es inválida."
+        )
+    if not isinstance(policy.require_if_match_version, bool) or not isinstance(
+        policy.require_installation_assertion, bool
+    ):
+        raise InvalidLocalCommandContextPolicy(
+            "La policy del contexto local es inválida."
+        )
+    if policy.require_if_match_version and headers.if_match_version is None:
+        raise InvalidLocalCommandContextPolicy(
+            "La policy del contexto local es incoherente."
+        )
+    if policy.require_installation_assertion and headers.x_instalacion_id is None:
+        raise InvalidLocalCommandContextPolicy(
+            "La policy del contexto local es incoherente."
+        )
+
+
 def resolve_local_command_context(
     session: Session,
     settings: Settings,
@@ -94,6 +121,7 @@ def resolve_local_command_context(
     principal: AuthenticatedPrincipal | None,
 ) -> ResolvedLocalCommandContext:
     """Resuelve identidad y scope sin apropiarse de la transacción del caller."""
+    _validate_policy(policy, headers)
     if policy.actor is LocalCommandActor.HUMAN and principal is None:
         raise HumanPrincipalRequired("El command humano requiere autenticación.")
 
