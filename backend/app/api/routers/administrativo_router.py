@@ -1527,19 +1527,6 @@ def baja_rol_seguridad_usuario(
     return UsuarioRolSeguridadBajaResponse(data=UsuarioRolSeguridadData(**asignacion))
 
 
-def _validar_fecha_vigencia(
-    request: UsuarioSucursalCreateRequest,
-) -> JSONResponse | None:
-    if request.fecha_hasta is not None and request.fecha_desde is not None:
-        if request.fecha_hasta < request.fecha_desde:
-            return _error(
-                400,
-                "VALIDATION_ERROR",
-                "fecha_hasta no puede ser menor que fecha_desde.",
-            )
-    return None
-
-
 @router.get(
     "/api/v1/administrativo/usuarios/{id_usuario}/sucursales",
     response_model=UsuarioSucursalListResponse,
@@ -1609,6 +1596,7 @@ def get_alcance_operativo_usuario(
     response_model=UsuarioSucursalCreateResponse,
     responses={
         400: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
         500: {"model": ErrorResponse},
@@ -1631,9 +1619,6 @@ def assign_sucursal_to_usuario(
     )
     if isinstance(core, JSONResponse):
         return core
-    fecha_error = _validar_fecha_vigencia(request)
-    if fecha_error is not None:
-        return fecha_error
     payload = request.model_dump()
     repo = UsuarioSucursalRepository(db)
     try:

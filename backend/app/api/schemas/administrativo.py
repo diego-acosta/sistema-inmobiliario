@@ -1,9 +1,17 @@
-from datetime import date, datetime
 import re
+from datetime import date, datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
+from app.api.temporal import normalize_aware_datetime_to_utc_naive
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictInt,
+    field_validator,
+    model_validator,
+)
 
 
 class LoginRequest(BaseModel):
@@ -351,6 +359,19 @@ class UsuarioSucursalCreateRequest(BaseModel):
     fecha_desde: datetime
     fecha_hasta: datetime | None = None
     observaciones: str | None = None
+
+    @field_validator("fecha_desde", "fecha_hasta")
+    @classmethod
+    def _normalize_utc_boundary(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return normalize_aware_datetime_to_utc_naive(value)
+
+    @model_validator(mode="after")
+    def _validate_date_range(self) -> "UsuarioSucursalCreateRequest":
+        if self.fecha_hasta is not None and self.fecha_hasta < self.fecha_desde:
+            raise ValueError("fecha_hasta no puede ser menor que fecha_desde.")
+        return self
 
     @field_validator("tipo_habilitacion_sucursal")
     @classmethod

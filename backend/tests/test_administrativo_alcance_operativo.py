@@ -1,8 +1,12 @@
+from datetime import UTC, datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
+from app.api.schemas.administrativo import UsuarioSucursalCreateRequest
+from app.infrastructure.persistence.repositories.technical_context_repository import (
+    TechnicalContextRepository,
+)
 from sqlalchemy import text
-
 
 CORE_HEADERS = {"X-Usuario-Id": "1", "X-Sucursal-Id": "1", "X-Instalacion-Id": "1"}
 
@@ -60,7 +64,7 @@ def alcance_payload(id_sucursal: int, **overrides) -> dict:
         "puede_operar": True,
         "puede_consultar": True,
         "puede_administrar": False,
-        "fecha_desde": "2026-07-02T00:00:00",
+        "fecha_desde": "2026-07-02T00:00:00+00:00",
         "fecha_hasta": None,
         "observaciones": "Alcance básico #262",
     }
@@ -110,6 +114,204 @@ def test_asignar_sucursal_ok_incluye_version_y_metadata_core_ef(client, db_sessi
     assert row["id_instalacion_ultima_modificacion"] == 1
     assert row["op_id_alta"] == op_id
     assert row["op_id_ultima_modificacion"] == op_id
+
+
+@pytest.mark.parametrize("field", ["fecha_desde", "fecha_hasta"])
+def test_frontera_temporal_naive_devuelve_error_estandar(client, field):
+    usuario = crear_usuario(client, f"NAIVE-{field}")
+    sucursal = crear_sucursal(client, f"NAIVE-{field}")
+    payload = alcance_payload(sucursal["id_sucursal"])
+    payload[field] = "2026-09-04T18:00:00"
+
+    response = client.post(
+        f"/api/v1/administrativo/usuarios/{usuario['id_usuario']}/sucursales",
+        json=payload,
+        headers=headers(),
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "ok": False,
+        "error_code": "VALIDATION_ERROR",
+        "error_message": "La solicitud de asignación contiene datos inválidos.",
+        "details": {"fields": [field]},
+    }
+    assert "detail" not in response.json()
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("2026-09-04T21:00:00Z", "2026-09-04T21:00:00"),
+        ("2026-09-04T21:00:00+00:00", "2026-09-04T21:00:00"),
+        ("2026-09-04T18:00:00-03:00", "2026-09-04T21:00:00"),
+    ],
+)
+def test_frontera_temporal_aware_se_canoniza_antes_del_repository(value, expected):
+    request = UsuarioSucursalCreateRequest(id_sucursal=1, fecha_desde=value)
+
+    dumped = request.model_dump()
+
+    assert dumped["fecha_desde"] == datetime.fromisoformat(expected)
+    assert dumped["fecha_desde"].tzinfo is None
+
+
+def test_instantes_equivalentes_generan_el_mismo_payload_canonico():
+    argentina = UsuarioSucursalCreateRequest(
+        id_sucursal=1,
+        fecha_desde="2026-09-04T18:00:00-03:00",
+    )
+    utc = UsuarioSucursalCreateRequest(
+        id_sucursal=1,
+        fecha_desde="2026-09-04T21:00:00+00:00",
+    )
+
+    assert argentina.model_dump()["fecha_desde"] == utc.model_dump()["fecha_desde"]
+
+
+def test_rango_permite_extremos_iguales_despues_de_normalizar():
+    request = UsuarioSucursalCreateRequest(
+        id_sucursal=1,
+        fecha_desde="2026-09-04T18:00:00-03:00",
+        fecha_hasta="2026-09-04T21:00:00+00:00",
+    )
+
+    assert request.fecha_hasta == request.fecha_desde
+
+
+@pytest.mark.parametrize(
+    ("fecha_desde", "fecha_hasta", "valid"),
+    [
+        (
+            "2026-09-04T18:00:00-03:00",
+            "2026-09-04T22:00:00+00:00",
+            True,
+        ),
+        (
+            "2026-09-04T23:30:00+02:00",
+            "2026-09-04T18:15:00-03:00",
+            False,
+        ),
+        (
+            "2026-09-04T18:00:00-03:00",
+            "2026-09-04T21:00:00+00:00",
+            True,
+        ),
+    ],
+)
+def test_rango_se_compara_despues_de_normalizar(
+    fecha_desde, fecha_hasta, valid
+):
+    values = {
+        "id_sucursal": 1,
+        "fecha_desde": fecha_desde,
+        "fecha_hasta": fecha_hasta,
+    }
+
+    if valid:
+        request = UsuarioSucursalCreateRequest(**values)
+        assert request.fecha_hasta >= request.fecha_desde
+    else:
+        with pytest.raises(ValueError, match="fecha_hasta no puede ser menor"):
+            UsuarioSucursalCreateRequest(**values)
+
+
+def test_postgres_persiste_utc_naive_con_sesion_no_utc(client, db_session):
+    usuario = crear_usuario(client, "TZ-PG")
+    sucursal = crear_sucursal(client, "TZ-PG")
+    db_session.execute(
+        text("SET LOCAL TIME ZONE 'America/Argentina/Buenos_Aires'")
+    )
+
+    response = client.post(
+        f"/api/v1/administrativo/usuarios/{usuario['id_usuario']}/sucursales",
+        json=alcance_payload(
+            sucursal["id_sucursal"],
+            fecha_desde="2026-09-04T18:00:00-03:00",
+            fecha_hasta="2026-09-04T22:00:00+00:00",
+        ),
+        headers=headers(),
+    )
+
+    assert response.status_code == 201, response.text
+    stored = db_session.execute(
+        text(
+            """
+            SELECT fecha_desde, fecha_hasta
+              FROM usuario_sucursal
+             WHERE id_usuario_sucursal = :id
+            """
+        ),
+        {"id": response.json()["data"]["id_usuario_sucursal"]},
+    ).mappings().one()
+    assert stored["fecha_desde"] == datetime.fromisoformat("2026-09-04T21:00:00")
+    assert stored["fecha_hasta"] == datetime.fromisoformat("2026-09-04T22:00:00")
+    assert stored["fecha_desde"].tzinfo is None
+    assert stored["fecha_hasta"].tzinfo is None
+
+
+def test_write_canonico_es_elegible_por_reader_utc_537(client, db_session):
+    usuario = crear_usuario(client, "READER-537")
+    now_utc = datetime.now(UTC)
+    argentina = timezone(-timedelta(hours=3))
+    db_session.execute(
+        text("SET LOCAL TIME ZONE 'America/Argentina/Buenos_Aires'")
+    )
+
+    response = client.post(
+        f"/api/v1/administrativo/usuarios/{usuario['id_usuario']}/sucursales",
+        json=alcance_payload(
+            1,
+            fecha_desde=(now_utc - timedelta(hours=1))
+            .astimezone(argentina)
+            .isoformat(),
+            fecha_hasta=(now_utc + timedelta(hours=1)).isoformat(),
+        ),
+        headers=headers(),
+    )
+
+    assert response.status_code == 201, response.text
+    projection = TechnicalContextRepository(db_session).resolve_operational_context(
+        id_sucursal=1,
+        id_instalacion=1,
+        id_usuario=usuario["id_usuario"],
+    )
+    assert projection.principal_has_operational_scope is True
+
+
+def test_replay_equivalente_por_offset_reutiliza_vinculo(client, db_session):
+    usuario = crear_usuario(client, "IDEMP-TZ")
+    sucursal = crear_sucursal(client, "IDEMP-TZ")
+    op_id = str(uuid4())
+    argentina = alcance_payload(
+        sucursal["id_sucursal"],
+        fecha_desde="2026-09-04T18:00:00-03:00",
+    )
+    utc = alcance_payload(
+        sucursal["id_sucursal"],
+        fecha_desde="2026-09-04T21:00:00+00:00",
+    )
+
+    first = client.post(
+        f"/api/v1/administrativo/usuarios/{usuario['id_usuario']}/sucursales",
+        json=argentina,
+        headers=headers(op_id),
+    )
+    second = client.post(
+        f"/api/v1/administrativo/usuarios/{usuario['id_usuario']}/sucursales",
+        json=utc,
+        headers=headers(op_id),
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert second.json()["data"]["id_usuario_sucursal"] == first.json()["data"][
+        "id_usuario_sucursal"
+    ]
+    assert db_session.execute(
+        text("SELECT COUNT(*) FROM usuario_sucursal WHERE op_id_alta = :op"),
+        {"op": op_id},
+    ).scalar_one() == 1
 
 
 def test_replay_idempotente_compatible_no_duplica_vinculo_ni_outbox(client, db_session):
@@ -195,6 +397,8 @@ def test_post_sin_fecha_desde_devuelve_422(client):
     )
 
     assert response.status_code == 422
+    assert response.json()["error_code"] == "VALIDATION_ERROR"
+    assert "detail" not in response.json()
 
 
 def test_segunda_sucursal_predeterminada_devuelve_409_y_preserva_primera(client, db_session):
