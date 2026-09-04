@@ -119,7 +119,7 @@ def _configure_baseline_scope(
         text(
             """
             WITH reloj AS MATERIALIZED (
-                SELECT clock_timestamp()::timestamp without time zone AS ahora
+                SELECT clock_timestamp() AT TIME ZONE 'UTC' AS ahora
             )
             UPDATE usuario_sucursal us
                SET fecha_desde = reloj.ahora + CAST(:start_offset AS interval),
@@ -258,3 +258,35 @@ def test_postgres_rechaza_vinculo_no_vigente_o_no_operativo(
 
     with pytest.raises(OperationalBranchScopeDenied):
         _resolve(db_session, principal=_principal(1))
+
+@pytest.mark.parametrize(
+    ("start_offset", "end_offset", "allowed"),
+    [
+        pytest.param("-2 hours", "-1 hour", False, id="expired"),
+        pytest.param("-1 hour", "1 hour", True, id="active"),
+        pytest.param("-1 hour", "0 seconds", False, id="exclusive-end"),
+    ],
+)
+def test_postgres_evalua_temporalidad_en_utc_con_sesion_no_utc(
+    db_session, start_offset, end_offset, allowed
+):
+    db_session.execute(
+        text("SET LOCAL TIME ZONE 'America/Argentina/Buenos_Aires'")
+    )
+    assert (
+        db_session.execute(text("SELECT current_setting('TimeZone')")).scalar_one()
+        == "America/Argentina/Buenos_Aires"
+    )
+    _configure_baseline_scope(
+        db_session,
+        start_offset=start_offset,
+        end_offset=end_offset,
+        can_operate=True,
+    )
+
+    if allowed:
+        context = _resolve(db_session, principal=_principal(1))
+        assert context.id_usuario == 1
+    else:
+        with pytest.raises(OperationalBranchScopeDenied):
+            _resolve(db_session, principal=_principal(1))
