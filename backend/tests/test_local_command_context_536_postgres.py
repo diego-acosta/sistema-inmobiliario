@@ -259,6 +259,7 @@ def test_postgres_rechaza_vinculo_no_vigente_o_no_operativo(
     with pytest.raises(OperationalBranchScopeDenied):
         _resolve(db_session, principal=_principal(1))
 
+
 @pytest.mark.parametrize(
     ("start_offset", "end_offset", "allowed"),
     [
