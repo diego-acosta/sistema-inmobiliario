@@ -367,7 +367,15 @@ class UsuarioSucursalCreateRequest(BaseModel):
     def _require_text_with_explicit_offset(cls, value: object) -> object:
         if value is None:
             return None
-        if not isinstance(value, str) or not _EXPLICIT_DATETIME_OFFSET.search(value):
+        if not isinstance(value, str):
+            raise ValueError(
+                "El datetime debe ser ISO-8601 textual con offset explícito."
+            )
+        if value.endswith(("-00:00", "-0000")):
+            raise ValueError(
+                "El offset negativo cero no representa un instante UTC conocido."
+            )
+        if not _EXPLICIT_DATETIME_OFFSET.search(value):
             raise ValueError(
                 "El datetime debe ser ISO-8601 textual con offset explícito."
             )

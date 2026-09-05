@@ -219,6 +219,8 @@ def test_path_y_body_invalidos_devuelven_un_error_estandar(client, id_usuario):
         ("2026-09-04T21:00:00+0000", "2026-09-04T21:00:00"),
         ("2026-09-04T18:00:00-03:00", "2026-09-04T21:00:00"),
         ("2026-09-04T18:00:00-0300", "2026-09-04T21:00:00"),
+        ("2026-09-04T18:00:00+03:00", "2026-09-04T15:00:00"),
+        ("2026-09-04T18:00:00+0300", "2026-09-04T15:00:00"),
     ],
 )
 def test_frontera_temporal_aware_se_canoniza_antes_del_repository(value, expected):
@@ -228,6 +230,36 @@ def test_frontera_temporal_aware_se_canoniza_antes_del_repository(value, expecte
 
     assert dumped["fecha_desde"] == datetime.fromisoformat(expected)
     assert dumped["fecha_desde"].tzinfo is None
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "2026-09-04T18:00:00-00:00",
+        "2026-09-04T18:00:00-0000",
+        "2026-09-04T18:00:00+24:00",
+        "2026-09-04T18:00:00-24:00",
+        "2026-09-04T18:00:00+14:60",
+        "2026-09-04T18:00:00-03:99",
+        "2026-09-04T18:00:00+000",
+        "2026-09-04T18:00:00+00000",
+    ],
+)
+def test_offset_desconocido_o_invalido_devuelve_error_estandar(client, value):
+    response = client.post(
+        "/api/v1/administrativo/usuarios/1/sucursales",
+        json=alcance_payload(1, fecha_desde=value),
+        headers=headers(),
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "ok": False,
+        "error_code": "VALIDATION_ERROR",
+        "error_message": "La solicitud de asignación contiene datos inválidos.",
+        "details": {"fields": ["fecha_desde"]},
+    }
+    assert "detail" not in response.json()
 
 
 @pytest.mark.parametrize(
