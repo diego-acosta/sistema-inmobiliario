@@ -13,7 +13,9 @@ from pydantic import (
     field_validator,
 )
 
-_EXPLICIT_DATETIME_OFFSET = re.compile(r"(?:Z|[+-]\d{2}:?\d{2})$")
+_EXPLICIT_DATETIME_OFFSET = re.compile(
+    r"(?:Z|(?P<sign>[+-])(?P<hours>\d{2}):?(?P<minutes>\d{2}))$"
+)
 
 
 class LoginRequest(BaseModel):
@@ -375,10 +377,16 @@ class UsuarioSucursalCreateRequest(BaseModel):
             raise ValueError(
                 "El offset negativo cero no representa un instante UTC conocido."
             )
-        if not _EXPLICIT_DATETIME_OFFSET.search(value):
+        offset_match = _EXPLICIT_DATETIME_OFFSET.search(value)
+        if offset_match is None:
             raise ValueError(
                 "El datetime debe ser ISO-8601 textual con offset explícito."
             )
+        if offset_match.group("hours") is not None:
+            hours = int(offset_match.group("hours"))
+            minutes = int(offset_match.group("minutes"))
+            if minutes > 59 or hours > 14 or (hours == 14 and minutes != 0):
+                raise ValueError("El offset debe estar entre -14:00 y +14:00.")
         return value
 
     @field_validator("fecha_desde", "fecha_hasta")
