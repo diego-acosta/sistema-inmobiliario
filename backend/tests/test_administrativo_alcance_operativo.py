@@ -216,7 +216,9 @@ def test_path_y_body_invalidos_devuelven_un_error_estandar(client, id_usuario):
     [
         ("2026-09-04T21:00:00Z", "2026-09-04T21:00:00"),
         ("2026-09-04T21:00:00+00:00", "2026-09-04T21:00:00"),
+        ("2026-09-04T21:00:00+0000", "2026-09-04T21:00:00"),
         ("2026-09-04T18:00:00-03:00", "2026-09-04T21:00:00"),
+        ("2026-09-04T18:00:00-0300", "2026-09-04T21:00:00"),
     ],
 )
 def test_frontera_temporal_aware_se_canoniza_antes_del_repository(value, expected):

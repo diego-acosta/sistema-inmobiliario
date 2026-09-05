@@ -13,7 +13,7 @@ from pydantic import (
     field_validator,
 )
 
-_EXPLICIT_DATETIME_OFFSET = re.compile(r"(?:Z|[+-]\d{2}:\d{2})$")
+_EXPLICIT_DATETIME_OFFSET = re.compile(r"(?:Z|[+-]\d{2}:?\d{2})$")
 
 
 class LoginRequest(BaseModel):
