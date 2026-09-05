@@ -147,8 +147,12 @@ def test_frontera_temporal_naive_devuelve_error_estandar(client, field):
         "1788549600",
     ],
 )
-def test_fecha_desde_no_acepta_representaciones_epoch(client, raw_value):
-    payload = alcance_payload(1, fecha_desde=raw_value)
+@pytest.mark.parametrize("field", ["fecha_desde", "fecha_hasta"])
+def test_frontera_temporal_no_acepta_representaciones_epoch(
+    client, raw_value, field
+):
+    payload = alcance_payload(1)
+    payload[field] = raw_value
 
     response = client.post(
         "/api/v1/administrativo/usuarios/1/sucursales",
@@ -161,7 +165,7 @@ def test_fecha_desde_no_acepta_representaciones_epoch(client, raw_value):
         "ok": False,
         "error_code": "VALIDATION_ERROR",
         "error_message": "La solicitud de asignación contiene datos inválidos.",
-        "details": {"fields": ["fecha_desde"]},
+        "details": {"fields": [field]},
     }
     assert "detail" not in response.json()
 
