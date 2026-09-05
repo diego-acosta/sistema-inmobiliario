@@ -9,8 +9,8 @@ from pydantic import (
     ConfigDict,
     Field,
     StrictInt,
+    ValidationInfo,
     field_validator,
-    model_validator,
 )
 
 _EXPLICIT_DATETIME_OFFSET = re.compile(r"(?:Z|[+-]\d{2}:\d{2})$")
@@ -380,11 +380,15 @@ class UsuarioSucursalCreateRequest(BaseModel):
             return None
         return normalize_aware_datetime_to_utc_naive(value)
 
-    @model_validator(mode="after")
-    def _validate_date_range(self) -> "UsuarioSucursalCreateRequest":
-        if self.fecha_hasta is not None and self.fecha_hasta < self.fecha_desde:
+    @field_validator("fecha_hasta")
+    @classmethod
+    def _validate_date_range(
+        cls, value: datetime | None, info: ValidationInfo
+    ) -> datetime | None:
+        fecha_desde = info.data.get("fecha_desde")
+        if value is not None and fecha_desde is not None and value < fecha_desde:
             raise ValueError("fecha_hasta no puede ser menor que fecha_desde.")
-        return self
+        return value
 
     @field_validator("tipo_habilitacion_sucursal")
     @classmethod

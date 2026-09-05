@@ -228,6 +228,46 @@ def test_frontera_temporal_aware_se_canoniza_antes_del_repository(value, expecte
     assert dumped["fecha_desde"].tzinfo is None
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("fecha_desde", "0001-01-01T00:00:00+14:00"),
+        ("fecha_hasta", "9999-12-31T23:59:59-14:00"),
+    ],
+)
+def test_frontera_fuera_del_rango_utc_devuelve_error_estandar(client, field, value):
+    payload = alcance_payload(1)
+    payload[field] = value
+
+    response = client.post(
+        "/api/v1/administrativo/usuarios/1/sucursales",
+        json=payload,
+        headers=headers(),
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "ok": False,
+        "error_code": "VALIDATION_ERROR",
+        "error_message": "La solicitud de asignación contiene datos inválidos.",
+        "details": {"fields": [field]},
+    }
+    assert "detail" not in response.json()
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("0001-01-01T14:00:00+14:00", "0001-01-01T00:00:00"),
+        ("9999-12-31T09:59:59-14:00", "9999-12-31T23:59:59"),
+    ],
+)
+def test_frontera_extrema_representable_se_canoniza(value, expected):
+    request = UsuarioSucursalCreateRequest(id_sucursal=1, fecha_desde=value)
+
+    assert request.fecha_desde == datetime.fromisoformat(expected)
+
+
 def test_instantes_equivalentes_generan_el_mismo_payload_canonico():
     argentina = UsuarioSucursalCreateRequest(
         id_sucursal=1,
@@ -286,6 +326,27 @@ def test_rango_se_compara_despues_de_normalizar(
     else:
         with pytest.raises(ValueError, match="fecha_hasta no puede ser menor"):
             UsuarioSucursalCreateRequest(**values)
+
+
+def test_rango_invalido_reporta_fecha_hasta(client):
+    response = client.post(
+        "/api/v1/administrativo/usuarios/1/sucursales",
+        json=alcance_payload(
+            1,
+            fecha_desde="2026-09-04T22:00:00+00:00",
+            fecha_hasta="2026-09-04T18:00:00+00:00",
+        ),
+        headers=headers(),
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "ok": False,
+        "error_code": "VALIDATION_ERROR",
+        "error_message": "La solicitud de asignación contiene datos inválidos.",
+        "details": {"fields": ["fecha_hasta"]},
+    }
+    assert "detail" not in response.json()
 
 
 def test_postgres_persiste_utc_naive_con_sesion_no_utc(client, db_session):
