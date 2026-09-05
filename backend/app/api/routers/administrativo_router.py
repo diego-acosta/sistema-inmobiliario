@@ -1,25 +1,30 @@
-from datetime import date
 import re
+from datetime import date
 from typing import Annotated
 
+from app.api.administrative_authorization import require_administrative_permission
 from app.api.authentication import get_authenticated_principal
 from app.api.core_ef_headers import (
     AuthenticatedCoreEFHeaders,
     CoreEFHeaders,
     CoreEFHeaderValidationError,
     TechnicalCoreEFHeaders,
-    get_core_ef_headers_technical_write,
     get_authenticated_core_ef_headers_write,
-    parse_core_ef_headers,
+    get_core_ef_headers_technical_write,
     parse_authenticated_core_ef_headers,
+    parse_core_ef_headers,
 )
-from app.api.administrative_authorization import require_administrative_permission
 from app.api.dependencies import get_db
 from app.api.schemas.administrativo import (
-    AuthenticatedPrincipalData,
-    AuthenticatedPrincipalResponse,
     ActualizarValorParametroGlobalRequest,
     ActualizarValorParametroGlobalResponse,
+    AuthenticatedPrincipalData,
+    AuthenticatedPrincipalResponse,
+    BootstrapCalendarioComercialRequest,
+    BootstrapCalendarioComercialResponse,
+    CalendarioComercialCompletoData,
+    CalendarioComercialIncompletoData,
+    CalendarioComercialResponse,
     CatalogoMaestroBajaResponse,
     CatalogoMaestroCreateRequest,
     CatalogoMaestroCreateResponse,
@@ -30,13 +35,6 @@ from app.api.schemas.administrativo import (
     CatalogoMaestroUpdateRequest,
     CatalogoMaestroUpdateResponse,
     CatalogoMaestroWriteData,
-    CalendarioComercialCompletoData,
-    CalendarioComercialIncompletoData,
-    CalendarioComercialResponse,
-    BootstrapCalendarioComercialRequest,
-    BootstrapCalendarioComercialResponse,
-    ProgramarCalendarioComercialRequest,
-    ProgramarCalendarioComercialResponse,
     ErrorResponse,
     ItemCatalogoBajaResponse,
     ItemCatalogoCreateRequest,
@@ -60,6 +58,8 @@ from app.api.schemas.administrativo import (
     ParametroSistemaTipoData,
     PermisoData,
     PermisoListResponse,
+    ProgramarCalendarioComercialRequest,
+    ProgramarCalendarioComercialResponse,
     RolSeguridadData,
     RolSeguridadDetailResponse,
     RolSeguridadListResponse,
@@ -92,17 +92,6 @@ from app.application.administrativo.authentication import (
     SessionTechnicalError,
     parse_bearer_header,
 )
-from app.application.administrativo.services.obtener_parametro_global_query_service import (
-    ObtenerParametroGlobalQueryService,
-    ParametroGlobalConflictError,
-    ParametroGlobalInconsistencyError,
-    ParametroGlobalNotFoundError,
-)
-from app.application.administrativo.services.obtener_configuracion_calendario_comercial_query_service import (
-    ConfiguracionCalendarioComercialIncompleta,
-    ConfiguracionCalendarioComercialInconsistente,
-    ObtenerConfiguracionCalendarioComercialQueryService,
-)
 from app.application.administrativo.services.actualizar_valor_parametro_global_service import (
     ActualizarValorParametroGlobalService,
     ParametroCommandError,
@@ -111,12 +100,26 @@ from app.application.administrativo.services.bootstrap_calendario_comercial_serv
     BootstrapCalendarioComercialError,
     BootstrapCalendarioComercialService,
 )
+from app.application.administrativo.services.obtener_configuracion_calendario_comercial_query_service import (
+    ConfiguracionCalendarioComercialIncompleta,
+    ConfiguracionCalendarioComercialInconsistente,
+    ObtenerConfiguracionCalendarioComercialQueryService,
+)
+from app.application.administrativo.services.obtener_parametro_global_query_service import (
+    ObtenerParametroGlobalQueryService,
+    ParametroGlobalConflictError,
+    ParametroGlobalInconsistencyError,
+    ParametroGlobalNotFoundError,
+)
 from app.application.administrativo.services.programar_calendario_comercial_service import (
     ProgramarCalendarioComercialError,
     ProgramarCalendarioComercialService,
 )
 from app.application.common.idempotency import IdempotencyRuntimeError
 from app.config.settings import get_settings
+from app.infrastructure.persistence.repositories.calendario_comercial_query_repository import (
+    CalendarioComercialQueryRepository,
+)
 from app.infrastructure.persistence.repositories.catalogo_maestro_repository import (
     CatalogoMaestroConcurrencyError,
     CatalogoMaestroDuplicateCodeError,
@@ -133,13 +136,10 @@ from app.infrastructure.persistence.repositories.item_catalogo_repository import
 from app.infrastructure.persistence.repositories.parametro_sistema_repository import (
     ParametroSistemaRepository,
 )
-from app.infrastructure.persistence.repositories.calendario_comercial_query_repository import (
-    CalendarioComercialQueryRepository,
-)
 from app.infrastructure.persistence.repositories.rol_seguridad_repository import (
     RolSeguridadRepository,
 )
-from app.infrastructure.persistence.repositories.usuario_rol_seguridad_repository import (  # noqa: E501
+from app.infrastructure.persistence.repositories.usuario_rol_seguridad_repository import (
     UsuarioRolSeguridadConcurrencyError,
     UsuarioRolSeguridadDuplicateActiveError,
     UsuarioRolSeguridadIdempotencyConflictError,
@@ -1527,19 +1527,6 @@ def baja_rol_seguridad_usuario(
     return UsuarioRolSeguridadBajaResponse(data=UsuarioRolSeguridadData(**asignacion))
 
 
-def _validar_fecha_vigencia(
-    request: UsuarioSucursalCreateRequest,
-) -> JSONResponse | None:
-    if request.fecha_hasta is not None and request.fecha_desde is not None:
-        if request.fecha_hasta < request.fecha_desde:
-            return _error(
-                400,
-                "VALIDATION_ERROR",
-                "fecha_hasta no puede ser menor que fecha_desde.",
-            )
-    return None
-
-
 @router.get(
     "/api/v1/administrativo/usuarios/{id_usuario}/sucursales",
     response_model=UsuarioSucursalListResponse,
@@ -1609,6 +1596,7 @@ def get_alcance_operativo_usuario(
     response_model=UsuarioSucursalCreateResponse,
     responses={
         400: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
         500: {"model": ErrorResponse},
@@ -1631,9 +1619,6 @@ def assign_sucursal_to_usuario(
     )
     if isinstance(core, JSONResponse):
         return core
-    fecha_error = _validar_fecha_vigencia(request)
-    if fecha_error is not None:
-        return fecha_error
     payload = request.model_dump()
     repo = UsuarioSucursalRepository(db)
     try:
