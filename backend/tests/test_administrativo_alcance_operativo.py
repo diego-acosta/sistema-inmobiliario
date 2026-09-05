@@ -140,6 +140,74 @@ def test_frontera_temporal_naive_devuelve_error_estandar(client, field):
 
 
 @pytest.mark.parametrize(
+    "raw_value",
+    [
+        1_788_549_600,
+        1_788_549_600.5,
+        "1788549600",
+    ],
+)
+def test_fecha_desde_no_acepta_representaciones_epoch(client, raw_value):
+    payload = alcance_payload(1, fecha_desde=raw_value)
+
+    response = client.post(
+        "/api/v1/administrativo/usuarios/1/sucursales",
+        json=payload,
+        headers=headers(),
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "ok": False,
+        "error_code": "VALIDATION_ERROR",
+        "error_message": "La solicitud de asignación contiene datos inválidos.",
+        "details": {"fields": ["fecha_desde"]},
+    }
+    assert "detail" not in response.json()
+
+
+def test_path_id_usuario_no_numerico_devuelve_error_estandar(client):
+    response = client.post(
+        "/api/v1/administrativo/usuarios/not-a-number/sucursales",
+        json=alcance_payload(1),
+        headers=headers(),
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "ok": False,
+        "error_code": "VALIDATION_ERROR",
+        "error_message": "La solicitud de asignación contiene datos inválidos.",
+        "details": {"fields": ["id_usuario"]},
+    }
+    assert "detail" not in response.json()
+
+
+@pytest.mark.parametrize("id_usuario", ["not-a-number", "-1"])
+def test_path_y_body_invalidos_devuelven_un_error_estandar(client, id_usuario):
+    response = client.post(
+        f"/api/v1/administrativo/usuarios/{id_usuario}/sucursales",
+        json=alcance_payload(1, fecha_desde=1_788_549_600),
+        headers=headers(),
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "ok": False,
+        "error_code": "VALIDATION_ERROR",
+        "error_message": "La solicitud de asignación contiene datos inválidos.",
+        "details": {
+            "fields": (
+                ["id_usuario", "fecha_desde"]
+                if id_usuario == "not-a-number"
+                else ["fecha_desde"]
+            )
+        },
+    }
+    assert "detail" not in response.json()
+
+
+@pytest.mark.parametrize(
     ("value", "expected"),
     [
         ("2026-09-04T21:00:00Z", "2026-09-04T21:00:00"),

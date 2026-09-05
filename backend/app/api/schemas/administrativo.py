@@ -13,6 +13,8 @@ from pydantic import (
     model_validator,
 )
 
+_EXPLICIT_DATETIME_OFFSET = re.compile(r"(?:Z|[+-]\d{2}:\d{2})$")
+
 
 class LoginRequest(BaseModel):
     login: str = Field(min_length=1, max_length=100)
@@ -359,6 +361,17 @@ class UsuarioSucursalCreateRequest(BaseModel):
     fecha_desde: datetime
     fecha_hasta: datetime | None = None
     observaciones: str | None = None
+
+    @field_validator("fecha_desde", "fecha_hasta", mode="before")
+    @classmethod
+    def _require_text_with_explicit_offset(cls, value: object) -> object:
+        if value is None:
+            return None
+        if not isinstance(value, str) or not _EXPLICIT_DATETIME_OFFSET.search(value):
+            raise ValueError(
+                "El datetime debe ser ISO-8601 textual con offset explícito."
+            )
+        return value
 
     @field_validator("fecha_desde", "fecha_hasta")
     @classmethod

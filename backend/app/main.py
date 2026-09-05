@@ -142,13 +142,12 @@ async def request_validation_handler(
         and len(usuario_sucursal_path) == 6
         and usuario_sucursal_path[:4]
         == ["api", "v1", "administrativo", "usuarios"]
-        and usuario_sucursal_path[4].isdigit()
         and usuario_sucursal_path[5] == "sucursales"
     ):
         fields = []
         for error in exc.errors():
             location = error.get("loc", ())
-            if len(location) >= 2 and location[0] == "body":
+            if len(location) >= 2 and location[0] in {"body", "path"}:
                 field = str(location[-1])
                 if field not in fields:
                     fields.append(field)
