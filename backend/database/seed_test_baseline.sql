@@ -90,7 +90,8 @@ SELECT
     true,
     true,
     true,
-    TIMESTAMP '2026-01-01 00:00:00',
+    -- Frontera UTC-naive canónica para usuario_sucursal de pruebas.
+    TIMESTAMP WITHOUT TIME ZONE '2026-01-01 00:00:00',
     NULL,
     'ACTIVO',
     'Vinculo tecnico baseline para headers CORE-EF'

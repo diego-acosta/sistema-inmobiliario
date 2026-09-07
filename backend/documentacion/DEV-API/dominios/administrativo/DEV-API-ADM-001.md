@@ -517,7 +517,7 @@ Asigna alcance operativo básico de un usuario a una sucursal existente.
 - Clasificación CORE-EF: `COMMAND_WRITE_NEGOCIO` sincronizable.
 - Headers obligatorios: `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id` mediante helper común CORE-EF.
 - `If-Match-Version`: NO APLICA, porque crea un vínculo nuevo y no modifica entidad versionada existente.
-- Payload: `id_sucursal`, `tipo_habilitacion_sucursal`, `es_sucursal_predeterminada`, `puede_operar`, `puede_consultar`, `puede_administrar`, `fecha_desde` (obligatoria), `fecha_hasta`, `observaciones`. Si falta `fecha_desde`, la validación automática devuelve `422`.
+- Payload: `id_sucursal`, `tipo_habilitacion_sucursal`, `es_sucursal_predeterminada`, `puede_operar`, `puede_consultar`, `puede_administrar`, `fecha_desde` (obligatoria), `fecha_hasta`, `observaciones`. Toda frontera informada exige offset explícito, se convierte a UTC y se entrega a persistencia como UTC-naive; una entrada naïve o la ausencia de `fecha_desde` devuelve `422 VALIDATION_ERROR` estándar.
 - Persistencia CORE-EF: `uid_global`, `version_registro = 1`, `created_at`, `updated_at`, `deleted_at = NULL`, `id_instalacion_origen`, `id_instalacion_ultima_modificacion`, `op_id_alta`, `op_id_ultima_modificacion`.
 - Idempotencia: aplica por `op_id_alta` (`ux_usuario_sucursal_op_id_alta`). Mismo `X-Op-Id` + payload compatible devuelve el vínculo existente sin duplicar outbox; mismo `X-Op-Id` + payload distinto devuelve `409 IDEMPOTENT_DUPLICATE`.
 - Duplicado activo: no permite dos vínculos activos para `(id_usuario, id_sucursal)`; devuelve `409 TECHNICAL_INCONSISTENCY`.
@@ -526,7 +526,7 @@ Asigna alcance operativo básico de un usuario a una sucursal existente.
 - Lock lógico: NO APLICA en esta primera versión acotada; la consistencia se apoya en transacción e índices únicos parciales.
 - Versionado: `usuario_sucursal.version_registro` nace en `1`; no se modifican vínculos existentes en este endpoint create-only.
 - Rollback/transacción: la validación de duplicado/predeterminada activa, alta de vínculo y outbox comparten la misma transacción.
-- Validaciones: usuario activo/no dado de baja, sucursal activa/no dada de baja, vigencia (`fecha_hasta >= fecha_desde`), no duplicado activo.
+- Validaciones: usuario activo/no dado de baja, sucursal activa/no dada de baja, normalización temporal previa al rango (`fecha_hasta >= fecha_desde`) y no duplicado activo.
 - Errores: `400 VALIDATION_ERROR` para headers CORE-EF o validaciones manuales, `404 NOT_FOUND`, `409 IDEMPOTENT_DUPLICATE`, `409 TECHNICAL_INCONSISTENCY`, `422` para validación automática FastAPI/Pydantic.
 
 ### 7.5 SQL asociado

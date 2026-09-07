@@ -1,9 +1,21 @@
-from datetime import date, datetime
 import re
+from datetime import date, datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
+from app.api.temporal import normalize_aware_datetime_to_utc_naive
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictInt,
+    ValidationInfo,
+    field_validator,
+)
+
+_EXPLICIT_DATETIME_OFFSET = re.compile(
+    r"(?:Z|(?P<sign>[+-])(?P<hours>\d{2}):?(?P<minutes>\d{2}))$"
+)
 
 
 class LoginRequest(BaseModel):
@@ -351,6 +363,48 @@ class UsuarioSucursalCreateRequest(BaseModel):
     fecha_desde: datetime
     fecha_hasta: datetime | None = None
     observaciones: str | None = None
+
+    @field_validator("fecha_desde", "fecha_hasta", mode="before")
+    @classmethod
+    def _require_text_with_explicit_offset(cls, value: object) -> object:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError(
+                "El datetime debe ser ISO-8601 textual con offset explícito."
+            )
+        if value.endswith(("-00:00", "-0000")):
+            raise ValueError(
+                "El offset negativo cero no representa un instante UTC conocido."
+            )
+        offset_match = _EXPLICIT_DATETIME_OFFSET.search(value)
+        if offset_match is None:
+            raise ValueError(
+                "El datetime debe ser ISO-8601 textual con offset explícito."
+            )
+        if offset_match.group("hours") is not None:
+            hours = int(offset_match.group("hours"))
+            minutes = int(offset_match.group("minutes"))
+            if minutes > 59 or hours > 14 or (hours == 14 and minutes != 0):
+                raise ValueError("El offset debe estar entre -14:00 y +14:00.")
+        return value
+
+    @field_validator("fecha_desde", "fecha_hasta")
+    @classmethod
+    def _normalize_utc_boundary(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return normalize_aware_datetime_to_utc_naive(value)
+
+    @field_validator("fecha_hasta")
+    @classmethod
+    def _validate_date_range(
+        cls, value: datetime | None, info: ValidationInfo
+    ) -> datetime | None:
+        fecha_desde = info.data.get("fecha_desde")
+        if value is not None and fecha_desde is not None and value < fecha_desde:
+            raise ValueError("fecha_hasta no puede ser menor que fecha_desde.")
+        return value
 
     @field_validator("tipo_habilitacion_sucursal")
     @classmethod

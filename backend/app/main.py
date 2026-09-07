@@ -136,6 +136,30 @@ async def request_validation_handler(
             ).model_dump(),
             headers={"Cache-Control": "no-store"},
         )
+    usuario_sucursal_path = request.url.path.strip("/").split("/")
+    if (
+        request.method == "POST"
+        and len(usuario_sucursal_path) == 6
+        and usuario_sucursal_path[:4]
+        == ["api", "v1", "administrativo", "usuarios"]
+        and usuario_sucursal_path[5] == "sucursales"
+    ):
+        fields = []
+        for error in exc.errors():
+            location = error.get("loc", ())
+            if len(location) >= 2 and location[0] in {"body", "path"}:
+                field = str(location[-1])
+                if field not in fields:
+                    fields.append(field)
+        return JSONResponse(
+            status_code=422,
+            content=ErrorResponse(
+                error_code="VALIDATION_ERROR",
+                error_message="La solicitud de asignación contiene datos inválidos.",
+                details={"fields": fields},
+            ).model_dump(),
+            headers={"Cache-Control": "no-store"},
+        )
     return await request_validation_exception_handler(request, exc)
 
 
