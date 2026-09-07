@@ -624,7 +624,9 @@ No bloquean por defecto:
 - optimizaciones no requeridas;
 - deuda técnica preexistente fuera del alcance;
 - mejoras futuras o capacidades postergables;
-- inconsistencias editoriales que no cambian el runtime ni una fuente contractual autoritativa del incremento.
+- mejoras editoriales, de redacción o claridad que no constituyan una inconsistencia, contradicción o ambigüedad entre fuentes vigentes.
+
+Toda inconsistencia, contradicción o ambigüedad detectada entre fuentes vigentes es `BLOQUEANTE` conforme a `AGENTS.md` y debe corregirse antes de Ready o merge. `AGENTS.md` prevalece y este workflow no puede relajar esa obligación, aunque el problema sea documental o editorial.
 
 Un finding `NO_BLOQUEANTE` puede corregirse si el costo es trivial y no amplía el scope, documentarse para trabajo posterior o convertirse en issue separado. **No debe mantener abierto el PR únicamente para obtener una review sin comentarios.**
 
