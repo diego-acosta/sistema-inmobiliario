@@ -518,7 +518,68 @@ Después de una corrección estructural `B` o un rediseño acotado `C`:
 4. solicitar una nueva review sobre el **head exacto** corregido;
 5. no resolver findings históricos como cerrados hasta que el nuevo diseño o invariante haya sido validado y la review final no encuentre un problema equivalente vigente.
 
-## 15. Criterio de cierre de Code Review
+El objetivo es evitar el ciclo:
+
+```text
+finding
+→ parche local
+→ finding equivalente
+→ parche local
+→ finding equivalente
+```
+
+cuando la causa real es una invariante no congelada.
+
+## 15. Regla reforzada para trabajos de Sync, concurrencia e idempotencia
+
+En Técnico/Sync y en cualquier incremento distribuido, los findings relacionados con concurrencia, retry o idempotencia deben analizarse primero por **autoridad e invariante**, no sólo por la línea comentada.
+
+### Dimensiones mínimas a revisar
+
+Cuando un patrón de findings afecte Técnico/Sync **o cualquier incremento distribuido con concurrencia, retry, leases, fencing o idempotencia**, la auditoría focal debe comprobar, según aplique:
+
+- **Delivery**: cuál es la identidad de una entrega y qué deduplica.
+- **Operation**: cuál es la identidad funcional/distribuida de la operación y qué define replay/conflicto.
+- **Attempt**: cuál es la identidad de una adquisición concreta y qué demuestra ownership actual.
+- **Ownership**: qué dato es autoridad y qué campos son sólo observabilidad.
+- **Lease / takeover**: qué significa expiry, cuándo se habilita takeover y qué evento revoca efectivamente un intento anterior.
+- **Fencing**: qué mutaciones exigen prueba de ownership y hasta qué frontera debe llegar esa prueba.
+- **Atomicidad**: dónde empieza y termina la transacción que contiene efecto, receipt y transición técnica.
+- **Máquina física de estados**: qué combinaciones `status × envelope × ownership × retry metadata` son válidas y cuáles deben ser físicamente imposibles.
+- **Identidad portable**: PK local vs `uid_global`, canonicalización y target estable.
+- **Fingerprint**: qué envelope semántico completo se canonicaliza antes de hashear.
+- **Default-deny**: validación al ingreso y revalidación antes de aplicar datos retenidos cuando corresponda.
+- **Compatibilidad heredada**: qué paths legacy siguen productivos y qué invariantes deben conservar para no romper callers existentes.
+
+### Reglas específicas
+
+- `worker_id` u otro identificador de proceso no debe asumirse como ownership si varias ejecuciones pueden compartirlo.
+- Un timeout o lease vencido sólo implica lo que el protocolo materialice; no asumir revocación mágica por el paso del tiempo.
+- La deduplicación de `event_id` no debe confundirse con idempotencia de una operación si existe `op_id` u otra identidad funcional distinta.
+- El ledger transversal no debe fingirse como receipt universal cuando varios consumers poseen efectos independientes.
+- Los valores deben canonicalizarse **antes** de fingerprint/persistencia cuando PostgreSQL o adapters puedan normalizarlos después.
+- Las invariantes críticas deben existir en SQL cuando un older writer, SQL manual o corrupción pueda producir una combinación que el runtime normal no genera.
+- La defensa runtime no reemplaza constraints físicos, y los constraints físicos no eliminan la necesidad de defensa runtime frente a schemas desalineados o datos heredados.
+- En máquinas de estados complejas, preferir constraints ortogonales y testeables a un único `CHECK` monolítico cuando eso mejore diagnóstico, reejecución y fail-fast.
+
+### Criterio para volver a implementar
+
+No retomar la implementación hasta poder responder con evidencia:
+
+```text
+qué es válido
+qué es inválido
+quién tiene autoridad
+cómo se adquiere y pierde esa autoridad
+qué garantiza SQL
+qué garantiza runtime
+qué garantiza la transacción
+qué compatibilidad debe preservarse
+```
+
+Esta regla no obliga a rediseñar Sync ante cada finding. Obliga a dejar de parchear síntomas cuando la evidencia muestra que varios findings son manifestaciones de la misma invariante faltante.
+
+## 16. Criterio de cierre de Code Review
 
 El objetivo del proceso de review es reducir riesgo material y mejorar la salud del código. **No es requisito alcanzar cero findings mediante ciclos indefinidos de review.**
 
@@ -529,7 +590,7 @@ Todo finding debe evaluarse en dos dimensiones independientes:
 
 La severidad propuesta por una herramienta de review es evidencia relevante, pero no sustituye la evaluación de materialidad respecto del alcance, las invariantes y el riesgo real del PR.
 
-### 15.1 Findings bloqueantes
+### 16.1 Findings bloqueantes
 
 Un finding bloquea Ready o merge cuando afecta materialmente al menos una de estas dimensiones:
 
@@ -551,7 +612,7 @@ Regla por defecto:
 - `P2` → `BLOQUEANTE` sólo si afecta materialmente una de las dimensiones anteriores o contradice directamente el objetivo contractual del PR.
 - `P3` → `NO_BLOQUEANTE`, salvo evidencia extraordinaria de riesgo material.
 
-### 15.2 Findings no bloqueantes
+### 16.2 Findings no bloqueantes
 
 No bloquean por defecto:
 
@@ -567,7 +628,7 @@ No bloquean por defecto:
 
 Un finding `NO_BLOQUEANTE` puede corregirse si el costo es trivial y no amplía el scope, documentarse para trabajo posterior o convertirse en issue separado. **No debe mantener abierto el PR únicamente para obtener una review sin comentarios.**
 
-### 15.3 Número normal de iteraciones
+### 16.3 Número normal de iteraciones
 
 Flujo normal de review:
 
@@ -591,7 +652,7 @@ Una nueva review adicional sólo se justifica cuando:
 - se implementó una corrección `B. INVARIANTE_ESTRUCTURAL_INCOMPLETA` o `C. REDISENO_NECESARIO`;
 - existe evidencia concreta de que la review anterior no cubrió una invariante material del incremento.
 
-### 15.4 Gate de Ready for review
+### 16.4 Gate de Ready for review
 
 `Ready for review` es un gate de cierre, no una reapertura automática del alcance.
 
@@ -606,7 +667,7 @@ Un finding nuevo no se vuelve bloqueante por el solo hecho de haber aparecido de
 
 Si el PR ya estaba en estado Ready y se agregaron commits posteriores, no asumir que el gate se volvió a ejecutar: cuando se requiera validar la transición final, convertir explícitamente `Ready → Draft → Ready` sobre el head final.
 
-### 15.5 Microauditorías
+### 16.5 Microauditorías
 
 Cuando findings relacionados revelen una misma invariante incompleta, aplicar la sección 14:
 
@@ -617,7 +678,7 @@ Cuando findings relacionados revelen una misma invariante incompleta, aplicar la
 
 Una vez cerrada la invariante material y validada su regresión, findings posteriores de hardening o ergonomía dentro de esa dimensión no reabren automáticamente el PR.
 
-### 15.6 Dictamen obligatorio después de cada review
+### 16.6 Dictamen obligatorio después de cada review
 
 Toda evaluación de findings debe terminar con un dictamen explícito:
 
