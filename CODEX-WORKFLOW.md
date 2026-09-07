@@ -624,9 +624,9 @@ No bloquean por defecto:
 - optimizaciones no requeridas;
 - deuda técnica preexistente fuera del alcance;
 - mejoras futuras o capacidades postergables;
-- mejoras editoriales, de redacción o claridad que no constituyan una inconsistencia, contradicción o ambigüedad entre fuentes vigentes.
+- mejoras editoriales, de redacción o claridad que no constituyan una inconsistencia, contradicción o ambigüedad en una fuente vigente ni entre fuentes vigentes.
 
-Toda inconsistencia, contradicción o ambigüedad detectada entre fuentes vigentes es `BLOQUEANTE` conforme a `AGENTS.md` y debe corregirse antes de Ready o merge. `AGENTS.md` prevalece y este workflow no puede relajar esa obligación, aunque el problema sea documental o editorial.
+Toda inconsistencia, contradicción o ambigüedad detectada en una fuente vigente o entre fuentes vigentes es `BLOQUEANTE` conforme a `AGENTS.md` y debe corregirse antes de Ready o merge. `AGENTS.md` prevalece y este workflow no puede relajar esa obligación, aunque el problema sea documental o editorial.
 
 Un finding `NO_BLOQUEANTE` puede corregirse si el costo es trivial y no amplía el scope, documentarse para trabajo posterior o convertirse en issue separado. **No debe mantener abierto el PR únicamente para obtener una review sin comentarios.**
 
@@ -658,12 +658,12 @@ Una nueva review adicional sólo se justifica cuando:
 
 `Ready for review` es un gate de cierre, no una reapertura automática del alcance.
 
-Si la transición a Ready dispara nuevos findings:
+Si la transición a Ready dispara nuevos findings, el gate no altera la clasificación `BLOQUEANTE` o `NO_BLOQUEANTE` determinada conforme a la sección 16.1:
 
-- `P0/P1` material → volver a Draft y corregir antes de merge;
-- `P2` material → evaluar contra las invariantes del PR y corregir si es bloqueante;
-- `P2` no material → no bloquea;
-- `P3` → no bloquea.
+- todo finding `BLOQUEANTE`, cualquiera sea su severidad, exige volver a Draft y corregir antes de merge;
+- todo finding `NO_BLOQUEANTE` no impide por sí solo el merge.
+
+Por tanto, un `P3` sigue siendo `NO_BLOQUEANTE` por defecto, pero bloquea excepcionalmente cuando existe evidencia extraordinaria de riesgo material.
 
 Un finding nuevo no se vuelve bloqueante por el solo hecho de haber aparecido después de Ready.
 
