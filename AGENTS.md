@@ -121,24 +121,65 @@ No debes inventar cobertura de tests inexistente.
 
 ---
 
-## 10. Manejo de errores
+## 10. Modos de actuación y manejo de errores
 
-Si detectas:
+El modo se determina por el objetivo y el alcance autorizado, independientemente de la herramienta o del agente utilizado. Distinguir los siguientes tres modos; una consulta o auditoría no se convierte automáticamente en trabajo mutativo por detectar un problema.
 
-- inconsistencia
-- violación de dominio
-- ambigüedad
-- contradicción con tests existentes
+Esta clasificación aclara cómo aplicar las obligaciones de detener, señalar y corregir; no cambia el orden de fuentes. `AGENTS.md` sigue siendo la fuente de mayor precedencia para los agentes del repositorio y prevalece sobre `CODEX-WORKFLOW.md`.
 
-Debes:
+### 10.1 CONSULTA / ANÁLISIS NO MUTATIVO
 
-1. detenerte
-2. señalar el problema
-3. corregir antes de continuar
+Aplica al responder preguntas, explicar, resumir, comparar, analizar, interpretar, asesorar, recuperar información o revisar el repositorio sin modificarlo y sin un objetivo explícito de auditoría formal.
+
+Ante inconsistencias, violaciones de dominio, contradicciones (incluidas las relativas a tests existentes) o ambigüedades relevantes:
+
+1. señalar el problema;
+2. usar la fuente de mayor precedencia cuando permita resolverlo;
+3. explicitar los supuestos y las limitaciones que correspondan;
+4. continuar la respuesta si puede darse con fiabilidad.
+
+Sólo detener la respuesta cuando la ambigüedad o contradicción impida responder de forma fiable, indicando qué falta resolver.
+
+Detectar un problema documental durante una consulta **no autoriza a modificar el repositorio**. Detectar una inconsistencia **no obliga automáticamente a corregir archivos antes de responder**.
+
+### 10.2 AUDITORÍA / REVIEW FORMAL
+
+Aplica cuando el objetivo explícito sea auditar o revisar formalmente un PR, una arquitectura, un contrato, una implementación, una invariante o documentación contractual.
+
+Ante un problema detectado:
+
+1. registrar el finding con su evidencia;
+2. clasificarlo y evaluar su impacto/materialidad;
+3. determinar si invalida el objeto auditado;
+4. distinguir findings `BLOQUEANTE` y `NO_BLOQUEANTE` según los criterios del workflow vigente, subordinados a este archivo.
+
+Un finding detectado **no implica automáticamente modificar el repositorio**. Una auditoría de alcance read-only puede concluir que algo debe corregirse sin ejecutar esa corrección. Si el finding invalida materialmente el objeto auditado, no declararlo listo ni correcto.
+
+### 10.3 TRABAJO MUTATIVO
+
+Aplica a modificaciones de código, SQL, documentación, tests, configuración, ramas, commits, PRs, issues o cualquier otro estado del repositorio.
+
+Si una inconsistencia, violación de dominio, contradicción (incluidas las relativas a tests existentes) o ambigüedad afecta la corrección del cambio actual:
+
+1. detener esa implementación;
+2. señalar el problema;
+3. corregirlo dentro del alcance autorizado o escalarlo antes de continuar.
+
+Si la corrección necesaria excede el alcance autorizado, mantener detenida la implementación afectada hasta resolver el bloqueo y contar con autorización para cualquier ampliación necesaria. Escalar no equivale a dar el problema por resuelto.
+
+Un problema fuera de alcance y no necesario para corregir el incremento **no autoriza la expansión automática del scope**: registrarlo, escalarlo y dejarlo fuera del incremento si corresponde, sin modificarlo sin autorización. Puede continuar el trabajo cuya corrección no dependa de ese problema.
+
+### 10.4 Obligaciones comunes
+
+Los tres modos preservan ownership de dominios, prohibición de diseño libre, restricciones arquitectónicas, validación contra SQL/runtime/tests, CORE-EF y reglas de autenticación. No permiten inventar implementación o cobertura ni declarar tests ejecutados si no se ejecutaron.
+
+Si una tarea combina auditoría y corrección autorizada, aplicar las obligaciones de auditoría al dictamen y las de trabajo mutativo a las modificaciones. El modo no amplía los permisos ni el alcance de la tarea.
 
 ---
 
 ## 11. Flujo de trabajo
+
+Aplicar este flujo según el modo definido en la sección 10: en consulta o auditoría read-only, generar y corregir se refiere a la respuesta o al informe; no obliga ni autoriza a modificar el repositorio.
 
 Siempre:
 
