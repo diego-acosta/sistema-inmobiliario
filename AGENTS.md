@@ -149,11 +149,13 @@ Aplica cuando el objetivo explícito sea auditar o revisar formalmente un PR, un
 Ante un problema detectado:
 
 1. registrar el finding con su evidencia;
-2. clasificarlo y evaluar su impacto/materialidad;
-3. determinar si invalida el objeto auditado;
-4. distinguir findings `BLOQUEANTE` y `NO_BLOQUEANTE` según los criterios del workflow vigente, subordinados a este archivo.
+2. clasificar su naturaleza e impacto concreto;
+3. determinar si contradice una regla obligatoria de `AGENTS.md`, la arquitectura, el contrato, la implementación o los tests aplicables, respetando la precedencia de fuentes;
+4. determinar y explicar si esa contradicción impide declarar válido/listo el objeto auditado conforme a las reglas vigentes.
 
-Un finding detectado **no implica automáticamente modificar el repositorio**. Una auditoría de alcance read-only puede concluir que algo debe corregirse sin ejecutar esa corrección. Si el finding invalida materialmente el objeto auditado, no declararlo listo ni correcto.
+Cuando el workflow vigente defina una taxonomía aplicable de severidad o materialidad, debe aplicarse conforme a esa fuente y subordinada a `AGENTS.md`. Si no existe una taxonomía vigente aplicable, no inventar categorías ni umbrales: informar el finding, su impacto concreto y si impide validar el objeto auditado conforme a las fuentes vigentes. Una política propuesta en un PR aún no integrado no constituye una taxonomía vigente.
+
+Un finding detectado **no implica automáticamente modificar el repositorio**. Una auditoría de alcance read-only puede concluir que algo debe corregirse sin ejecutar esa corrección. Si el finding impide validar el objeto auditado conforme a las reglas vigentes, no declararlo listo ni correcto.
 
 ### 10.3 TRABAJO MUTATIVO
 
