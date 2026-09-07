@@ -667,7 +667,9 @@ Por tanto, un `P3` sigue siendo `NO_BLOQUEANTE` por defecto, pero bloquea excepc
 
 Un finding nuevo no se vuelve bloqueante por el solo hecho de haber aparecido después de Ready.
 
-Si el PR ya estaba en estado Ready y se agregaron commits posteriores, no asumir que el gate se volvió a ejecutar: cuando se requiera validar la transición final, convertir explícitamente `Ready → Draft → Ready` sobre el head final.
+Si el PR ya estaba en estado Ready y recibe commits posteriores que cambian materialmente el head, debe convertirse explícitamente `Ready → Draft → Ready` para ejecutar nuevamente el gate final sobre ese head antes del merge.
+
+Los cambios posteriores claramente no materiales no requieren repetir el gate.
 
 ### 16.5 Microauditorías
 
