@@ -624,9 +624,9 @@ No bloquean por defecto:
 - optimizaciones no requeridas;
 - deuda técnica preexistente fuera del alcance;
 - mejoras futuras o capacidades postergables;
-- mejoras editoriales, de redacción o claridad que no constituyan una inconsistencia, contradicción o ambigüedad en una fuente vigente ni entre fuentes vigentes.
+- mejoras editoriales, de redacción o claridad que no constituyan una inconsistencia, contradicción o ambigüedad en una fuente ni entre fuentes.
 
-Toda inconsistencia, contradicción o ambigüedad detectada en una fuente vigente o entre fuentes vigentes es `BLOQUEANTE` conforme a `AGENTS.md` y debe corregirse antes de Ready o merge. `AGENTS.md` prevalece y este workflow no puede relajar esa obligación, aunque el problema sea documental o editorial.
+Toda inconsistencia, contradicción o ambigüedad detectada en una fuente o entre fuentes es `BLOQUEANTE` conforme a `AGENTS.md` y debe corregirse antes de Ready o merge. `AGENTS.md` prevalece y este workflow no puede relajar esa obligación, aunque el problema sea documental o editorial. Esta regla no altera el orden de precedencia de fuentes definido en la sección 2.
 
 Un finding `NO_BLOQUEANTE` puede corregirse si el costo es trivial y no amplía el scope, documentarse para trabajo posterior o convertirse en issue separado. **No debe mantener abierto el PR únicamente para obtener una review sin comentarios.**
 
@@ -677,10 +677,10 @@ Cuando findings relacionados revelen una misma invariante incompleta, aplicar la
 
 - detener parches sucesivos;
 - realizar una microauditoría exhaustiva **sólo de esa dimensión**;
-- cerrar los casos materiales de la clase completa;
+- cerrar la clase completa de casos de la invariante auditada;
 - no usar la microauditoría como autorización para reauditar globalmente el sistema o ampliar el PR a mejoras marginales.
 
-Una vez cerrada la invariante material y validada su regresión, findings posteriores de hardening o ergonomía dentro de esa dimensión no reabren automáticamente el PR.
+Una vez cerrada completamente la clase de la invariante auditada y validada su regresión, findings posteriores de hardening o ergonomía que queden fuera de esa clase no reabren automáticamente el PR.
 
 ### 16.6 Dictamen obligatorio después de cada review
 
