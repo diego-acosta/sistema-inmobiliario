@@ -699,4 +699,4 @@ DECISIÓN
 - Siguiente paso: FIX / READY / MERGE / ISSUE SEPARADO
 ```
 
-La ausencia de cero findings **NO es requisito para Ready ni para merge**. El criterio de cierre es la ausencia de findings materialmente bloqueantes, junto con los tests, validaciones y controles de alcance exigidos por este workflow.
+Alcanzar cero findings **NO es requisito para Ready ni para merge**. El criterio de cierre es la ausencia de findings materialmente bloqueantes, junto con los tests, validaciones y controles de alcance exigidos por este workflow.
