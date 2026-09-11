@@ -4,6 +4,10 @@
 Definir convenciones generales de arquitectura para todos los dominios del sistema, con foco en ownership semántico, delimitación de dominios y clasificación de entidades y estructuras.
 
 ## 2. Alcance
+La topología objetivo y la precedencia acotada de la transición se definen en
+[DEV-ARCH-GEN-002 — Autoridad central y transición](DEV-ARCH-GEN-002.md).
+Este documento conserva las convenciones generales y el ownership semántico.
+
 Este documento establece criterios transversales aplicables a los dominios del sistema para:
 - delimitar responsabilidad semántica
 - distinguir tipos de elementos dentro de un dominio
@@ -92,10 +96,18 @@ La compatibilidad heredada:
 - No reemplaza freezes específicos por dominio, pero fija criterios comunes para interpretarlos y mantenerlos consistentes.
 - Debe utilizarse como guía al revisar ownership, límites de dominio y tratamiento de estructuras heredadas o compartidas.
 
-## 10. Identidad canónica de instalación local (#456)
+## 10. Identidad canónica de instalación local (#456) — runtime transicional
+
+Lo siguiente describe el soporte existente, no una obligación de DB propia por
+instalación en la arquitectura objetivo. La semántica futura de `INSTALACION`
+y su relación con el deployment central requieren revisión conforme a
+DEV-ARCH-GEN-002; no se eliminan aquí entidad, resolver ni contratos.
 
 La identidad local para futuros commands técnicos CORE-EF es **soporte transversal read-only**. Se configura exclusivamente mediante `LOCAL_INSTALLATION_CODE`, se resuelve por igualdad exacta contra `public.instalacion` y falla de forma cerrada si falta la configuración o la fila no es elegible. No selecciona por ID fijo, orden, cantidad de filas, sucursal, nombre ni `es_principal` y no redefine el ownership de Operativo sobre `instalacion`.
 
 ## Guardrail transversal de sincronización #455
+
+Protección vigente mientras existan los caminos de eventos/Sync correspondientes.
+Su conservación no impone replicación entre instalaciones a nuevas features.
 
 La política de aplicación es allowlist explícita y default-deny. Outbox, worker y dispatcher consumen una fuente única; credenciales, sesiones y payloads de autenticación se rechazan antes de persistir y los errores de transporte se clasifican sin contenido interno. Véase `documentacion/SINCRONIZACION/SEGURIDAD-CREDENCIALES-455.md`.

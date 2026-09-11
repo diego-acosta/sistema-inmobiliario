@@ -6,6 +6,7 @@ Este documento centraliza las reglas arquitectónicas del sistema, define cómo 
 ## Documentos de arquitectura (fuente de verdad)
 Los documentos de arquitectura vigentes son:
 - `DEV-ARCH-GEN-001.md`
+- `DEV-ARCH-GEN-002.md`
 - `dominios/administrativo/DEV-ARCH-ADM-001.md`
 - `dominios/personas/DEV-ARCH-PER-001.md`
 - `dominios/comercial/DEV-ARCH-COM-001.md`
@@ -16,6 +17,15 @@ Estos documentos:
 - son la fuente de verdad
 - tienen prioridad sobre DEV-SRV, DEV-API o código
 - no deben contradecirse
+
+Durante la transición a autoridad central, `DEV-ARCH-GEN-002` (§9) prevalece
+sobre documentación heredada no migrada sólo en topología, autoridad de
+persistencia central, Sync y contexto técnico asociado. Las discrepancias
+temporales en esas dimensiones representan arquitectura objetivo frente a
+runtime/documentación pendiente de migración, no contradicciones funcionales
+inválidas ni capacidades ya implementadas. Ownership, reglas económicas,
+entidades funcionales, autorización y demás reglas de negocio mantienen su
+precedencia normal; esta excepción no habilita contradicciones fuera de su alcance.
 
 ## Modelo de dominios
 - `personas` → identidad base

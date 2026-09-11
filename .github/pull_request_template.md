@@ -18,6 +18,9 @@ PROJECT-STATUS impact:
 SIMULACION_READLIKE, PREVIEW_READLIKE, QUERY_READLIKE o NO_CONFIRMADO. -->
 - Clasificación:
 - Naturaleza del endpoint:
+- Identidad humana/técnica:
+- Autorización:
+- Contexto de sucursal:
 - Headers:
 - If-Match-Version:
 - Idempotencia:
@@ -47,5 +50,9 @@ Para `SIMULACION_READLIKE`, `PREVIEW_READLIKE` y `QUERY_READLIKE`, explicar por 
 - [ ] Actualicé `PROJECT-STATUS.md`, si corresponde.
 - [ ] Preservé las secciones de otros frentes.
 - [ ] Verifiqué issues y PRs citados el mismo día.
-- [ ] Releí `PROJECT-STATUS.md` después de rebasear contra `origin/main`.
+- [ ] Releí `PROJECT-STATUS.md` después del paso aplicable a este PR:
+  rebase contra `origin/main` para PR normal;
+  rebase contra `origin/transition/central-authority` para PR incremental de transición;
+  merge de `main` en la rama de trabajo para PR de sincronización hacia la transición;
+  o sincronización final y verificación de gates ya definidas en `CODEX-WORKFLOW.md` §6.1 y `DEV-ARCH-GEN-002` §11 para el PR final hacia `main`, sin rebase de la rama compartida.
 - [ ] Si no corresponde actualizarlo, documenté `NO APLICA` con motivo.

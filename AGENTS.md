@@ -13,6 +13,7 @@ Estas reglas son obligatorias y prevalecen sobre cualquier generación automáti
 Debes respetar SIEMPRE:
 
 - backend/documentacion/DEV-ARCH/DEV-ARCH-GEN-001.md
+- backend/documentacion/DEV-ARCH/DEV-ARCH-GEN-002.md
 - backend/documentacion/DEV-ARCH/dominios/personas/DEV-ARCH-PER-001.md
 - backend/documentacion/DEV-ARCH/dominios/comercial/DEV-ARCH-COM-001.md
 - backend/documentacion/DEV-ARCH/dominios/operativo/DEV-ARCH-OPE-001.md
@@ -21,6 +22,35 @@ Debes respetar SIEMPRE:
 Estos documentos definen el ownership semántico del sistema.
 
 NO pueden ser contradichos.
+
+### Transición a autoridad central
+
+En `transition/central-authority` y sus ramas de trabajo, `DEV-ARCH-GEN-002`
+fija la arquitectura objetivo: FastAPI central y PostgreSQL central como única
+autoridad persistente, con Flet como cliente inicial y múltiples sucursales.
+Sus decisiones explícitas prevalecen sobre documentos heredados no migrados
+exclusivamente en topología, persistencia central frente a réplicas, Sync y
+contexto técnico asociado. No alteran reglas económicas, entidades funcionales,
+autorización ni ownership de dominio.
+
+Esta precedencia alcanza también los mandatos distribuidos de CORE-EF, DEV-SRV,
+DEV-API y freezes todavía no migrados; no declara esos documentos obsoletos en
+bloque. Ante una discrepancia, identificar fuente/regla, dimensión reemplazada,
+contrato objetivo y runtime que todavía la implementa. Una discrepancia temporal
+de esa dimensión, declarada con pendiente de migración, no obliga a implementar
+runtime en un PR documental ni invalida por sí sola ese incremento (§§6, 10–13).
+Una contradicción funcional ajena a esa dimensión sigue sujeta a las reglas
+generales: no improvisar una decisión para resolverla.
+
+La evidencia SQL/runtime/tests continúa describiendo lo implementado. Cambiar
+la norma no permite omitir validaciones en callers existentes ni retirar
+infraestructura antes de migrar sus consumidores. Los PRs incrementales de
+migración tienen base `transition/central-authority`; `main` no recibe
+centralización parcial. El PR de sincronización de `main` conserva esa base e
+integra `main` mediante merge en una rama derivada de la transición, según
+`CODEX-WORKFLOW.md`, §6.1. El PR final de integración queda exceptuado: tiene
+base `main` e incorpora la transición completa una vez cumplidos los gates de
+`DEV-ARCH-GEN-002`, §11.
 
 ---
 
@@ -178,15 +208,20 @@ Si una solución:
 Para todo endpoint write nuevo o modificado, el PR debe incluir decisión CORE-EF explícita (no se difiere a migración posterior).
 
 1. **Clasificación obligatoria del endpoint:** `COMMAND_WRITE_NEGOCIO`, `COMMAND_WRITE_TECNICO`, `SIMULACION_READLIKE`, `PREVIEW_READLIKE`, `QUERY_READLIKE` o `NO_CONFIRMADO`.
-2. **Si es write sincronizable:** usar helper común CORE-EF de headers (sin parseo manual) y exigir `X-Op-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`; exigir `If-Match-Version` cuando modifica entidad existente/versionada; preservar `ErrorResponse` estándar; no devolver `{"detail": "..."}` para errores de headers. Todo write nuevo o modificado que use autenticación Bearer debe derivar la identidad humana exclusivamente de `AuthenticatedPrincipal`; en esos commands `X-Usuario-Id` está prohibido como fuente de identidad y no se requiere, usa, compara ni parsea para identidad o autorización. Los endpoints heredados que aún dependan de `X-Usuario-Id` pueden conservar temporalmente su contrato histórico y deben migrarse incrementalmente mediante sus issues correspondientes, sin ampliar ese modelo heredado.
-3. **Todo command sincronizable debe declarar:**
+2. **Perfil de autoridad y seguridad:** en la transición un write es un command central por defecto, no sincronizable. Declarar separadamente si es idempotente, productor de eventos o consumidor de compatibilidad Sync heredada; estos atributos no sustituyen las clasificaciones del punto 1 ni son mutuamente excluyentes. Los nuevos commands humanos centrales requieren Bearer y derivan identidad exclusivamente de `AuthenticatedPrincipal`, con autorización y alcance de sucursal cuando corresponda; el login y las fronteras preautenticadas expresamente definidas conservan su contrato propio. `X-Usuario-Id` no se requiere, usa, compara ni parsea como identidad o autorización en commands con Bearer. Los endpoints heredados aún no migrados pueden conservar temporalmente su contrato histórico, sin ampliarlo. Los procesos técnicos requieren contrato de identidad/autorización propio; un header técnico no autentica un actor.
+3. **Todo command write debe declarar:**
    - idempotencia: aplica/no aplica, criterio de payload, `mismo op_id + mismo payload`, `mismo op_id + payload distinto`, retry post-error;
    - outbox: aplica/no aplica, evento y misma transacción que negocio;
    - lock lógico: aplica/no aplica, entidad bloqueada y operaciones incompatibles;
    - versionado: entidad versionada y uso esperado de `version_registro`;
    - rollback/transacción: frontera transaccional del caso de uso.
+   - identidad humana/técnica, autorización, contexto de sucursal y headers realmente necesarios.
+
+   Preservar CAS/`If-Match-Version` al modificar entidades existentes/versionadas según su contrato; UTC, trazabilidad, transacción, rollback atómico y errores tipados. No exigir por defecto `X-Instalacion-Id`, outbox, lock lógico ni conflicto Sync a un command central. Justificar cada mecanismo por su invariante real: retirar una obligación distribuida no retira locks transaccionales, constraints ni controles de concurrencia necesarios. Reutilizar helpers comunes aplicables, sin parseos manuales paralelos; conservar `ErrorResponse` estándar y no devolver `{"detail": "..."}` para errores de headers.
+
+   **Compatibilidad Sync transicional:** los writes existentes conservan los helpers y headers técnicos de su contrato (`X-Op-Id`, `X-Sucursal-Id`, `X-Instalacion-Id` cuando sean exigidos), outbox atómico y protecciones de recepción mientras tengan consumidores. No expandir replicación de negocio ni usar ese perfil como modelo para nuevas funcionalidades. El cambio contractual de un endpoint requiere su PR de migración con SQL/runtime/tests y callers coherentes; este PR documental no cambia endpoints.
 4. **Tests mínimos obligatorios en PR write:** headers faltantes/inválidos; happy path; `If-Match-Version` faltante/inválido si aplica; mismatch real de versión si aplica; idempotencia si aplica; rollback si es orquestador; outbox si aplica.
-5. **Resumen obligatorio del PR:** sección "Decisión CORE-EF" con naturaleza del endpoint, headers, idempotencia, outbox, lock, versionado y tests ejecutados.
+5. **Resumen obligatorio del PR:** sección "Decisión CORE-EF" con naturaleza del endpoint, identidad humana/técnica, autorización, contexto de sucursal, headers, idempotencia, outbox, lock, versionado, transacción/rollback y tests ejecutados.
 6. **Reglas de alcance:** no implementar caja operativa, recibos fiscales persistidos, documental real ni administrativo nuevo sin nacer con estas reglas.
 7. **Read-like/simulación/preview:** dejar explícita la condición para no forzar headers write.
 8. **Cuando una regla no aplique:** indicar `NO APLICA` con justificación breve.
