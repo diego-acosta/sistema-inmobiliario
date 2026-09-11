@@ -1,5 +1,23 @@
 # DEV-ARCH-OPE-001 — Freeze arquitectónico del dominio Operativo
 
+## Contrato central de identidad/contexto — PR 02
+
+[DEV-ARCH-GEN-003](../../DEV-ARCH-GEN-003.md) mantiene SUCURSAL como contexto
+funcional de Operativo, seleccionado por request y validado por el servidor con
+alcance administrativo y permisos. INSTALACION no forma parte del modelo objetivo.
+Sus menciones posteriores en alcance, entidades, casos de uso, eventos, caja y
+resolver #456 describen compatibilidad heredada, sin expansión a nuevas features.
+No se reinterpreta como dispositivo/deployment ni se crea una entidad sustituta.
+
+La vinculación física de caja/configuración local a instalación requiere migrar
+consumidores y restricciones sin perder reglas funcionales de caja, numeración,
+cierre o responsabilidad. Este contrato no elimina esas reglas ni decide nuevas
+cardinalidades de caja. LOCAL_INSTALLATION_CODE y validación instalación↔sucursal
+se retiran incrementalmente; el scope de sucursal nunca se prueba por instalación.
+Operativo conserva ownership de las piezas legacy hasta su retiro. Usuarios,
+permisos y auditoría siguen en Administrativo; identidad técnica futura queda
+sujeta a D2 de GEN-003, no al resolver #456.
+
 ## 1. Objetivo
 Congelar el criterio arquitectónico vigente del dominio `operativo` para asegurar alineación entre `SYS-MAP-002`, `DEV-SRV`, `CAT-CU` y los catálogos de implementación ya corregidos.
 
