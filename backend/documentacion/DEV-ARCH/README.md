@@ -18,6 +18,15 @@ Estos documentos:
 - tienen prioridad sobre DEV-SRV, DEV-API o código
 - no deben contradecirse
 
+Durante la transición a autoridad central, `DEV-ARCH-GEN-002` (§9) prevalece
+sobre documentación heredada no migrada sólo en topología, autoridad de
+persistencia central, Sync y contexto técnico asociado. Las discrepancias
+temporales en esas dimensiones representan arquitectura objetivo frente a
+runtime/documentación pendiente de migración, no contradicciones funcionales
+inválidas ni capacidades ya implementadas. Ownership, reglas económicas,
+entidades funcionales, autorización y demás reglas de negocio mantienen su
+precedencia normal; esta excepción no habilita contradicciones fuera de su alcance.
+
 ## Modelo de dominios
 - `personas` → identidad base
 - `comercial` → compraventa y cliente
