@@ -47,5 +47,5 @@ Para `SIMULACION_READLIKE`, `PREVIEW_READLIKE` y `QUERY_READLIKE`, explicar por 
 - [ ] Actualicé `PROJECT-STATUS.md`, si corresponde.
 - [ ] Preservé las secciones de otros frentes.
 - [ ] Verifiqué issues y PRs citados el mismo día.
-- [ ] Releí `PROJECT-STATUS.md` después de rebasear contra `origin/main`.
+- [ ] Releí `PROJECT-STATUS.md` después de rebasear contra la base correcta: `origin/main` para PRs normales; `origin/transition/central-authority` para PRs de la transición.
 - [ ] Si no corresponde actualizarlo, documenté `NO APLICA` con motivo.
