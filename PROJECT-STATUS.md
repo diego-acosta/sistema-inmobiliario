@@ -27,8 +27,17 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 única autoridad persistente, conservando inicialmente Flet como cliente y
 multi-sucursal. Sin bases de negocio autoritativas por instalación ni replicación
 de negocio entre ellas. Operación normal online, sin escritura definitiva offline.
-Contrato rector:
-[DEV-ARCH-GEN-002](backend/documentacion/DEV-ARCH/DEV-ARCH-GEN-002.md).
+Contratos rectores:
+[DEV-ARCH-GEN-002](backend/documentacion/DEV-ARCH/DEV-ARCH-GEN-002.md) y
+[DEV-ARCH-GEN-003](backend/documentacion/DEV-ARCH/DEV-ARCH-GEN-003.md).
+PR 02 cierra identidad humana desde sesión/Bearer y selección explícita de
+sucursal por request, con validación actual de alcance y permisos. INSTALACION
+queda fuera del objetivo sin sustituto persistido; LOCAL_INSTALLATION_CODE es
+transicional → retirar. X-Op-Id es condicional por idempotencia material (obligatorio
+en pagos/emisión/orquestación); If-Match-Version por CAS de snapshots existentes;
+version_registro se conserva para concurrencia, no como obligación de réplica.
+La composición de roles GLOBAL/contextuales (D1) y el mecanismo de actores
+técnicos (D2) siguen DECISIÓN ABIERTA; no se declara Gate 2 satisfecho.
 
 **ESTADO REAL DEL RUNTIME ACTUAL:** no migrado por este PR. Persisten contexto de
 instalación, headers legacy, infraestructura Sync y adopción parcial de seguridad.
@@ -40,16 +49,20 @@ global, CAS/versionado, UTC, transacciones, auditoría e idempotencia útil.
 **Ejecución:** rama temporal `transition/central-authority`, verificada inicialmente
 en el mismo commit que `main`: `e51e1f50cc51b39856a43480d3005a34526808d1`.
 Los PRs incrementales apuntan a la transición; `main` queda fuera de cambios
-parciales. PR 01 fija el contrato documental, no implementa centralización.
+parciales. #542 fue mergeado a la transición en
+`f1c4a4ce62240e08867ce8531fc3579540114d24`; main sigue separado en el corte inicial.
+PR 02 es contractual y no implementa centralización.
 
 **Datos:** el responsable confirmó que la base no contiene datos útiles que deban
 preservarse. Se planifica bootstrap limpio; resets y simplificaciones SQL se
 resolverán en PRs posteriores conservando reglas funcionales. No se ejecutó reset.
 
-**Siguiente incremento recomendado de la transición:** cerrar el contrato de
-identidad/contexto: usuario autenticado, permisos, sucursal e identidad técnica
-del deployment; revisar la semántica final de `INSTALACION` y su relación con
-los contratos existentes antes de modificar SQL/runtime.
+**Siguiente incremento recomendado de la transición:** migrar autenticación,
+sesión y bootstrap sin instalación, alineando SQL/callers, principal y `/me`,
+preservando Bearer opaco, TTL, revocación y UTC (GEN-003 §17). Cerrar D1 antes de
+habilitar autorización contextual completa y D2 antes de automatización. Después,
+contexto/headers, composición idempotente y adopción por dominios/Flet. No alterar
+receipts legacy ni eliminar Sync sin migrar consumidores.
 
 **PRs verificados el 2026-09-11:** #540 y #541 cerrados sin merge; sus políticas no
 se reincorporan automáticamente. #533 abierto/Draft e intacto; se reconciliará

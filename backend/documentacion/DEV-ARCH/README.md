@@ -7,6 +7,7 @@ Este documento centraliza las reglas arquitectónicas del sistema, define cómo 
 Los documentos de arquitectura vigentes son:
 - `DEV-ARCH-GEN-001.md`
 - `DEV-ARCH-GEN-002.md`
+- `DEV-ARCH-GEN-003.md`
 - `dominios/administrativo/DEV-ARCH-ADM-001.md`
 - `dominios/personas/DEV-ARCH-PER-001.md`
 - `dominios/comercial/DEV-ARCH-COM-001.md`
@@ -26,6 +27,9 @@ runtime/documentación pendiente de migración, no contradicciones funcionales
 inválidas ni capacidades ya implementadas. Ownership, reglas económicas,
 entidades funcionales, autorización y demás reglas de negocio mantienen su
 precedencia normal; esta excepción no habilita contradicciones fuera de su alcance.
+
+GEN-003 concreta identidad, sesión, sucursal y contexto central; distingue
+contrato objetivo, compatibilidad vigente y decisiones abiertas de seguridad.
 
 ## Modelo de dominios
 - `personas` → identidad base
