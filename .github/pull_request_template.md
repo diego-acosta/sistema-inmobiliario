@@ -18,6 +18,9 @@ PROJECT-STATUS impact:
 SIMULACION_READLIKE, PREVIEW_READLIKE, QUERY_READLIKE o NO_CONFIRMADO. -->
 - Clasificación:
 - Naturaleza del endpoint:
+- Identidad humana/técnica:
+- Autorización:
+- Contexto de sucursal:
 - Headers:
 - If-Match-Version:
 - Idempotencia:

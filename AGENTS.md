@@ -221,7 +221,7 @@ Para todo endpoint write nuevo o modificado, el PR debe incluir decisión CORE-E
 
    **Compatibilidad Sync transicional:** los writes existentes conservan los helpers y headers técnicos de su contrato (`X-Op-Id`, `X-Sucursal-Id`, `X-Instalacion-Id` cuando sean exigidos), outbox atómico y protecciones de recepción mientras tengan consumidores. No expandir replicación de negocio ni usar ese perfil como modelo para nuevas funcionalidades. El cambio contractual de un endpoint requiere su PR de migración con SQL/runtime/tests y callers coherentes; este PR documental no cambia endpoints.
 4. **Tests mínimos obligatorios en PR write:** headers faltantes/inválidos; happy path; `If-Match-Version` faltante/inválido si aplica; mismatch real de versión si aplica; idempotencia si aplica; rollback si es orquestador; outbox si aplica.
-5. **Resumen obligatorio del PR:** sección "Decisión CORE-EF" con naturaleza del endpoint, headers, idempotencia, outbox, lock, versionado y tests ejecutados.
+5. **Resumen obligatorio del PR:** sección "Decisión CORE-EF" con naturaleza del endpoint, identidad humana/técnica, autorización, contexto de sucursal, headers, idempotencia, outbox, lock, versionado, transacción/rollback y tests ejecutados.
 6. **Reglas de alcance:** no implementar caja operativa, recibos fiscales persistidos, documental real ni administrativo nuevo sin nacer con estas reglas.
 7. **Read-like/simulación/preview:** dejar explícita la condición para no forzar headers write.
 8. **Cuando una regla no aplique:** indicar `NO APLICA` con justificación breve.
