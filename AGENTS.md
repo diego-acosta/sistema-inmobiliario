@@ -44,8 +44,13 @@ generales: no improvisar una decisión para resolverla.
 
 La evidencia SQL/runtime/tests continúa describiendo lo implementado. Cambiar
 la norma no permite omitir validaciones en callers existentes ni retirar
-infraestructura antes de migrar sus consumidores. Los PRs de esta serie tienen
-base `transition/central-authority`; `main` no recibe centralización parcial.
+infraestructura antes de migrar sus consumidores. Los PRs incrementales de
+migración tienen base `transition/central-authority`; `main` no recibe
+centralización parcial. El PR de sincronización de `main` conserva esa base e
+integra `main` mediante merge en una rama derivada de la transición, según
+`CODEX-WORKFLOW.md`, §6.1. El PR final de integración queda exceptuado: tiene
+base `main` e incorpora la transición completa una vez cumplidos los gates de
+`DEV-ARCH-GEN-002`, §11.
 
 ---
 

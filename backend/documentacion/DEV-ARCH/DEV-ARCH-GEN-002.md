@@ -214,7 +214,12 @@ decisión funcional no autorizada, registrarla como bloqueo y detener ese cambio
 
 ## 10. Estrategia de PRs y estado de trabajo
 
-PRs pequeños desde ramas específicas, siempre hacia `transition/central-authority`.
+Los PRs incrementales de migración son pequeños, parten de ramas específicas y
+tienen base `transition/central-authority`. El PR de sincronización de `main`
+también tiene esa base: parte de una rama derivada de la transición e integra
+`main` mediante merge, no mediante el rebase de los incrementos normales.
+El PR final de integración queda exceptuado: incorpora `transition/central-authority`
+con base `main`, conforme a los gates de §11.
 No trabajar directamente sobre la rama compartida ni mezclar features ajenas.
 El procedimiento y sincronización se definen en `CODEX-WORKFLOW.md`, §6.1.
 
