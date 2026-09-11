@@ -22,6 +22,10 @@ Orden operativo de verdad:
 
 `PROJECT-STATUS.md` orienta qué frente revisar primero, pero no puede contradecir arquitectura, SQL, implementación ni tests.
 
+Para la serie `transition/central-authority`, aplicar la precedencia arquitectónica
+acotada de `AGENTS.md` y `DEV-ARCH-GEN-002`. SQL/runtime/tests siguen siendo
+evidencia del estado implementado; la arquitectura objetivo no lo sustituye.
+
 ## 3. Lectura obligatoria antes de trabajar
 
 Antes de modificar código, documentación contractual o SQL, Codex debe leer:
@@ -106,7 +110,7 @@ Si cambia alguno, el body del PR debe declarar:
 PROJECT-STATUS impact: UPDATED
 ```
 
-Además, se debe actualizar `PROJECT-STATUS.md` dentro del mismo PR, limitar la modificación al frente afectado, preservar las secciones de otros frentes, verificar los estados de GitHub el mismo día, releer el archivo después de rebasear contra `origin/main` e incluir el cambio en el review final.
+Además, se debe actualizar `PROJECT-STATUS.md` dentro del mismo PR, limitar la modificación al frente afectado, preservar las secciones de otros frentes, verificar los estados de GitHub el mismo día, releer el archivo después de rebasear contra `origin/main` (o la base de transición según §6.1) e incluir el cambio en el review final.
 
 Si no cambia ninguno, el body del PR debe declarar:
 
@@ -128,7 +132,7 @@ Normalmente no corresponde ante un refactor interno sin cambio observable; test 
 
 Cada PR solo puede modificar la fila resumen y la sección del frente que le pertenece, salvo orquestación interdominio explícita y justificada. Comercial/Financiero no debe reescribir Administrativo; Administrativo no debe reescribir Comercial/Financiero; Operativo no debe modificar ambos salvo un cambio transversal documentado.
 
-Antes de editar `PROJECT-STATUS.md`, ejecutar:
+Antes de editar `PROJECT-STATUS.md`, ejecutar para PRs normales (la serie de transición usa §6.1):
 
 ```bash
 git fetch origin
@@ -136,6 +140,53 @@ git rebase origin/main
 ```
 
 Después del rebase se debe volver a leer `PROJECT-STATUS.md`, no aplicar una versión guardada anteriormente y resolver cualquier conflicto preservando los cambios ya mergeados de otros frentes.
+
+### 6.1 Excepción acotada: transición a autoridad central
+
+Aplica exclusivamente a los PRs de migración basados en
+`transition/central-authority` y a sus ramas de trabajo. No cambia el workflow
+de los PRs normales ni incorpora las políticas propuestas en #540/#541.
+
+- Crear una rama específica desde `origin/transition/central-authority`.
+- Base del PR: `transition/central-authority`; abrir como Draft.
+- No hacer commits directos, rebase ni force-push de la rama compartida.
+- `main` no recibe merges parciales de centralización. Sólo el PR final de la
+  transición puede incorporar la nueva arquitectura, después de sus gates.
+- Mantener una razón de cambio por PR; no incluir features no relacionadas.
+
+En la rama individual, antes de editar `PROJECT-STATUS.md`, ejecutar:
+
+```bash
+git fetch origin
+git rebase origin/transition/central-authority
+```
+
+Releer el status resultante y preservar cambios ya integrados en la transición.
+La base normativa inmediata de esta serie es `origin/transition/central-authority`,
+no `origin/main`. El nombre de rama no sustituye la precedencia de `AGENTS.md`.
+
+Un PR puede modificar documentación antes que runtime si declara la discrepancia
+temporal y el pendiente responsable conforme a `DEV-ARCH-GEN-002`, §§9–10.
+Distinguir **arquitectura objetivo**, **runtime actual**, **compatibilidad
+transicional**, **eliminado** y **pendiente de migración**. No declarar un cambio
+implementado por haber actualizado la norma. Las discrepancias funcionales fuera
+del alcance de esa precedencia siguen bloqueando el cambio que dependa de ellas.
+La validación de un PR sólo documental consiste en revisar diff, alcance,
+referencias y contradicciones, y ejecutar `git diff --check`; no exige suites
+funcionales sin una razón concreta. Los PRs runtime mantienen sus validaciones.
+
+**Sincronización con main:** revisar diferencias cada día de trabajo y antes de
+los gates. Incorporar cambios relevantes mediante un PR de sincronización que
+integre `main` en una rama de trabajo derivada de la transición mediante merge,
+y tenga base en la transición. Ese PR usa merge, no el rebase anterior; después
+debe releerse el status. Resolver conflictos por semántica, sin sobrescribir
+globalmente un lado. No reescribir la historia de la rama compartida. Antes del
+PR final, incorporar el último `main` y repetir los gates afectados.
+
+El cierre requiere los gates de `DEV-ARCH-GEN-002`, §11. El PR final debe además
+retirar esta excepción cuando deje de ser necesaria y conservar la arquitectura
+central como norma permanente. La rama temporal se elimina después de integrar
+y verificar el resultado; PR 01 no ejecuta ese cierre.
 
 ## 7. Plantilla estándar de issue
 
@@ -267,6 +318,11 @@ Usar exactamente las clasificaciones vigentes indicadas por `AGENTS.md`:
 - `NO_CONFIRMADO`
 
 ### 9.1 Writes sincronizables
+
+Durante la transición, esta sección rige sólo compatibilidad Sync existente.
+Nuevos commands centrales siguen `AGENTS.md`, §14: idempotencia y publicación de
+eventos se justifican por separado, sin headers de instalación, outbox, locks
+lógicos ni conflictos de réplica obligatorios por defecto. No se expande Sync.
 
 Deben documentar y probar, según aplique:
 

@@ -1,6 +1,6 @@
 # PROJECT-STATUS — Estado operativo del proyecto
 
-Actualizado: 2026-09-03
+Actualización arquitectónica: 2026-09-11. Se conservan los cortes funcionales anteriores; no se reauditaron todos los frentes en PR 01.
 **Repositorio:** `diego-acosta/sistema-inmobiliario`
 
 ## 1. Propósito
@@ -20,6 +20,48 @@ Ante cualquier duda o contradicción, aplicar este orden:
 7. Documentación histórica o de diseño, solo si coincide con lo anterior.
 
 Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
+
+### 2.1 Transición a autoridad central — decisión y estado separados
+
+**DECISIÓN ARQUITECTÓNICA OBJETIVO:** FastAPI central y PostgreSQL central como
+única autoridad persistente, conservando inicialmente Flet como cliente y
+multi-sucursal. Sin bases de negocio autoritativas por instalación ni replicación
+de negocio entre ellas. Operación normal online, sin escritura definitiva offline.
+Contrato rector:
+[DEV-ARCH-GEN-002](backend/documentacion/DEV-ARCH/DEV-ARCH-GEN-002.md).
+
+**ESTADO REAL DEL RUNTIME ACTUAL:** no migrado por este PR. Persisten contexto de
+instalación, headers legacy, infraestructura Sync y adopción parcial de seguridad.
+Outbox/inbox también sostienen efectos funcionales locales. Sync es arquitectura
+heredada/en retirada; su presencia temporal no es una obligación para nuevas
+features ni permite borrarlo sin revisar consumidores. CORE-EF conserva identidad
+global, CAS/versionado, UTC, transacciones, auditoría e idempotencia útil.
+
+**Ejecución:** rama temporal `transition/central-authority`, verificada inicialmente
+en el mismo commit que `main`: `e51e1f50cc51b39856a43480d3005a34526808d1`.
+Los PRs incrementales apuntan a la transición; `main` queda fuera de cambios
+parciales. PR 01 fija el contrato documental, no implementa centralización.
+
+**Datos:** el responsable confirmó que la base no contiene datos útiles que deban
+preservarse. Se planifica bootstrap limpio; resets y simplificaciones SQL se
+resolverán en PRs posteriores conservando reglas funcionales. No se ejecutó reset.
+
+**Siguiente incremento recomendado de la transición:** cerrar el contrato de
+identidad/contexto: usuario autenticado, permisos, sucursal e identidad técnica
+del deployment; revisar la semántica final de `INSTALACION` y su relación con
+los contratos existentes antes de modificar SQL/runtime.
+
+**PRs verificados el 2026-09-11:** #540 y #541 cerrados sin merge; sus políticas no
+se reincorporan automáticamente. #533 abierto/Draft e intacto; se reconciliará
+en el incremento Comercial preservando sus decisiones económicas, sin trasladar
+automáticamente prerrequisitos de portabilidad/Sync al producto central.
+
+Las secciones siguientes conservan estado funcional, cortes históricos y roadmap
+por dominio. Sus menciones de Sync obligatorio y próximos consumers describen
+el modelo heredado pendiente de migración, no el siguiente trabajo de esta serie.
+Se aplica la precedencia acotada de DEV-ARCH-GEN-002, §9, exclusivamente a esa
+dimensión; no se descartan reglas económicas, seguridad ni ownership, ni se
+declaran cerrados issues o capacidades pendientes.
 
 ## 3. Resumen general
 
