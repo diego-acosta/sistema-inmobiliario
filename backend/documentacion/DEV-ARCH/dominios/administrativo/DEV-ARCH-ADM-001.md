@@ -18,6 +18,17 @@ El evaluador GLOBAL actual se conserva como evidencia; no implementa roles por
 sucursal ni denegaciones. La composición contextual D1 sigue DECISIÓN ABIERTA;
 no se declara cerrada por centralizar ni se resuelve la parametrización #435.
 
+### Primer slice runtime central (posterior a #543)
+
+Auth/login/logout/principal/`/me` y bootstrap de credenciales ya no consumen
+instalación ni configuración local. El principal contiene sólo identidad humana;
+no proyecta sucursal. Sesión y procedencia de credencial admiten NULL conservando
+FKs, locks, Argon2id, digest, TTL 8h, replay y versionado físico. Relojes/defaults/
+triggers de estas capacidades usan UTC explícito. GEN-003 §19 registra evidencia
+y el bloqueo de validación PostgreSQL: código implementado, aceptación pendiente.
+Los relatos de #454/#446/#447 posteriores son históricos en esos aspectos.
+D1/D2, contexto general, caja, Sync y demás headers siguen pendientes/transicionales.
+
 ## 1. Propósito y estado
 
 Este documento congela la fuente de verdad arquitectónica de configuración y parametrización del dominio `administrativo`. Su origen fue un freeze documental; desde entonces, incrementos posteriores pueden materializar decisiones concretas mediante SQL, runtime y tests verificables. El estado vigente de cada capacidad debe leerse según su sección específica y la implementación real del repositorio; las capacidades marcadas como pendientes o no confirmadas permanecen únicamente como contrato o evolución futura.

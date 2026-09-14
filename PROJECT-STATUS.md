@@ -39,8 +39,12 @@ version_registro se conserva para concurrencia, no como obligación de réplica.
 La composición de roles GLOBAL/contextuales (D1) y el mecanismo de actores
 técnicos (D2) siguen DECISIÓN ABIERTA; no se declara Gate 2 satisfecho.
 
-**ESTADO REAL DEL RUNTIME ACTUAL:** no migrado por este PR. Persisten contexto de
-instalación, headers legacy, infraestructura Sync y adopción parcial de seguridad.
+**ESTADO REAL DEL RUNTIME ACTUAL:** auth/sesión/bootstrap implementados en esta
+rama sin instalación: Settings opcional, principal y `/me` sin instalación/sucursal,
+procedencia nullable y SQL UTC. **Aceptación pendiente de PostgreSQL real**:
+reset_db.sh falló por ausencia de psql; 149 unitarios aislados pasaron, sin acreditar
+persistencia ni regresión DB. Persisten contexto general de instalación, headers
+legacy, infraestructura Sync y adopción parcial de seguridad.
 Outbox/inbox también sostienen efectos funcionales locales. Sync es arquitectura
 heredada/en retirada; su presencia temporal no es una obligación para nuevas
 features ni permite borrarlo sin revisar consumidores. CORE-EF conserva identidad
@@ -51,15 +55,18 @@ en el mismo commit que `main`: `e51e1f50cc51b39856a43480d3005a34526808d1`.
 Los PRs incrementales apuntan a la transición; `main` queda fuera de cambios
 parciales. #542 fue mergeado a la transición en
 `f1c4a4ce62240e08867ce8531fc3579540114d24`; main sigue separado en el corte inicial.
-PR 02 es contractual y no implementa centralización.
+#543 fue mergeado a transición en `3a32b8d80d267e3b20a19045156059bda2339d83`,
+verificado el 2026-09-14. El primer slice runtime parte de ese commit; main sigue
+separado e intacto. #533 fue reverificado abierto/Draft el mismo día.
 
 **Datos:** el responsable confirmó que la base no contiene datos útiles que deban
 preservarse. Se planifica bootstrap limpio; resets y simplificaciones SQL se
-resolverán en PRs posteriores conservando reglas funcionales. No se ejecutó reset.
+resolverán por incrementos conservando reglas funcionales. El reset intentado
+se detuvo antes de recrear bases por falta de psql.
 
-**Siguiente incremento recomendado de la transición:** migrar autenticación,
-sesión y bootstrap sin instalación, alineando SQL/callers, principal y `/me`,
-preservando Bearer opaco, TTL, revocación y UTC (GEN-003 §17). Cerrar D1 antes de
+**Siguiente paso:** completar reset DEV/TEST y pruebas PostgreSQL del slice
+auth/sesión/bootstrap, incluidas UTC y regresión legacy, antes de aceptarlo.
+Después, cerrar D1 antes de
 habilitar autorización contextual completa y D2 antes de automatización. Después,
 contexto/headers, composición idempotente y adopción por dominios/Flet. No alterar
 receipts legacy ni eliminar Sync sin migrar consumidores.

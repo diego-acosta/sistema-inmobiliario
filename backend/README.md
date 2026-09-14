@@ -60,6 +60,12 @@ pip install -r requirements.txt
 
 Crear `.env` a partir de `.env.example` y ajustar la conexión PostgreSQL cuando corresponda.
 
+`DATABASE_URL` es obligatorio. `LOCAL_INSTALLATION_CODE` es opcional y sólo
+sirve a callers legacy; si está presente debe ser un código válido exacto.
+Auth/sesión/bootstrap central no lo consumen ni requieren filas `instalacion`.
+Un caller legacy que invoque `resolve_local_installation()` sin configuración
+recibe un error explícito; no existe fallback ni instalación por defecto.
+
 ## Bootstrap de PostgreSQL
 
 El flujo oficial recrea las bases de desarrollo y test y aplica el schema/patches/seeds vigentes.

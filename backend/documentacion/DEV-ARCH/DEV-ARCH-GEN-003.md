@@ -2,7 +2,7 @@
 
 ## 1. Estado, alcance y evidencia
 
-**ARQUITECTURA OBJETIVO — contrato documental de PR 02; runtime pendiente de migración.**
+**ARQUITECTURA OBJETIVO — contrato de PR 02; primer slice auth implementado en la rama, validación PostgreSQL pendiente.**
 Base auditada: `transition/central-authority`, commit
 `f1c4a4ce62240e08867ce8531fc3579540114d24`, merge de #542 (2026-09-11).
 `main` permanece separado en `e51e1f50cc51b39856a43480d3005a34526808d1`.
@@ -41,9 +41,9 @@ Conserva `id_usuario`, `codigo_usuario`, `login`, UID público `id_sesion`,
 | `id_instalacion_origen_sesion` | RETIRAR | No requerido para crear/resolver sesión ni ejecutar requests; compatibilidad física hasta migración |
 | `id_sucursal_operativa` | MIGRAR | El contexto efectivo pertenece al command/request, no a la identidad; retirar su autoridad y después su proyección del principal/API |
 
-Hoy login inserta `id_sucursal_operativa = NULL`; el principal sólo proyecta esa
-columna. Su presencia no acredita alcance. El retiro de campos de `/me` debe
-coordinarse con schema/callers en otro PR; aquí la respuesta no cambia.
+Login central inserta sucursal e instalación NULL. El principal y `/me` ya no
+proyectan esos campos; no se encontraron callers productivos que los requieran.
+Se adaptaron schemas y fixtures de consumidores; no se selecciona sucursal al autenticar.
 
 ## 3. Autenticación y sesión central
 
@@ -63,8 +63,9 @@ finalizado no vuelve a mutar la sesión. No exige `X-Op-Id` ni CAS HTTP.
 No se promete un mecanismo de revocación administrativa aún inexistente.
 
 La autoridad temporal es PostgreSQL en UTC; comparar instantes independientes
-de `TimeZone`. Los casts actuales de sesiones/autorización GLOBAL requieren
-migración y pruebas con zona no UTC (§16). No convertir timestamps económicos
+de `TimeZone`. Sesiones y bootstrap usan UTC explícito en consultas, defaults y triggers;
+sus pruebas PostgreSQL no UTC están agregadas pero pendientes de ejecución.
+El cast de autorización GLOBAL permanece pendiente de migración (§16). No convertir timestamps económicos
 ni fechas operativas mediante esta regla.
 
 Flet debe conservar el bearer, consultar `/me`, manejar expiración/401 y logout,
@@ -379,15 +380,15 @@ precedencia no permite inventar la composición de roles que D1 deja abierta.
 
 ## 16. Matriz de evidencia objetivo vs runtime actual
 
-Rutas relativas al repositorio. Lectura estática de SQL/código/tests; ninguna suite
-funcional ejecutada en este PR. Una prueba existente no se reporta como PASS.
+Rutas relativas al repositorio. Matriz actualizada para el slice auth central;
+§19 distingue unitarios ejecutados de validación PostgreSQL pendiente.
 
 | Área / evidencia concreta | Runtime actual | Objetivo / pendiente responsable |
 | --- | --- | --- |
-| `backend/app/application/administrativo/authentication.py`; `backend/app/api/authentication.py` | Login resuelve instalación; principal desde sesión/usuario; TTL 8h y logout revocable | Administrativo: conservar seguridad, retirar dependencia de instalación y proyecciones legacy |
-| `backend/app/infrastructure/persistence/repositories/sesion_usuario_repository.py`; `backend/database/patch_sesion_usuario_runtime_20260807.sql` | Insert con instalación, sucursal NULL, digest/TTL, triggers de versión; reloj por cast sin UTC explícito | Administrativo/SQL: login y `/me` sin instalación, UTC independiente de TimeZone; conservar revocación |
-| `backend/app/config/settings.py`; `backend/app/application/common/local_installation.py`; `backend/app/infrastructure/persistence/repositories/instalacion_repository.py` | Settings exige LOCAL_INSTALLATION_CODE (también consumido al iniciar `backend/app/main.py` y `backend/app/config/database.py`); lookup exacto, elegibilidad/fallo cerrado | Técnico/Operativo: TRANSICIONAL → RETIRAR al migrar callers; no fallback artificial |
-| `backend/app/application/administrativo/commands/bootstrap_credential.py`; `backend/database/patch_credencial_usuario_core_ef_20260805.sql` | CLI crea/resetea con resolver y FKs de procedencia | Administrativo: bootstrap seguro sin instalación, preservar Argon2id/locks/credencial revocada |
+| `backend/app/application/administrativo/authentication.py`; `backend/app/api/authentication.py` | Login/principal sin resolver instalación ni proyectar sucursal; TTL 8h y logout revocable | Implementado en rama; validación PostgreSQL pendiente |
+| `backend/app/infrastructure/persistence/repositories/sesion_usuario_repository.py`; `backend/database/patch_sesion_usuario_runtime_20260807.sql` | Insert central con instalación/sucursal NULL, digest/TTL; patch_auth_central_20260914.sql conserva FK y usa UTC explícito | Validar patch, triggers y zona no UTC en PostgreSQL real |
+| `backend/app/config/settings.py`; `backend/app/application/common/local_installation.py`; `backend/app/infrastructure/persistence/repositories/instalacion_repository.py` | Settings permite LOCAL_INSTALLATION_CODE ausente; DATABASE_URL sigue obligatorio; resolver legacy falla explícitamente antes del lookup si falta configuración | Sólo contexto legacy sigue consumiendo el resolver; sin fallback |
+| `backend/app/application/administrativo/commands/bootstrap_credential.py`; `backend/database/patch_credencial_usuario_core_ef_20260805.sql` | CLI crea/resetea sin resolver ni campos de instalación en preview/result; procedencia NULL, FKs conservadas | Preserva Argon2id/locks/replay; validación física pendiente |
 | `backend/app/application/common/local_command_context.py`, `local_command_headers.py`; `backend/app/api/local_command_context.py` | Sucursal por request; instalación resuelta incluso sin assertion; op_id requerido; adapters sin adopción productiva encontrada fuera del módulo | Técnico: contexto §7 sin instalación, policy idempotencia/CAS; no quitar protecciones legacy en bloque |
 | `backend/app/infrastructure/persistence/repositories/technical_context_repository.py` | Reloj UTC, sucursal elegible, vínculo vigente + instalación↔sucursal | Técnico/Administrativo/Operativo: conservar scope, retirar sólo validación instalación |
 | `backend/app/infrastructure/persistence/repositories/usuario_sucursal_repository.py`; `backend/database/patch_usuario_sucursal_core_ef_20260702.sql` | Flags, predeterminada e índices; listas no sustituyen proyección temporal #536 | Administrativo: reutilizar asignaciones y UTC; no crear asignación a deployment |
@@ -427,7 +428,8 @@ no equivale a auditoría completa de cada suite ni a ejecución:
 
 ## 17. Orden de migración y criterios del siguiente PR
 
-1. **Siguiente PR runtime: autenticación/sesión y bootstrap sin instalación.**
+1. **Primer slice runtime: autenticación/sesión y bootstrap sin instalación.**
+   Implementado en rama; validación PostgreSQL pendiente (§19).
    Partir de transición tras integrar este contrato. Alcance Administrativo +
    settings/SQL estrictamente necesarios: mantener bearer/Argon2id/revocación/TTL,
    desacoplar login, credenciales y principal; alinear `/me`, DEV-API y sus callers.
@@ -463,3 +465,39 @@ estas matrices y sus reglas económicas; no habilitan volver a exigir Sync.
 Mientras D1 siga abierta, no declarar identidad/contexto completo del backend
 ni Gate 2 de GEN-002 satisfecho. Este PR cierra las decisiones respaldadas y
 hace explícito el límite, conforme a la prohibición de diseñar seguridad libremente.
+
+## 19. Primer incremento runtime central — evidencia y límite
+
+Base: merge #543 `3a32b8d80d267e3b20a19045156059bda2339d83`.
+Clasificación de dependencias auditadas:
+
+| Dependencia / consumers directos | Clasificación | Resultado |
+| --- | --- | --- |
+| Settings, imports main/database, auth service/router/dependency/schema `/me` | MIGRAR_EN_ESTE_PR | Configuración opcional; autenticación sólo sesión/usuario |
+| SesionUsuarioRepository, sesión SQL, triggers/relojes | MIGRAR_EN_ESTE_PR | Instalación nullable con FK; tiempos físicos UTC explícitos |
+| BootstrapCredentialCommand, CLI, CredencialUsuarioRepository | MIGRAR_EN_ESTE_PR | Sin resolver/DTO instalación; procedencia nullable existente, op_id/locks conservados |
+| Tests de auth/bootstrap/principal y fixtures consumidores | MIGRAR_EN_ESTE_PR | Contrato central y matriz PostgreSQL no UTC agregados |
+| local_installation, local_command_context y adapters | LEGACY_PRESERVAR | Sin config el resolver falla cerrado; contexto no migrado |
+| Caja, instalación física, Sync, ledger general, permisos contextuales/Flet | FUERA_DE_ALCANCE | Sin cambio de implementación; D1/D2 abiertas |
+
+El patch incremental conserva tabla INSTALACION, FKs nullable y constraints de
+credenciales/sesiones; sólo sesión pierde NOT NULL en su origen. Credenciales
+ya admitían NULL y no requieren cambio de nullability. Defaults y cuatro triggers
+conservan UID/versionado/procedencia legacy, cambiando la representación temporal
+a UTC. Reaplicar patches históricos aislados no es el procedimiento de despliegue:
+resets aplican la cadena ordenada y la reejecución del patch central es idempotente.
+
+Validación disponible: 149 pruebas unitarias aisladas de fixtures DB, compilación
+y diff sin whitespace inválido. **BLOQUEO DE VALIDACIÓN:** reset_db.sh se detuvo
+antes de recrear bases porque falta psql; no se ejecutaron pruebas PostgreSQL ni
+se acredita el gate de persistencia. Tests físicos nuevos cubren ausencia de filas
+instalación, init/reset/replay, UTC en dos zonas, expiración, logout y constraints.
+No presentar este slice como aceptado hasta completar reset DEV/TEST y regresión
+física. Después: cerrar D1 y migrar contexto general; D2 antes de actores técnicos.
+
+Recuperación antes de usar el slice: revertir código junto con su patch aplicado
+sobre una DB de desarrollo reconstruida por la cadena anterior. No restaurar
+NOT NULL mientras existan sesiones centrales NULL: usar reconstrucción limpia
+permitida por la premisa de datos sin utilidad, nunca instalación ficticia. Si
+aparecen datos útiles, reevaluar recuperación antes de resetear. No distribuir
+credenciales ni sesiones como mecanismo de rollback.

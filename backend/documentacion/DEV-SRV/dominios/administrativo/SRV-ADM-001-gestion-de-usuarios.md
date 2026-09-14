@@ -164,9 +164,9 @@ Existe una primitiva interna transversal para credenciales futuras basada en Arg
 
 Para consumidores futuros, `hash_credencial` deberá persistir el PHC Argon2id y `algoritmo_hash` deberá persistir `argon2id:v1`. #450 y #446 siguen pendientes.
 
-## Incremento #454 — bootstrap administrativo local
+## Bootstrap de credenciales — #454, actualizado a autoridad central
 
-La CLI local permite `init` cuando no hay credencial PASSWORD activa y `reset` cuando existe exactamente una activa y principal. El caso de uso es dueño del único commit/rollback; genera el hash antes de abrir la transacción, bloquea usuario y credenciales ordenadas, usa un único `CURRENT_TIMESTAMP`, revoca históricamente e inserta una fila nueva. El replay por `op_id_alta` exige mismo usuario y verificación Argon2id.
+La CLI local permite `init` cuando no hay credencial PASSWORD activa y `reset` cuando existe exactamente una activa y principal. El caso de uso es dueño del único commit/rollback; genera el hash antes de abrir la transacción, bloquea usuario y credenciales ordenadas, usa un único `CURRENT_TIMESTAMP AT TIME ZONE 'UTC'`, revoca históricamente e inserta una fila nueva. El replay por `op_id_alta` exige mismo usuario y verificación Argon2id.
 
 Clasificación CORE-EF: `COMMAND_WRITE_TECNICO`, local no sincronizable. Headers HTTP, `If-Match-Version`, outbox, eventos y lock lógico persistido: **NO APLICA**. El versionado se delega a los triggers SQL vigentes; la transacción revierte íntegramente ante fallos.
 
@@ -176,4 +176,20 @@ Credenciales y sesiones son locales/no sincronizables en todos sus campos. No se
 
 ## Incremento #447 — resolución read-only del principal
 
-`get_authenticated_principal` reutiliza el parser bearer y el digest de #446, consulta una proyección explícita de `sesion_usuario` y `usuario`, y devuelve el value object inmutable `AuthenticatedPrincipal`. Toda sesión no utilizable o usuario no elegible colapsa públicamente a `401 INVALID_SESSION`; una falla técnica colapsa a `500 SESSION_TECHNICAL_ERROR`. No se revalida la credencial, no se hace commit, lock, outbox, sync, autorización ni actualización de actividad. La sucursal nullable y la instalación de origen se devuelven tal como están persistidas en la sesión.
+`get_authenticated_principal` reutiliza el parser bearer y el digest de #446, consulta una proyección explícita de `sesion_usuario` y `usuario`, y devuelve el value object inmutable `AuthenticatedPrincipal`. Toda sesión no utilizable o usuario no elegible colapsa públicamente a `401 INVALID_SESSION`; una falla técnica colapsa a `500 SESSION_TECHNICAL_ERROR`. No se revalida la credencial, no se hace commit, lock, outbox, sync, autorización ni actualización de actividad. El principal central ya no proyecta sucursal ni instalación; sólo los seis campos de identidad de GEN-003.
+
+## Slice central posterior a #543
+
+Login y bootstrap no reciben Settings ni llaman al resolver de instalación.
+Preflight/execute de CLI reciben usuario, secreto y op_id; preview/result no
+exponen instalación. Se conserva la frontera TTY administrativa, sin inventar
+D1/D2. Init/reset persisten procedencia NULL; op_id sigue justificándose por
+replay/conflicto de un command sensible. Las credenciales revocadas conservan
+su origen histórico si lo tenían, y la nueva modificación central usa NULL.
+Sesiones conservan token opaco/digest SHA-256, TTL absoluto de 8h y logout
+idempotente; se revalida usuario/credencial bajo lock antes del insert.
+El reloj real de sesión usa clock_timestamp AT TIME ZONE UTC; bootstrap usa
+instante transaccional UTC. Defaults/triggers físicos acompañan esa convención.
+No se modifican fechas económicas ni autorización GLOBAL/contextual.
+Validación PostgreSQL pendiente por falta de servidor/psql en el entorno;
+GEN-003 §19 detalla el gate, sin declarar el backend completo centralizado.
