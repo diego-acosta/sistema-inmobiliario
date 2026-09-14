@@ -80,7 +80,18 @@ No recalcula:
 No sustituye a `financiero` como fuente de verdad.
 
 ### con operativo
-`analitico` consume sucursales, instalaciones, cajas operativas, movimientos y cierres como fuentes de lectura.
+`analitico` consume sucursales, cajas operativas, movimientos y cierres como
+fuentes funcionales de lectura de Operativo. Conforme a
+[GEN-003 §6](../../DEV-ARCH-GEN-003.md), instalación puede seguir siendo fuente
+legacy de lectura mientras exista físicamente y se migran sus consumidores;
+no es una dimensión obligatoria del modelo analítico objetivo. Nuevos análisis
+centrales no deben depender de ella.
+
+Cuando Operativo migre/retire instalación, los lectores existentes deberán
+adaptarse a las fuentes funcionales resultantes (`sucursal`, `caja_operativa`,
+etc.) antes de retirar la dependencia. Analítico conserva resultados y semántica
+del dominio origen, no una entidad funcional por el solo hecho de consultarla
+históricamente. Esto no habilita writes ni redefine reglas o cardinalidades de Caja.
 
 No ejecuta:
 - apertura de caja

@@ -18,6 +18,33 @@ Operativo conserva ownership de las piezas legacy hasta su retiro. Usuarios,
 permisos y auditoría siguen en Administrativo; identidad técnica futura queda
 sujeta a D2 de GEN-003, no al resolver #456.
 
+Esta sección central prevalece sobre las menciones de instalación en las
+secciones históricas siguientes, únicamente para su destino y transición:
+
+| Relación o contrato actual | Clasificación y destino |
+| --- | --- |
+| `instalacion` como entidad administrada por Operativo | LEGACY / EN RETIRADA; no pertenece al objetivo funcional ni técnico |
+| Alta/modificación/baja/consulta de instalación | Contratos heredados, no objetivo; retiro documental/runtime junto con migración Operativa |
+| Estados y eventos de instalación | LEGACY / EN RETIRADA; no se eliminan de catálogos ni runtime en este fix |
+| Caja → instalación | Dependencia física/funcional transicional; sigue válida hasta migrar reglas y consumidores |
+| Caja → sucursal | Relación funcional que permanece; objetivo directo sin instalación intermedia obligatoria |
+| Resolver #456 | COMPATIBILIDAD_TRANSICIONAL hasta migrar callers |
+
+Caja conserva identidad propia, apertura, estado, movimientos, cierre, responsable
+y numeración/reglas aplicables. No se deduce una caja por sucursal ni otra
+cardinalidad nueva. El patch `backend/database/patch_caja_operativa_base_20260704.sql`
+ya tiene FK directa a sucursal y FK obligatoria a instalación; el índice
+`ux_caja_operativa_codigo_activa` incluye ambos IDs y `codigo_caja`.
+**MIGRACIÓN FUNCIONAL PENDIENTE:** resolver el ámbito de unicidad del código sin
+instalación y migrar contexto de aperturas/movimientos/cierres y configuración
+local antes de quitar FKs/selectores. No sustituir ese índice mecánicamente.
+
+Las reglas heredadas siguen siendo exigibles a sus consumidores actuales.
+SRV-OPE-002, servicios de caja/configuración y catálogos detallados quedan como
+deuda de migración coordinada; su conservación temporal no habilita expansión
+ni obliga a mantener instalación en el resultado final. Adaptar lectores,
+incluido Analítico, antes del retiro para preservar sus resultados funcionales.
+
 ## 1. Objetivo
 Congelar el criterio arquitectónico vigente del dominio `operativo` para asegurar alineación entre `SYS-MAP-002`, `DEV-SRV`, `CAT-CU` y los catálogos de implementación ya corregidos.
 

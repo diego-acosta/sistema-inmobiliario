@@ -139,15 +139,50 @@ GLOBAL actual como implementación de la política completa anterior.
 
 ## 6. INSTALACION y LOCAL_INSTALLATION_CODE
 
-**INSTALACION en arquitectura objetivo: NO APLICA.** No es actor, dispositivo,
-estación ni identidad persistida del deployment. El sistema central debe funcionar
-sin una instalación activa en request, sesión, command, CAS, auditoría, idempotencia
-ni persistencia de negocio. No se crea sustituto persistido.
+**ARQUITECTURA OBJETIVO: INSTALACION = NO APLICA**, como entidad funcional
+ni técnica. No se reinterpreta como actor, dispositivo, estación o deployment
+ni se crea sustituto persistido. El funcionamiento final no requiere instalación.
 
-**Runtime/SQL actual: COMPATIBILIDAD_TRANSICIONAL** mientras tenga consumidores.
-La entidad, FKs, `id_instalacion_origen`, `id_instalacion_ultima_modificacion`,
-headers, resolvers, tests y validación instalación↔sucursal se retiran
-incrementalmente después de migrar callers; PR 02 no elimina ninguno.
+**RUNTIME / MODELO ACTUAL: entidad legacy todavía materializada.** Las
+persistencias y relaciones funcionales heredadas que la referencian siguen
+válidas transicionalmente; la decisión objetivo no las elimina ni permite
+ignorar sus restricciones actuales.
+
+**TRANSICIÓN: migrar reglas y consumidores antes de retirar dependencias.**
+Tabla, FKs, casos de uso, estados, eventos, resolvers, headers y procedencia se
+retiran progresivamente con la migración del dominio responsable. Su existencia
+física temporal no autoriza nuevas dependencias ni devuelve INSTALACION al modelo
+objetivo; tampoco justifica conservarla a largo plazo. PR 02 no elimina esas piezas.
+
+### Relaciones funcionales heredadas: retiro coordinado
+
+El objetivo de Caja es la relación directa `SUCURSAL → CAJA_OPERATIVA`, sin
+instalación intermedia obligatoria para existir u operar. Caja conserva identidad
+propia, apertura, estado, movimientos, cierre, responsable y numeración/reglas
+funcionales aplicables; no se fija aquí una nueva cardinalidad.
+
+El SQL actual `backend/database/patch_caja_operativa_base_20260704.sql` ya define
+FK directa a sucursal y también `id_instalacion NOT NULL` con FK, además de
+`ux_caja_operativa_codigo_activa` por `(id_sucursal, id_instalacion, codigo_caja)`
+para filas no eliminadas. Esa dependencia funcional/física sigue vigente hasta
+migrar sus reglas; no es sólo metadata de Sync descartable.
+
+**MIGRACIÓN FUNCIONAL PENDIENTE — Operativo:** determinar el ámbito central de
+unicidad de `codigo_caja` al retirar instalación; no inferir automáticamente
+unicidad por sucursal ni permitir colisiones. Migrar también el contexto heredado
+de aperturas/movimientos/cierres y la configuración local por sucursal/instalación,
+resolviendo qué reglas permanecen en caja o sucursal antes de retirar sus FKs y
+selectores. No elegir aquí cardinalidades ni nuevos valores de configuración.
+
+Alta/modificación/baja/consulta, estados y eventos de instalación:
+**LEGACY / EN RETIRADA**, no objetivo final. Su retiro de DEV-SRV, catálogos,
+API y runtime corresponde al incremento Operativo junto con sus consumidores;
+el resolver #456 conserva compatibilidad transicional hasta migrar sus callers.
+[El freeze Operativo](dominios/operativo/DEV-ARCH-OPE-001.md) delimita esta
+precedencia sobre sus secciones históricas. [Analítico](dominios/analitico/DEV-ARCH-ANA-001.md)
+puede leer instalación existente mientras se migra, pero deberá consumir las
+fuentes funcionales resultantes sin exigir conservarla. Retirar instalación no
+puede romper caja ni lectores antes de adaptar sus dependencias.
 
 Nuevas funcionalidades centrales no pueden exigir `X-Instalacion-Id`,
 `LOCAL_INSTALLATION_CODE`, resolver instalación, validar sucursal por pertenencia
