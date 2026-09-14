@@ -60,14 +60,14 @@ class CredencialUsuarioRepository:
         return [self._map(row) for row in rows]
 
     def get_transaction_timestamp(self) -> datetime:
-        return self.db.execute(text("SELECT CURRENT_TIMESTAMP")).scalar_one()
+        return self.db.execute(text("SELECT CURRENT_TIMESTAMP AT TIME ZONE 'UTC'")).scalar_one()
 
     def revoke_password(
         self,
         credential_id: int,
         *,
         timestamp: datetime,
-        installation_id: int,
+        installation_id: int | None = None,
         op_id: UUID,
     ) -> None:
         self.db.execute(
@@ -93,7 +93,7 @@ class CredencialUsuarioRepository:
         password_hash: str,
         algorithm: str,
         timestamp: datetime,
-        installation_id: int,
+        installation_id: int | None = None,
         op_id: UUID,
     ) -> None:
         self.db.execute(

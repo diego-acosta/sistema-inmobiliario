@@ -42,8 +42,6 @@ class AuthenticatedPrincipalData(BaseModel):
     id_sesion: UUID
     mecanismo_autenticacion: Literal["SESION_SERVIDOR"]
     autenticado_en: datetime
-    id_instalacion_origen_sesion: int
-    id_sucursal_operativa: int | None
 
 
 class AuthenticatedPrincipalResponse(BaseModel):

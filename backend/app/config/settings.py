@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 
 from app.application.common.local_installation import (
     InvalidLocalInstallationCode,
-    LocalInstallationNotConfigured,
 )
 
 
@@ -41,12 +40,10 @@ class Settings:
         return database_url
 
     @staticmethod
-    def _get_local_installation_code() -> str:
+    def _get_local_installation_code() -> str | None:
         raw = getenv("LOCAL_INSTALLATION_CODE")
         if raw is None:
-            raise LocalInstallationNotConfigured(
-                "LOCAL_INSTALLATION_CODE no está configurada."
-            )
+            return None
         if not raw or not raw.strip() or raw != raw.strip():
             raise InvalidLocalInstallationCode(
                 "LOCAL_INSTALLATION_CODE debe ser un código no vacío sin espacios exteriores."

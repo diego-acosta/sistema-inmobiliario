@@ -1,6 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
-from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -88,10 +87,7 @@ def _user(suffix="USER", **changes):
 
 
 def _command():
-    return BootstrapCredentialCommand(
-        Factory,
-        SimpleNamespace(local_installation_code=_installation()["codigo_instalacion"]),
-    )
+    return BootstrapCredentialCommand(Factory)
 
 
 def _run(operation, user, secret, op_id=None):
@@ -162,7 +158,6 @@ def test_init_persists_complete_contract_without_outbox():
     outbox = _outbox_count()
     result = _run("init", user, secret, op_id)
     row = _rows(user)[0]
-    installation = _installation()
     assert result.result == "COMPLETADO" and verify_password(
         secret, row["hash_credencial"]
     )
@@ -182,8 +177,8 @@ def test_init_persists_complete_contract_without_outbox():
     )
     assert (
         row["id_instalacion_origen"]
-        == row["id_instalacion_ultima_modificacion"]
-        == installation["id_instalacion"]
+        is row["id_instalacion_ultima_modificacion"]
+        is None
     )
     assert row["op_id_alta"] == row["op_id_ultima_modificacion"] == op_id
     assert row["version_registro"] == 1 and row["deleted_at"] is None

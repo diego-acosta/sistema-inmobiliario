@@ -28,8 +28,6 @@ def _projection(**overrides):
         "fecha_hora_cierre": None,
         "expira_en": now + timedelta(hours=7),
         "requiere_reautenticacion": False,
-        "id_instalacion_origen": 1,
-        "id_sucursal_operativa": None,
         "id_usuario_usuario": 10,
         "codigo_usuario": "USR-001",
         "login": "operador",
@@ -45,10 +43,10 @@ def _projection(**overrides):
 def test_authenticated_principal_is_immutable_typed_and_nullable():
     principal = AuthenticatedPrincipal(
         10, "USR-001", "operador", uuid4(), "SESION_SERVIDOR",
-        TEST_NOW, 1, None,
+        TEST_NOW,
     )
     assert isinstance(principal.id_sesion, UUID)
-    assert principal.id_sucursal_operativa is None
+    assert not hasattr(principal, "id_sucursal_operativa")
     with pytest.raises((FrozenInstanceError, AttributeError)):
         principal.login = "otro"
 
@@ -88,7 +86,7 @@ def test_principal_rejects_every_unusable_session_or_user(changes):
     ) as repository:
         repository.return_value.get_principal_projection_by_digest.return_value = _projection(**changes)
         with pytest.raises(InvalidSession):
-            AuthenticationService(db, None).resolve_principal("a" * 43)
+            AuthenticationService(db).resolve_principal("a" * 43)
     db.commit.assert_not_called()
 
 
@@ -102,11 +100,11 @@ def test_principal_builds_from_projection_and_reuses_digest():
         return_value="digest",
     ) as digest:
         repository.return_value.get_principal_projection_by_digest.return_value = row
-        principal = AuthenticationService(db, None).resolve_principal("a" * 43)
+        principal = AuthenticationService(db).resolve_principal("a" * 43)
     digest.assert_called_with("a" * 43)
     assert principal.id_sesion == UUID(str(row["uid_global"]))
-    assert principal.id_instalacion_origen_sesion == 1
-    assert principal.id_sucursal_operativa is None
+    assert not hasattr(principal, "id_instalacion_origen_sesion")
+    assert not hasattr(principal, "id_sucursal_operativa")
     db.commit.assert_not_called()
 
 
@@ -117,5 +115,5 @@ def test_principal_collapses_database_failure_without_secrets():
     ) as repository:
         repository.return_value.get_principal_projection_by_digest.side_effect = RuntimeError("SQL token digest")
         with pytest.raises(SessionTechnicalError) as error:
-            AuthenticationService(db, None).resolve_principal("a" * 43)
+            AuthenticationService(db).resolve_principal("a" * 43)
     assert str(error.value) == "No fue posible validar la sesión."

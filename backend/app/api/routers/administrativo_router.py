@@ -116,7 +116,6 @@ from app.application.administrativo.services.programar_calendario_comercial_serv
     ProgramarCalendarioComercialService,
 )
 from app.application.common.idempotency import IdempotencyRuntimeError
-from app.config.settings import get_settings
 from app.infrastructure.persistence.repositories.calendario_comercial_query_repository import (
     CalendarioComercialQueryRepository,
 )
@@ -237,7 +236,7 @@ async def login_administrativo(
             422, "VALIDATION_ERROR", "La solicitud de login no es válida."
         )
     try:
-        result = AuthenticationService(db, get_settings()).login(
+        result = AuthenticationService(db).login(
             credentials.login, credentials.password
         )
     except InvalidCredentials:
@@ -278,10 +277,10 @@ def logout_administrativo(
     authorization: str | None = Header(default=None, alias="Authorization"),
     db: Session = Depends(get_db),
 ) -> Response | JSONResponse:
-    # CORE-EF: COMMAND_WRITE_TECNICO local; Bearer es identidad e idempotency key natural.
+    # CORE-EF: COMMAND_WRITE_TECNICO central; Bearer es identidad e idempotency key natural.
     try:
         token = parse_bearer_header(authorization)
-        AuthenticationService(db, get_settings()).logout(token)
+        AuthenticationService(db).logout(token)
     except InvalidSession:
         return _auth_error(401, "INVALID_SESSION", "La sesión no es válida.")
     except SessionTechnicalError:

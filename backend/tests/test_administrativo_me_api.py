@@ -42,8 +42,6 @@ def test_me_returns_exact_principal_without_core_ef_headers(client, db_session):
             "id_sesion": login["session_id"],
             "mecanismo_autenticacion": "SESION_SERVIDOR",
             "autenticado_en": response.json()["data"]["autenticado_en"],
-            "id_instalacion_origen_sesion": 1,
-            "id_sucursal_operativa": None,
         },
     }
     after = db_session.execute(text("""

@@ -46,8 +46,6 @@ def _principal():
         id_sesion=uuid4(),
         mecanismo_autenticacion="SESION_SERVIDOR",
         autenticado_en=datetime.now(UTC).replace(tzinfo=None),
-        id_instalacion_origen_sesion=1,
-        id_sucursal_operativa=None,
     )
 
 

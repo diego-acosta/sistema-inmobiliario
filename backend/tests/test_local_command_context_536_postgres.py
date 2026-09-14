@@ -27,8 +27,6 @@ def _principal(id_usuario=1):
         id_sesion=uuid4(),
         mecanismo_autenticacion="SESION_SERVIDOR",
         autenticado_en=datetime(2026, 9, 4, tzinfo=UTC).replace(tzinfo=None),
-        id_instalacion_origen_sesion=1,
-        id_sucursal_operativa=None,
     )
 
 

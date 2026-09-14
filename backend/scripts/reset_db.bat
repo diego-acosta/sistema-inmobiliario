@@ -39,6 +39,7 @@ set PATCH_ADMIN_VALOR_GLOBAL_412_FILE=%BACKEND_DIR%\database\patch_admin_valor_g
 set PATCH_CALENDARIO_COMERCIAL_482_FILE=%BACKEND_DIR%\database\patch_calendario_comercial_482_20260814.sql
 set PATCH_USUARIO_UID_GLOBAL_FILE=%BACKEND_DIR%\database\patch_usuario_uid_global_20260821.sql
 set PATCH_INBOX_PENDING_DEPENDENCY_FILE=%BACKEND_DIR%\database\patch_inbox_pending_dependency_20260822.sql
+set PATCH_AUTH_CENTRAL_FILE=%BACKEND_DIR%\database\patch_auth_central_20260914.sql
 set SEED_INDICES_FINANCIEROS_DEMO_FILE=%BACKEND_DIR%\database\seed_indices_financieros_demo.sql
 
 echo ============================
@@ -429,6 +430,12 @@ if errorlevel 1 (
   exit /b 1
 )
 
+%PGBIN%\psql -v ON_ERROR_STOP=1 -d %DEV_DB% -f "%PATCH_AUTH_CENTRAL_FILE%"
+if errorlevel 1 (
+    echo ERROR aplicando auth central
+    exit /b 1
+)
+
 echo.
 echo Aplicando seed minimo en %DEV_DB%...
 %PGBIN%\psql -d %DEV_DB% -f "%SEED_FILE%"
@@ -675,6 +682,12 @@ echo Aplicando lifecycle inbox pending dependency #511 en TEST...
 if errorlevel 1 (
   echo ERROR aplicando patch inbox pending dependency en TEST.
   exit /b 1
+)
+
+%PGBIN%\psql -v ON_ERROR_STOP=1 -d %TEST_DB% -f "%PATCH_AUTH_CENTRAL_FILE%"
+if errorlevel 1 (
+    echo ERROR aplicando auth central
+    exit /b 1
 )
 
 echo.

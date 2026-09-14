@@ -127,3 +127,14 @@ def test_consumidor_controlado_reutiliza_id_sin_reconsultar(monkeypatch):
         "id_instalacion_ultima_modificacion": 42,
     }
     assert len([call for call in calls if call[0] == "get"]) == 1
+
+
+def test_missing_configuration_fails_before_repository(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from app.application.common.local_installation import LocalInstallationNotConfigured, resolve_local_installation
+    repository = Mock(side_effect=AssertionError("No consultar instalación sin configuración"))
+    monkeypatch.setattr("app.application.common.local_installation.InstalacionRepository", repository)
+    with pytest.raises(LocalInstallationNotConfigured):
+        resolve_local_installation(Mock(), SimpleNamespace(local_installation_code=None))
+    repository.assert_not_called()

@@ -27,4 +27,4 @@ def get_authenticated_principal(
     # HTTPBearer declara el contrato OpenAPI, pero el parser estricto de #446
     # conserva autoridad sobre el valor raw y sobre todos sus rechazos.
     access_token = parse_bearer_header(request.headers.get("Authorization"))
-    return AuthenticationService(db, settings=None).resolve_principal(access_token)
+    return AuthenticationService(db).resolve_principal(access_token)

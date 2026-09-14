@@ -26,7 +26,15 @@ META_COLUMNS = {
 
 
 def _patch_without_transaction() -> str:
-    return PATCH.read_text(encoding="utf-8").replace("\nBEGIN;\n", "\n", 1).replace("\nCOMMIT;\n", "\n", 1)
+    # #448 valida su contrato histórico de defaults. Reconstruir esa precondición
+    # dentro de la transacción aislada del test, y aplicar luego la evolución UTC.
+    previous_defaults = """ALTER TABLE public.credencial_usuario
+        ALTER COLUMN fecha_alta SET DEFAULT CURRENT_TIMESTAMP,
+        ALTER COLUMN created_at SET DEFAULT CURRENT_TIMESTAMP,
+        ALTER COLUMN updated_at SET DEFAULT CURRENT_TIMESTAMP;"""
+    current = (BACKEND / "database/patch_auth_central_20260914.sql").read_text()
+    strip_tx = lambda sql: sql.replace("\nBEGIN;\n", "\n", 1).replace("\nCOMMIT;\n", "\n", 1)
+    return previous_defaults + strip_tx(PATCH.read_text(encoding="utf-8")) + strip_tx(current)
 
 
 def _user(db, suffix=None):
