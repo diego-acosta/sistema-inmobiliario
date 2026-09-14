@@ -41,18 +41,17 @@ según contratos de dominio, alcance operativo, autorización, numeración, caja
 contexto comercial/administrativo, reportes y parametrización. Centralización
 no elimina multi-sucursal ni cambia el ownership de Operativo.
 
-`SUCURSAL ≠ INSTALACION` sigue siendo una separación válida.
-`INSTALACION = nodo autoritativo con DB propia` deja de ser una premisa objetivo.
-No se elimina ni renombra físicamente `INSTALACION` en PR 01. Su eventual valor
-como cliente, dispositivo, estación, origen técnico, auditoría o diagnóstico
-debe demostrarse y cerrarse en un PR posterior; esta lista no asigna nuevas
-semánticas simultáneas a la entidad existente.
+PR 02 cierra este punto en [DEV-ARCH-GEN-003](DEV-ARCH-GEN-003.md):
+`INSTALACION` queda fuera de la arquitectura objetivo, sin reinterpretarla como
+cliente, dispositivo o deployment ni crear sustituto persistido. Las tablas,
+FKs, resolvers, headers y procedencia existentes son compatibilidad transicional
+hasta migrar consumidores; no condicionan nuevas funcionalidades centrales.
+`LOCAL_INSTALLATION_CODE` es transicional y su destino es el retiro.
 
-Debe definirse una identidad técnica canónica del deployment central y cómo se
-representa; no se presupone que cada cliente ni cada sucursal sea una instalación
-de persistencia. Quedan pendientes la relación con `INSTALACION`, sus FKs,
-origen/última modificación, settings y headers. La metadata enviada por un
-cliente no puede conferir identidad del servidor ni autorización funcional.
+No se exige una identidad persistida del deployment para commands humanos.
+GEN-003 define sesión/principal, selección de sucursal por request, contexto,
+headers e idempotencia, y registra explícitamente las decisiones abiertas de
+autorización contextual y actores técnicos sin inventar mecanismos.
 
 Los commands humanos centrales se basan en usuario autenticado mediante
 `AuthenticatedPrincipal`, permisos y alcance autorizado. `USUARIO ≠ PERSONA`
@@ -115,7 +114,8 @@ y validado. La ausencia de datos útiles no demuestra ausencia de consumidores.
 
 ## 6. `op_id` e idempotencia
 
-`op_id` no equivale a Sync. Se conserva; puede aportar idempotency key,
+`op_id` no equivale a Sync. Se conserva condicionalmente según GEN-003 §9;
+puede aportar idempotency key,
 correlación, trazabilidad de comandos y auditoría de operación. Cuando identifica
 una operación idempotente, debe mantenerse estable en sus reintentos: no se
 reinterpreta como un identificador efímero distinto por request ni se confunde
@@ -129,9 +129,9 @@ semántico, replay durable, conflicto ante payload material distinto, retry tras
 fallo sin completion y atomicidad entre receipt y efecto cuando corresponda.
 CAS e idempotencia siguen siendo controles distintos.
 
-La centralización no elimina autenticación ni autorización en un replay. El PR
-de contexto deberá cerrar su composición con los contratos existentes de
-claim/replay/complete, sin alterar incidentalmente fingerprints o receipts.
+La centralización no elimina autenticación ni autorización en un replay.
+GEN-003 §12 fija su composición objetivo con claim/replay/complete y declara
+la migración pendiente de fingerprints, callers y receipts existentes.
 Este documento no modifica el orden de ejecución runtime actual.
 
 ## 7. Outbox e integración
@@ -201,7 +201,7 @@ Rutas documentales relativas a `backend/documentacion/`, salvo indicación.
 | `DEV-SRV/dominios/tecnico/SRV-TEC-001-aplicacion-transversal-de-core-ef-en-commands.md`, alcance/contexto | Contexto de instalación y coordinación outbox transversales | Contexto técnico y publicación según necesidad; contrato detallado posterior |
 | `DEV-SRV/dominios/tecnico/SRV-TEC-002-gestion-de-operaciones-distribuidas-y-sincronizacion.md`, alcance/política pendiente | Aplicación remota, scope, retry, lease/fencing | Protocolo heredado preservado; inventario/retiro posterior |
 | `DEV-API/dominios/comercial/DEV-API-COMERCIAL.md`, headers write observables | `X-Instalacion-Id` requerido en commands existentes | API actual sin cambios; nueva obligatoriedad no se hereda, migración coordinada posterior |
-| `DEV-ARCH-GEN-001.md`, §10; `backend/app/application/common/local_command_context.py` | Resolver local y relación instalación/sucursal | Compatibilidad actual; siguiente contrato de identidad/contexto |
+| `DEV-ARCH-GEN-001.md`, §10; `backend/app/application/common/local_command_context.py` | Resolver local y relación instalación/sucursal | Compatibilidad actual; contrato GEN-003, retiro de instalación y migración de contexto pendientes |
 | `backend/database/patch_inbox_pending_dependency_20260822.sql`; `backend/app/infrastructure/persistence/repositories/inbox_repository.py` | Tabla/scope y estados distribuidos materializados | No se alteran; invariantes vigentes mientras tengan callers |
 | `backend/app/application/common/idempotency.py`; `backend/database/patch_operacion_idempotente_20260810.sql` | Ledger útil sin necesidad de réplica | Conservar seguridad del comando, sin generalizar scope de inbox |
 | `backend/app/application/integration/outbox_to_inbox_worker.py`; `backend/app/application/financiero/services/inbox_event_dispatcher.py` | Eventos con efectos locales reales | Preservar efectos, auditar consumidores antes de retirar infraestructura |
@@ -231,9 +231,10 @@ El procedimiento y sincronización se definen en `CODEX-WORKFLOW.md`, §6.1.
 | Eliminado | Retiro efectivo verificado en un PR; no basta una intención documental |
 | Pendiente de migración | Trabajo todavía necesario y su área responsable |
 
-Después de PR 01: cerrar el contrato de identidad humana/técnica, permisos,
-sucursal y deployment; reconciliar CORE-EF y documentación afectada; migrar
-contexto/SQL/runtime por incrementos; adaptar Flet, bootstrap y deployment;
+Después de PR 02: aplicar GEN-003 para migrar autenticación/sesión sin
+instalación; cerrar sus decisiones abiertas D1/D2 antes de los consumidores
+correspondientes; reconciliar CORE-EF y migrar contexto/SQL/runtime por
+incrementos; adaptar Flet, bootstrap y deployment;
 validar regresión y cerrar estado/documentación. Las dependencias concretas y
 el paralelismo se fijan en cada PR, sin mezclar dominios por conveniencia.
 
@@ -249,8 +250,9 @@ El PR final hacia `main` sólo procede cuando se verifique:
 
 1. Norma coherente: documentos vigentes migrados o delimitados sin contradicción
    activa; ninguna feature central obligada a replicarse.
-2. Identidad/contexto: usuario, permisos, sucursal e identidad técnica definidos
-   e implementados; un backend puede atender sucursales autorizadas sin réplicas.
+2. Identidad/contexto: usuario, permisos, sucursal y actores técnicos aplicables
+   definidos e implementados conforme GEN-003, sin instalación obligatoria;
+   un backend puede atender sucursales autorizadas sin réplicas.
 3. Backend: dominios ya implementados compatibles con autoridad única y sin
    blockers de seguridad, concurrencia, integridad o integración funcional.
 4. Flet: operación remota por HTTPS con auth real, contexto y errores de red.

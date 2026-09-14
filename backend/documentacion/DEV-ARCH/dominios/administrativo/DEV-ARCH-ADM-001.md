@@ -1,5 +1,23 @@
 # DEV-ARCH-ADM-001 — Freeze de configuración administrativa
 
+## Contrato central de identidad/contexto — PR 02
+
+[DEV-ARCH-GEN-003](../../DEV-ARCH-GEN-003.md) define el objetivo: identidad humana
+exclusiva de sesión/Bearer, sesión central revocable, sucursal efectiva por request
+y separación entre alcance operativo y permisos. INSTALACION queda fuera del
+objetivo; LOCAL_INSTALLATION_CODE, FKs/procedencia y campos de sesión asociados
+son compatibilidad transicional. Credenciales/sesiones siguen excluidas de Sync.
+No se crea identidad persistida sustituta del deployment ni se cambia ownership.
+
+Los apartados posteriores sobre sesión local, headers de instalación y replay
+sin contexto mutable registran contratos/runtime anteriores pendientes de migrar;
+no habilitan esos requisitos en nuevos commands centrales. GEN-003 §§9–12 fija
+la aplicación condicional de op_id, CAS/versionado y la revalidación de seguridad
+en replay, sin cambiar endpoints ni receipts existentes en este PR.
+El evaluador GLOBAL actual se conserva como evidencia; no implementa roles por
+sucursal ni denegaciones. La composición contextual D1 sigue DECISIÓN ABIERTA;
+no se declara cerrada por centralizar ni se resuelve la parametrización #435.
+
 ## 1. Propósito y estado
 
 Este documento congela la fuente de verdad arquitectónica de configuración y parametrización del dominio `administrativo`. Su origen fue un freeze documental; desde entonces, incrementos posteriores pueden materializar decisiones concretas mediante SQL, runtime y tests verificables. El estado vigente de cada capacidad debe leerse según su sección específica y la implementación real del repositorio; las capacidades marcadas como pendientes o no confirmadas permanecen únicamente como contrato o evolución futura.
