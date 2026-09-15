@@ -95,8 +95,9 @@ Para una operación contextual humana, antes de ejecutar o devolver replay
 (predicado funcional específico y orden completo en §5):
 
 1. Validar principal y sintaxis del selector.
-2. Validar sucursal existente, ACTIVA, `permite_operacion = true`, sin baja ni
-   `deleted_at`, conforme a la proyección existente de #536.
+2. Validar sucursal existente, `estado_sucursal = ACTIVA`, `deleted_at IS NULL`
+   y `fecha_baja IS NULL`. La operabilidad funcional se evalúa en H_op(s), no
+   como condición transversal de vigencia.
 3. Validar `H_op(s)` declarado por la operación (§5): capacidad vigente o base
    funcional aplicable. Si exige `usuario_sucursal`, validar vínculo ACTIVO, no
    eliminado e intervalo vigente UTC, además de las capacidades declaradas. No
@@ -203,10 +204,13 @@ reloj GLOBAL y sus writers de instantes técnicos con UTC, sin convertir filas
 históricas ni fechas económicas. No basta corregir el reader dejando writers en
 hora local. El resolver read-only no hace commit ni modifica actividad de sesión.
 
-- Sucursal contextual: existente, `estado_sucursal = ACTIVA`,
-  `permite_operacion = true`, `deleted_at IS NULL`, `fecha_baja IS NULL` (§4).
+- Sucursal contextual válida: existente, `estado_sucursal = ACTIVA`,
+  `deleted_at IS NULL`, `fecha_baja IS NULL` (§4). Esta validación estructural/de
+  vigencia no exige `permite_operacion = true`. Ese flag sólo integra H_op(s)
+  cuando el contrato de la operación lo requiere; si no lo usa, no agrega condición.
 - H_op(s): predicado declarado por el dominio para esa operación: puede exigir
-  `puede_consultar`, `puede_operar`, `puede_administrar`, una combinación explícita
+  `puede_consultar`, `puede_operar`, `puede_administrar`, `permite_operacion`
+  cuando corresponda, una combinación explícita
   o una base funcional de visibilidad/relación con el target ya definida. No hay
   equivalencia universal read→consulta ni write→operación. Si usa una capacidad de
   `usuario_sucursal`, exige vínculo del mismo usuario/sucursal, ACTIVO, no eliminado
@@ -242,12 +246,17 @@ hora local. El resolver read-only no hace commit ni modifica actividad de sesió
 **Responsabilidades y evidencia normativa.** Administrativo administra identidad,
 roles, permisos, concesiones GLOBAL/contextuales, denegaciones y su evaluación
 para autorización efectiva. El dominio consumidor declara la habilitación de la
-operación, visibilidad, relación funcional con el target y pertenencia al scope.
+operación, condiciones de operabilidad, visibilidad, relación funcional con el
+target y pertenencia al scope. D1 separa la vigencia estructural de sucursal de
+estos predicados; ningún atributo funcional se vuelve universal por existir en SQL.
 No se crea un motor paralelo de permisos en el dominio.
 
 [GOP-FREEZE-001 §§20.0–20.2](../GOP-FREEZE-001.md) y
 [DEV-ARCH-GOP-001 §14](dominios/gestion_operativa/DEV-ARCH-GOP-001.md)
-son evidencia normativa de la selección por operación, sin modificar sus reglas:
+son evidencia normativa de la selección por operación, sin modificar sus reglas.
+La definición de sucursal vigente de GOP-FREEZE-001 §20 y DEV-ARCH-GOP-001 §12
+no incluye permite_operacion: no se añade ese requisito a sus bases de visibilidad
+ni a la elegibilidad del responsable por efecto del gate transversal D1:
 
 | Ejemplo funcional GOP (no universal) | Predicado/base funcional preservada |
 | --- | --- |
@@ -285,7 +294,9 @@ sin conceder por ello el permiso ni omitir los demás controles D1. Con varias
 sucursales, cada request elige una: la misma sesión puede atender requests
 simultáneos en A y B si ambos pasan D1. La predeterminada sólo es preferencia UI.
 
-Reads y writes contextuales exigen su H_op(s) específico: una lectura puede
+La validez estructural de s se comprueba separadamente de su operabilidad
+funcional; no se deniega una lectura por permite_operacion=false si H_op(s)
+no lo requiere. Reads y writes contextuales exigen su H_op(s) específico: una lectura puede
 basarse en consulta, administración, autoría o responsabilidad elegible según el
 dominio; una escritura no implica puede_operar. Reads protegidos también
 requieren permiso y deny actuales; no heredan op_id,
@@ -307,7 +318,7 @@ central exige alinear callers y tests antes de declarar el endpoint migrado.
 ### 5.5 Orden y errores cerrados
 
 Orden: autenticar → validar selector contractual → permiso definido/configuración
-coherente → sucursal/H_op(s) declarado → concesiones y deny actuales → target/scope →
+coherente → vigencia estructural de sucursal → H_op(s) declarado → concesiones y deny actuales → target/scope →
 idempotencia (§12) → EXECUTE o REPLAY autorizado. En GLOBAL se omiten sucursal/H_op de D1.
 Si H_op(s) usa una relación con el target, esa relación se verifica como parte
 del predicado antes de exponer resultados; no se omite la comprobación separada
@@ -319,7 +330,7 @@ ninguna concesión permitiría continuar; no disfrazarla de falta de privilegios
 | --- | --- |
 | Bearer requerido ausente/malformado, sesión expirada/revocada/inválida, usuario inelegible | 401 `INVALID_SESSION`, según #544; ningún permiso se evalúa sin principal |
 | Selector contextual ausente/inválido/repetido | 400 `LOCAL_COMMAND_HEADER_INVALID` legacy se migra a `CENTRAL_CONTEXT_HEADER_INVALID`; ErrorResponse, header y razón sin datos sensibles |
-| Principal válido sin H_op(s) requerido, sucursal inexistente/inactiva/no operable, sin concesión, deny o target fuera de scope | 403 `autorizacion_insuficiente`, mismo mensaje sanitizado; no revelar cuál control falló |
+| Principal válido sin H_op(s) requerido, sucursal inexistente/inactiva/eliminada/con baja, sin concesión, deny o target fuera de scope | 403 `autorizacion_insuficiente`, mismo mensaje sanitizado; no revelar cuál control falló |
 | Permiso contractual inexistente, configuración/resultado incoherente, corrupción de referencias, fallo de persistencia | 500 `inconsistencia_roles_permisos`, sanitizado; detalles sólo en diagnóstico protegido |
 
 Se reutilizan los mapeos 401/403/500 actuales donde corresponden; el código central
@@ -352,6 +363,8 @@ Los casos de vínculo/flags se aplican sólo si la operación declara esa exigen
 | Target B, actor autorizado A | A | Sí | Sí | A | No | 403 |
 | Header manipulado a B sin H_op(B) | B | No | Sí | A | No | 403 |
 | Predicado funcional requerido no satisfecho | A | No | Sí | A | No | 403 |
+| Ejemplo: H_op exige permite_operacion=true y el flag es false | A | No | Sí | No | No | 403 |
+| Ejemplo: lectura/visibilidad con H_op satisfecho que no usa permite_operacion; flag false | A | Sí | Sí | No | No | ALLOW; vigencia y demás controles D1 satisfechos |
 | Ejemplo: exige puede_operar, flag false | A | No | Sí | A | No | 403 |
 | Ejemplo: exige puede_consultar, flag false | A | No | Sí | A | No | 403 |
 | Ejemplo: exige puede_administrar, flag false | A | No | Sí | A | No | 403 |
@@ -393,6 +406,8 @@ cubre write UTC, flags y predeterminada. Es evidencia parcial, no D1 completa.
 
 PR05 debe materializar contexto humano central, evaluador GLOBAL/contextual/deny,
 reloj y writers técnicos UTC afectados, mapeos y regresión de esos consumidores.
+PR05 separa la validación estructural de sucursal de H_op(s); no copia el
+filtro permite_operacion del resolver legacy #536 al gate universal central.
 El caller/contrato aporta o selecciona explícitamente H_op(s), incluida la
 declaración de no requerir habilitación adicional. PR05 no lo deduce del verbo
 HTTP ni de read/write; preserva las bases funcionales del dominio. PR04 no fija
