@@ -17,13 +17,9 @@ from app.application.administrativo.commands.bootstrap_credential import (
     UserNotFound,
     validate_password_policy,
 )
+# Settings valida un código legacy si está presente; el bootstrap no resuelve instalación.
 from app.application.common.local_installation import (
     InvalidLocalInstallationCode,
-    LocalInstallationNotConfigured,
-    LocalInstallationNotEligible,
-    LocalInstallationNotFound,
-    LocalInstallationStateConflict,
-    LocalInstallationTechnicalError,
 )
 
 
@@ -64,9 +60,6 @@ def _error_code(exc: Exception) -> int:
         exc,
         (
             UserNotEligible,
-            LocalInstallationNotFound,
-            LocalInstallationNotEligible,
-            LocalInstallationStateConflict,
             ActiveCredentialNotFound,
         ),
     ):
@@ -84,7 +77,6 @@ def _error_code(exc: Exception) -> int:
         exc,
         (
             InvalidCredentialInput,
-            LocalInstallationNotConfigured,
             InvalidLocalInstallationCode,
             EOFError,
         ),
@@ -127,12 +119,7 @@ def main(argv: list[str] | None = None) -> int:
         CredentialStateConflict,
         CredentialIdempotencyConflict,
         CredentialBootstrapTechnicalError,
-        LocalInstallationNotConfigured,
         InvalidLocalInstallationCode,
-        LocalInstallationNotFound,
-        LocalInstallationNotEligible,
-        LocalInstallationStateConflict,
-        LocalInstallationTechnicalError,
         EOFError,
     ) as exc:
         print(str(exc), file=sys.stderr)

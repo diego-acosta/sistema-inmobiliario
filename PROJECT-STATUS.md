@@ -111,7 +111,8 @@ en el incremento Comercial preservando sus decisiones económicas, sin trasladar
 automáticamente prerrequisitos de portabilidad/Sync al producto central.
 
 Las secciones siguientes conservan estado funcional, cortes históricos y roadmap
-por dominio. Sus menciones de Sync obligatorio y próximos consumers describen
+por dominio. Los relatos de auth #454/#455/#446/#447 son históricos respecto de
+localidad por instalación; el estado central vigente es el de §2.1. Sus menciones de Sync obligatorio y próximos consumers describen
 el modelo heredado pendiente de migración, no el siguiente trabajo de esta serie.
 Se aplica la precedencia acotada de DEV-ARCH-GEN-002, §9, exclusivamente a esa
 dimensión; no se descartan reglas económicas, seguridad ni ownership, ni se
@@ -515,7 +516,8 @@ Sub-issues con estado verificable:
   estable e inmutable y agregó su resolver local, manteniendo `id_usuario` como PK local.
 - #510/PR #521 materializó `usuario_creado` y `usuario_desactivado` sobre el
   consumer `administrativo.usuario`, preservando UID y versión con PK local
-  independiente. Credenciales y sesiones continúan locales/no sincronizables por #455.
+  independiente. Credenciales y sesiones son centrales desde #544 y permanecen
+  excluidas de Sync por #455.
 
 Incrementos completados en catálogos:
 

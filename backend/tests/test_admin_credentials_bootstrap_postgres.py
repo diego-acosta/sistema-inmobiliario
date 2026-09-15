@@ -217,7 +217,7 @@ def test_reset_revokes_history_and_creates_one_active_atomically():
         and old["op_id_alta"] == old_op
     )
     assert (
-        old["motivo_revocacion"] == "RESET_ADMINISTRATIVO_LOCAL"
+        old["motivo_revocacion"] == "RESET_ADMINISTRATIVO"
         and old["op_id_ultima_modificacion"] == new_op
     )
     assert old["version_registro"] == before["version_registro"] + 1

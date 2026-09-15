@@ -194,7 +194,7 @@ def obtener_principal_autenticado(
     response: Response,
     principal: Annotated[AuthenticatedPrincipal, Depends(get_authenticated_principal)],
 ) -> AuthenticatedPrincipalResponse:
-    # CORE-EF: QUERY_READLIKE; Authorization autentica y no hay headers write.
+    # CORE-EF: QUERY_READLIKE central; Authorization autentica y no hay headers write.
     response.headers["Cache-Control"] = "no-store"
     return AuthenticatedPrincipalResponse(
         data=AuthenticatedPrincipalData(
@@ -228,7 +228,7 @@ def obtener_principal_autenticado(
 async def login_administrativo(
     request: Request, response: Response, db: Session = Depends(get_db)
 ) -> LoginResponse | JSONResponse:
-    # CORE-EF: COMMAND_WRITE_TECNICO preautenticado, local y no sincronizable.
+    # CORE-EF: COMMAND_WRITE_TECNICO CENTRAL preautenticado y no sincronizable.
     try:
         payload = await request.json()
         credentials = LoginRequest.model_validate(payload)

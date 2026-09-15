@@ -166,13 +166,13 @@ Para consumidores futuros, `hash_credencial` deberá persistir el PHC Argon2id y
 
 ## Bootstrap de credenciales — #454, actualizado a autoridad central
 
-La CLI administrativa de bootstrap puede ejecutarse como proceso en el entorno del operador; su command opera contra la autoridad PostgreSQL central, sin depender de instalación ni persistir procedencia de instalación. Permite `init` cuando no hay credencial PASSWORD activa y `reset` cuando existe exactamente una activa y principal. El caso de uso es dueño del único commit/rollback; genera el hash antes de abrir la transacción, bloquea usuario y credenciales ordenadas, usa un único `CURRENT_TIMESTAMP AT TIME ZONE 'UTC'`, revoca históricamente e inserta una fila nueva. El replay por `op_id_alta` exige mismo usuario y verificación Argon2id.
+La CLI administrativa de bootstrap puede ejecutarse como proceso en el entorno del operador; su command opera contra la autoridad PostgreSQL central, sin depender de instalación ni persistir procedencia de instalación. Permite `init` cuando no hay credencial PASSWORD activa y `reset` cuando existe exactamente una activa y principal. El caso de uso es dueño del único commit/rollback; genera el hash antes de abrir la transacción, bloquea usuario y credenciales ordenadas, usa un único `CURRENT_TIMESTAMP AT TIME ZONE 'UTC'`, revoca históricamente e inserta una fila nueva. El replay por `op_id_alta` exige mismo usuario y verificación Argon2id. Los nuevos resets registran `motivo_revocacion = RESET_ADMINISTRATIVO`, sin atribuir topología; no se reescriben motivos históricos.
 
 Clasificación CORE-EF: `COMMAND_WRITE_TECNICO CENTRAL`, no sincronizable. La ejecución local del proceso CLI no convierte el command en una escritura local por instalación. Headers HTTP, `If-Match-Version`, outbox, eventos y lock lógico persistido: **NO APLICA**. El versionado se delega a los triggers SQL vigentes; la transacción revierte íntegramente ante fallos.
 
-## Incremento #455 — exclusión del transporte
+## Incremento histórico #455 — exclusión del transporte
 
-Credenciales y sesiones son locales/no sincronizables en todos sus campos. No se implementan login, logout, tokens, autorización ni sesiones runtime. El contrato verificable está en `documentacion/SINCRONIZACION/SEGURIDAD-CREDENCIALES-455.md`.
+En el corte histórico #455, credenciales y sesiones eran locales/no sincronizables en todos sus campos y aún no se implementaban login, logout, tokens, autorización ni sesiones runtime. En #544 son centrales y conservan la exclusión del transporte Sync. El contrato verificable está en `documentacion/SINCRONIZACION/SEGURIDAD-CREDENCIALES-455.md`.
 
 ## Incremento #447 — resolución read-only del principal
 
