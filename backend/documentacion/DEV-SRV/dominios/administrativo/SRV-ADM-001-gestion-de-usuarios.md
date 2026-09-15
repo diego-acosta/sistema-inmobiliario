@@ -191,10 +191,11 @@ idempotente; se revalida usuario/credencial bajo lock antes del insert.
 El reloj real de sesión usa clock_timestamp AT TIME ZONE UTC; bootstrap usa
 instante transaccional UTC. Defaults/triggers físicos acompañan esa convención.
 No se modifican fechas económicas ni autorización GLOBAL/contextual.
-Validado externamente en c872425e (Windows/PostgreSQL 18.0: 97 passed, 1 warning).
+Validado externamente sobre `c70ea181` tras reset oficial DEV/TEST en Windows/PostgreSQL 18.0:
+29 focales, 104 del grupo PostgreSQL y 149 unitarios passed, 1 warning por suite.
 DEV/TEST se reconstruyen sin preservar auth legacy. Primera aplicación: ambas tablas
 auth vacías o rechazo atómico antes de cambios; reejecución con marker central:
 filas preservadas. Bootstrap de credenciales y nuevos logins son posteriores.
 No hay conversión, cierre ni rotación histórica. GEN-003 §19 define el marker y
-registra validación PostgreSQL pendiente del nuevo fix, sin declarar el backend
+registra la validación PostgreSQL final de la inicialización limpia, sin declarar el backend
 completo centralizado. Si aparecen datos útiles, detener rebuild y definir migración específica.

@@ -42,10 +42,18 @@ técnicos (D2) siguen DECISIÓN ABIERTA; no se declara Gate 2 satisfecho.
 **ESTADO REAL DEL RUNTIME ACTUAL:** auth/sesión/bootstrap implementados en esta
 rama sin instalación: Settings opcional, principal y `/me` sin instalación/sucursal,
 procedencia nullable y SQL UTC. **Implementado y validado externamente en #544**:
-Validación externa confirmada por el responsable sobre `c872425e9be5acf45d0e100a8bc9b7c2001131ea`
-(Windows / PostgreSQL 18.0): 14 casos UTC **14 passed, 1 warning**;
-grupo PostgreSQL **97 passed, 1 warning**; unitarios **149 passed, 1 warning**;
-compileall y git diff --check **PASS**, working tree **clean**.
+**Validación final externa confirmada por el responsable sobre
+`c70ea181d58c0eb2bb2a9bdb8b7d83e6a416f844` — Windows / PostgreSQL 18.0.**
+Reset oficial DEV/TEST **PASS**: DEV con baseline técnico, seed e índices financieros
+demo; TEST con baseline técnico. Suite focal **29 passed, 1 warning**;
+grupo PostgreSQL de siete archivos **104 passed, 1 warning**;
+unitarios con `--noconftest` **149 passed, 1 warning**;
+`python -m compileall -q backend/app backend/tests` y `git diff --check` **PASS**;
+`git status`: **working tree clean** en el head validado.
+La ejecución confirma inicialización con auth vacío, marker `AUTH_CENTRAL_EMPTY_INIT_V1`,
+rechazo atómico sin cambios parciales ante auth legacy sin marker, reejecución
+preservadora con datos centrales, UTC, FKs, constraints, versionado y comparación
+contractual cross-platform. Es evidencia local aportada, no una ejecución en Work.
 La transición DEV/TEST usa reset destructivo y rebuild limpio; no soporta
 migración in-place de credenciales ni sesiones legacy. Antes de cualquier cambio
 material, bajo lock y tras el preflight, el patch exige ambas tablas auth vacías
@@ -55,8 +63,7 @@ no debe escribirse manualmente y el antiguo marker de cutover no lo sustituye.
 Con el marker presente, la reejecución conserva filas, versiones y timestamps.
 Sin él y con cualquier fila auth, aborta atómicamente e indica usar rebuild oficial.
 No convierte instantes, cierra sesiones ni rota credenciales históricas.
-La protección nueva está **NO VALIDADA en PostgreSQL en Work**; requiere validación
-física en Windows/PostgreSQL 18. La evidencia anterior corresponde a otro head.
+La protección de rebuild limpio está implementada y validada físicamente en el head indicado.
 Si aparecen datos útiles antes del corte, detener el rebuild y definir migración
 específica; esta política no se extrapola a futuras bases productivas.
 
@@ -80,8 +87,7 @@ separado e intacto. #533 fue reverificado abierto/Draft el mismo día.
 preservarse. Se planifica bootstrap limpio; resets y simplificaciones SQL se
 resolverán por incrementos conservando reglas funcionales.
 
-**Siguiente paso:** validar localmente la inicialización limpia, el rechazo legacy y la reejecución central.
-Después, cerrar D1 antes de
+**Siguiente paso:** continuar el flujo de revisión de #544; después, cerrar D1 antes de
 habilitar autorización contextual completa y D2 antes de automatización. Después,
 contexto/headers, composición idempotente y adopción por dominios/Flet. No alterar
 receipts legacy ni eliminar Sync sin migrar consumidores.

@@ -2,7 +2,7 @@
 
 ## 1. Estado, alcance y evidencia
 
-**ARQUITECTURA OBJETIVO — contrato de PR 02; primer slice auth implementado en la rama, validado externamente en c872425e (§19); inicialización limpia pendiente de validación PostgreSQL.**
+**ARQUITECTURA OBJETIVO — contrato de PR 02; primer slice auth implementado en la rama, validado externamente en c70ea181, incluida la inicialización limpia (§19).**
 Base auditada: `transition/central-authority`, commit
 `f1c4a4ce62240e08867ce8531fc3579540114d24`, merge de #542 (2026-09-11).
 `main` permanece separado en `e51e1f50cc51b39856a43480d3005a34526808d1`.
@@ -64,7 +64,7 @@ No se promete un mecanismo de revocación administrativa aún inexistente.
 
 La autoridad temporal es PostgreSQL en UTC; comparar instantes independientes
 de `TimeZone`. Sesiones y bootstrap usan UTC explícito en consultas, defaults y triggers;
-sus pruebas PostgreSQL no UTC fueron validadas en el head c872425e (§19).
+sus pruebas PostgreSQL no UTC fueron validadas en el head c70ea181 (§19).
 El cast de autorización GLOBAL permanece pendiente de migración (§16). No convertir timestamps económicos
 ni fechas operativas mediante esta regla.
 
@@ -381,14 +381,14 @@ precedencia no permite inventar la composición de roles que D1 deja abierta.
 ## 16. Matriz de evidencia objetivo vs runtime actual
 
 Rutas relativas al repositorio. Matriz actualizada para el slice auth central;
-§19 registra validación externa y validación de la inicialización limpia.
+§19 registra la validación final externa de auth central e inicialización limpia.
 
 | Área / evidencia concreta | Runtime actual | Objetivo / pendiente responsable |
 | --- | --- | --- |
-| `backend/app/application/administrativo/authentication.py`; `backend/app/api/authentication.py` | Login/principal sin resolver instalación ni proyectar sucursal; TTL 8h y logout revocable | Implementado en rama; validado externamente en c872425e (§19); inicialización limpia pendiente de validación PostgreSQL |
-| `backend/app/infrastructure/persistence/repositories/sesion_usuario_repository.py`; `backend/database/patch_sesion_usuario_runtime_20260807.sql` | Insert central con instalación/sucursal NULL, digest/TTL; patch_auth_central_20260914.sql conserva FK y usa UTC explícito | Validar patch, triggers y zona no UTC en PostgreSQL real |
+| `backend/app/application/administrativo/authentication.py`; `backend/app/api/authentication.py` | Login/principal sin resolver instalación ni proyectar sucursal; TTL 8h y logout revocable | Implementado en rama; validado externamente en c70ea181, incluida la inicialización limpia (§19) |
+| `backend/app/infrastructure/persistence/repositories/sesion_usuario_repository.py`; `backend/database/patch_sesion_usuario_runtime_20260807.sql` | Insert central con instalación/sucursal NULL, digest/TTL; patch_auth_central_20260914.sql conserva FK y usa UTC explícito | Patch, triggers y zona no UTC validados en PostgreSQL 18.0 sobre c70ea181 (§19) |
 | `backend/app/config/settings.py`; `backend/app/application/common/local_installation.py`; `backend/app/infrastructure/persistence/repositories/instalacion_repository.py` | Settings permite LOCAL_INSTALLATION_CODE ausente; DATABASE_URL sigue obligatorio; resolver legacy falla explícitamente antes del lookup si falta configuración | Sólo contexto legacy sigue consumiendo el resolver; sin fallback |
-| `backend/app/application/administrativo/commands/bootstrap_credential.py`; `backend/database/patch_credencial_usuario_core_ef_20260805.sql` | CLI crea/resetea sin resolver ni campos de instalación en preview/result; procedencia NULL, FKs conservadas | Preserva Argon2id/locks/replay; validado externamente en c872425e (§19); inicialización limpia pendiente de validación PostgreSQL |
+| `backend/app/application/administrativo/commands/bootstrap_credential.py`; `backend/database/patch_credencial_usuario_core_ef_20260805.sql` | CLI crea/resetea sin resolver ni campos de instalación en preview/result; procedencia NULL, FKs conservadas | Preserva Argon2id/locks/replay; validado externamente en c70ea181, incluida la inicialización limpia (§19) |
 | `backend/app/application/common/local_command_context.py`, `local_command_headers.py`; `backend/app/api/local_command_context.py` | Sucursal por request; instalación resuelta incluso sin assertion; op_id requerido; adapters sin adopción productiva encontrada fuera del módulo | Técnico: contexto §7 sin instalación, policy idempotencia/CAS; no quitar protecciones legacy en bloque |
 | `backend/app/infrastructure/persistence/repositories/technical_context_repository.py` | Reloj UTC, sucursal elegible, vínculo vigente + instalación↔sucursal | Técnico/Administrativo/Operativo: conservar scope, retirar sólo validación instalación |
 | `backend/app/infrastructure/persistence/repositories/usuario_sucursal_repository.py`; `backend/database/patch_usuario_sucursal_core_ef_20260702.sql` | Flags, predeterminada e índices; listas no sustituyen proyección temporal #536 | Administrativo: reutilizar asignaciones y UTC; no crear asignación a deployment |
@@ -429,7 +429,7 @@ no equivale a auditoría completa de cada suite ni a ejecución:
 ## 17. Orden de migración y criterios del siguiente PR
 
 1. **Primer slice runtime: autenticación/sesión y bootstrap sin instalación.**
-   Implementado en rama; validado externamente en c872425e (§19); inicialización limpia pendiente de validación PostgreSQL (§19).
+   Implementado en rama; validado externamente en c70ea181, incluida la inicialización limpia (§19).
    Partir de transición tras integrar este contrato. Alcance Administrativo +
    settings/SQL estrictamente necesarios: mantener bearer/Argon2id/revocación/TTL,
    desacoplar login, credenciales y principal; alinear `/me`, DEV-API y sus callers.
@@ -487,10 +487,23 @@ conservan UID/versionado/procedencia legacy, cambiando la representación tempor
 a UTC. Reaplicar patches históricos aislados no es el procedimiento de despliegue:
 resets aplican la cadena ordenada y la reejecución del patch central es idempotente.
 
-Validación externa confirmada por el responsable sobre `c872425e9be5acf45d0e100a8bc9b7c2001131ea`
-(Windows / PostgreSQL 18.0): 14 casos UTC **14 passed, 1 warning**;
-grupo PostgreSQL **97 passed, 1 warning**; unitarios **149 passed, 1 warning**;
-compileall y git diff --check **PASS**, working tree **clean**.
+**Validación final externa confirmada por el responsable sobre
+`c70ea181d58c0eb2bb2a9bdb8b7d83e6a416f844` — Windows / PostgreSQL 18.0.**
+Reset oficial DEV/TEST **PASS**: DEV con baseline técnico, seed e índices financieros
+demo; TEST con baseline técnico. Suite focal **29 passed, 1 warning**;
+grupo PostgreSQL de siete archivos **104 passed, 1 warning**;
+unitarios con `--noconftest` **149 passed, 1 warning**;
+`python -m compileall -q backend/app backend/tests` y `git diff --check` **PASS**;
+`git status`: **working tree clean** en el head validado.
+La ejecución confirma inicialización con auth vacío, marker `AUTH_CENTRAL_EMPTY_INIT_V1`,
+rechazo atómico sin cambios parciales ante auth legacy sin marker, reejecución
+preservadora con datos centrales, UTC, FKs, constraints, versionado y comparación
+contractual cross-platform. Es evidencia local aportada, no una ejecución en Work.
+
+**Evidencia histórica (heads anteriores):** `c872425e` registró 97 casos PostgreSQL
+PASS y `75bb43ce` registró 99. Las limitaciones de conexión de Work pertenecen a
+esas etapas; no constituyen un bloqueo vigente tras la validación local de `c70ea181`.
+
 La transición DEV/TEST usa reset destructivo y rebuild limpio; no soporta
 migración in-place de credenciales ni sesiones legacy. Antes de cualquier cambio
 material, bajo lock y tras el preflight, el patch exige ambas tablas auth vacías
@@ -500,8 +513,7 @@ no debe escribirse manualmente y el antiguo marker de cutover no lo sustituye.
 Con el marker presente, la reejecución conserva filas, versiones y timestamps.
 Sin él y con cualquier fila auth, aborta atómicamente e indica usar rebuild oficial.
 No convierte instantes, cierra sesiones ni rota credenciales históricas.
-La protección nueva está **NO VALIDADA en PostgreSQL en Work**; requiere validación
-física en Windows/PostgreSQL 18. La evidencia anterior corresponde a otro head.
+La protección de rebuild limpio está implementada y validada físicamente en el head indicado.
 Si aparecen datos útiles antes del corte, detener el rebuild y definir migración
 específica; esta política no se extrapola a futuras bases productivas.
 Después: D1/contexto general; D2 antes de actores técnicos.

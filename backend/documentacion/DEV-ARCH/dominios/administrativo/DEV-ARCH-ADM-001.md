@@ -24,8 +24,11 @@ Auth/login/logout/principal/`/me` y bootstrap de credenciales ya no consumen
 instalación ni configuración local. El principal contiene sólo identidad humana;
 no proyecta sucursal. Sesión y procedencia de credencial admiten NULL conservando
 FKs, locks, Argon2id, digest, TTL 8h, replay y versionado físico. Relojes/defaults/
-triggers de estas capacidades usan UTC explícito. GEN-003 §19 registra evidencia
-y el bloqueo de validación PostgreSQL: código implementado, aceptación pendiente.
+triggers de estas capacidades usan UTC explícito. GEN-003 §19 registra la validación
+final externa sobre `c70ea181`: Windows/PostgreSQL 18.0, reset DEV/TEST PASS,
+29 focales y 104 del grupo PostgreSQL PASS; 149 unitarios PASS (1 warning por suite).
+Auth central y protección rebuild están implementados y validados; esto no cierra
+Gate 2 ni declara el backend completo centralizado.
 Los relatos de #454/#446/#447 posteriores son históricos en esos aspectos.
 D1/D2, contexto general, caja, Sync y demás headers siguen pendientes/transicionales.
 
