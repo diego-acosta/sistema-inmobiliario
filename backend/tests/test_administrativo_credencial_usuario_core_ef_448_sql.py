@@ -5,6 +5,8 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
+UTC_TRANSACTION_SQL = "(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')"
+
 PATCH_NAME = "patch_credencial_usuario_core_ef_20260805.sql"
 BACKEND = Path(__file__).resolve().parents[1]
 PATCH = BACKEND / "database" / PATCH_NAME
@@ -164,7 +166,7 @@ def test_unicidad_activa_principal_y_revocadas_eliminadas(db_session):
     _cred(db_session, uid, es_credencial_principal=True)
     with pytest.raises(DBAPIError), db_session.begin_nested():
         _cred(db_session, uid)
-    db_session.execute(text("UPDATE credencial_usuario SET deleted_at=CURRENT_TIMESTAMP WHERE id_usuario=:u"), {"u": uid})
+    db_session.execute(text(f"UPDATE credencial_usuario SET deleted_at={UTC_TRANSACTION_SQL} WHERE id_usuario=:u"), {"u": uid})
     active = _cred(db_session, uid, es_credencial_principal=True)
     with pytest.raises(DBAPIError), db_session.begin_nested():
         _cred(db_session, uid, es_credencial_principal=True)
@@ -176,7 +178,7 @@ def test_unicidad_activa_principal_y_revocadas_eliminadas(db_session):
         fecha_revocacion="2026-08-06 00:00:01",
         es_credencial_principal=True,
     )
-    db_session.execute(text("UPDATE credencial_usuario SET deleted_at=CURRENT_TIMESTAMP WHERE id_credencial_usuario=:id"), {"id": active["id_credencial_usuario"]})
+    db_session.execute(text(f"UPDATE credencial_usuario SET deleted_at={UTC_TRANSACTION_SQL} WHERE id_credencial_usuario=:id"), {"id": active["id_credencial_usuario"]})
     _cred(db_session, uid, es_credencial_principal=True)
 
 
@@ -185,7 +187,7 @@ def test_reejecucion_permite_credencial_eliminada_y_reemplazo_activo(db_session)
     before_outbox = db_session.execute(text("SELECT count(*) FROM outbox_event")).scalar_one()
     before_historial = db_session.execute(text("SELECT count(*) FROM historial_acceso")).scalar_one()
     first = _cred(db_session, uid, es_credencial_principal=True, op_id_alta=uuid4())
-    db_session.execute(text("UPDATE credencial_usuario SET deleted_at=CURRENT_TIMESTAMP WHERE id_credencial_usuario=:id"), {"id": first["id_credencial_usuario"]})
+    db_session.execute(text(f"UPDATE credencial_usuario SET deleted_at={UTC_TRANSACTION_SQL} WHERE id_credencial_usuario=:id"), {"id": first["id_credencial_usuario"]})
     _cred(db_session, uid, es_credencial_principal=True, op_id_alta=uuid4())
     snapshot = _snapshot(db_session, uid)
 
@@ -200,7 +202,7 @@ def test_reejecucion_permite_credencial_eliminada_y_reemplazo_activo(db_session)
 def test_reejecucion_rechaza_dos_password_activas_no_eliminadas(db_session):
     uid = _user(db_session)
     first = _cred(db_session, uid, es_credencial_principal=False)
-    db_session.execute(text("UPDATE credencial_usuario SET deleted_at=CURRENT_TIMESTAMP WHERE id_credencial_usuario=:id"), {"id": first["id_credencial_usuario"]})
+    db_session.execute(text(f"UPDATE credencial_usuario SET deleted_at={UTC_TRANSACTION_SQL} WHERE id_credencial_usuario=:id"), {"id": first["id_credencial_usuario"]})
     _cred(db_session, uid, es_credencial_principal=False)
     db_session.execute(text("DROP INDEX ux_credencial_usuario_password_activa"))
     db_session.execute(text("UPDATE credencial_usuario SET deleted_at=NULL WHERE id_credencial_usuario=:id"), {"id": first["id_credencial_usuario"]})
@@ -212,7 +214,7 @@ def test_reejecucion_rechaza_dos_password_activas_no_eliminadas(db_session):
 def test_reejecucion_rechaza_dos_principales_activas_no_eliminadas(db_session):
     uid = _user(db_session)
     first = _cred(db_session, uid, es_credencial_principal=True)
-    db_session.execute(text("UPDATE credencial_usuario SET deleted_at=CURRENT_TIMESTAMP WHERE id_credencial_usuario=:id"), {"id": first["id_credencial_usuario"]})
+    db_session.execute(text(f"UPDATE credencial_usuario SET deleted_at={UTC_TRANSACTION_SQL} WHERE id_credencial_usuario=:id"), {"id": first["id_credencial_usuario"]})
     _cred(db_session, uid, es_credencial_principal=True)
     db_session.execute(text("DROP INDEX ux_credencial_usuario_password_activa"))
     db_session.execute(text("DROP INDEX ux_credencial_usuario_principal_activa"))

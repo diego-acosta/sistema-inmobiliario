@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
@@ -24,6 +24,8 @@ from app.config.database import engine
 from app.infrastructure.persistence.repositories.credencial_usuario_repository import (
     CredencialUsuarioRepository,
 )
+
+UTC_TRANSACTION_SQL = "(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')"
 
 PREFIX = "T454-"
 Factory = sessionmaker(bind=engine, expire_on_commit=False)
@@ -105,13 +107,13 @@ def _credential(
     op_id = op_id or uuid4()
     with engine.begin() as connection:
         row = connection.execute(
-            text("""
+            text(f"""
           INSERT INTO credencial_usuario(id_usuario,tipo_credencial,hash_credencial,algoritmo_hash,
             estado_credencial,es_credencial_principal,fecha_activacion,fecha_revocacion,
             ultimo_cambio_credencial,id_instalacion_origen,id_instalacion_ultima_modificacion,
             op_id_alta,op_id_ultima_modificacion,deleted_at)
-          VALUES (:user,'PASSWORD',:hash,:algorithm,CAST(:state AS varchar),:principal,CURRENT_TIMESTAMP,
-            CASE WHEN CAST(:state AS varchar)='REVOCADA' THEN CURRENT_TIMESTAMP END,CURRENT_TIMESTAMP,:installation,
+          VALUES (:user,'PASSWORD',:hash,:algorithm,CAST(:state AS varchar),:principal,{UTC_TRANSACTION_SQL},
+            CASE WHEN CAST(:state AS varchar)='REVOCADA' THEN {UTC_TRANSACTION_SQL} END,{UTC_TRANSACTION_SQL},:installation,
             :installation,:op,:op,:deleted_at) RETURNING id_credencial_usuario
         """),
             {
@@ -251,7 +253,7 @@ def test_reset_without_active_preserves_history():
 
 
 @pytest.mark.parametrize(
-    "state,deleted", [("ACTIVA", None), ("REVOCADA", None), ("ACTIVA", datetime.now() + timedelta(minutes=5))]
+    "state,deleted", [("ACTIVA", None), ("REVOCADA", None), ("ACTIVA", datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=5))]
 )
 def test_replay_active_revoked_or_deleted_is_read_only(state, deleted):
     user, secret, op_id = _user(), f"Secret-{uuid4()}", uuid4()
