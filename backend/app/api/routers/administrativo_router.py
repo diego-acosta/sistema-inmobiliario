@@ -82,6 +82,7 @@ from app.api.schemas.administrativo import (
     UsuarioSucursalData,
     UsuarioSucursalListResponse,
 )
+from app.api.temporal import utc_naive_to_aware
 from app.application.administrativo.authentication import (
     AuthenticatedPrincipal,
     AuthenticationService,
@@ -200,7 +201,9 @@ def obtener_principal_autenticado(
             **{
                 field: getattr(principal, field)
                 for field in AuthenticatedPrincipalData.model_fields
-            }
+                if field != "autenticado_en"
+            },
+            autenticado_en=utc_naive_to_aware(principal.autenticado_en),
         )
     )
 
@@ -259,7 +262,7 @@ async def login_administrativo(
     return LoginResponse(
         data=LoginData(
             access_token=result.access_token,
-            expires_at=result.expires_at,
+            expires_at=utc_naive_to_aware(result.expires_at),
             session_id=str(result.session_id),
         )
     )

@@ -1,5 +1,6 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 
+import pytest
 from sqlalchemy import text
 
 from app.application.administrativo.authentication import digest_access_token
@@ -15,14 +16,16 @@ def _credential(db_session, *, login="usr.adm.001", password="Valid-password-446
       INSERT INTO credencial_usuario(id_usuario,tipo_credencial,hash_credencial,algoritmo_hash,
        estado_credencial,es_credencial_principal,fecha_alta,fecha_activacion,obliga_rotacion,
        intentos_fallidos_acumulados,requiere_reset,id_instalacion_origen,id_instalacion_ultima_modificacion)
-      VALUES (:user,'PASSWORD',:phc,'argon2id:v1','ACTIVA',true,CURRENT_TIMESTAMP,
-       CURRENT_TIMESTAMP,false,0,false,1,1) RETURNING id_credencial_usuario
+      VALUES (:user,'PASSWORD',:phc,'argon2id:v1','ACTIVA',true,(CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
+       (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),false,0,false,1,1) RETURNING id_credencial_usuario
     """), {"user": user_id, "phc": hash_password(password)}).scalar_one()
     db_session.flush()
     return user_id, credential_id
 
 
-def test_login_persists_only_digest_and_logout_is_idempotent(client, db_session):
+@pytest.mark.parametrize("zone", ["Pacific/Auckland", "America/Argentina/Buenos_Aires"])
+def test_login_persists_only_digest_and_logout_is_idempotent(client, db_session, zone):
+    db_session.execute(text("SELECT set_config('TimeZone', :zone, true)"), {"zone": zone})
     _credential(db_session)
     response = client.post("/api/v1/administrativo/seguridad/login", json={"login": "usr.adm.001", "password": "Valid-password-446"})
     assert response.status_code == 200
@@ -32,6 +35,9 @@ def test_login_persists_only_digest_and_logout_is_idempotent(client, db_session)
     assert set(data) == {"access_token", "token_type", "expires_at", "session_id"}
     assert data["token_type"] == "bearer"
     row = db_session.execute(text("SELECT * FROM sesion_usuario WHERE uid_global=:uid"), {"uid": data["session_id"]}).mappings().one()
+    expiry = datetime.fromisoformat(data["expires_at"])
+    assert expiry.tzinfo is not None and expiry.utcoffset() == timedelta(0)
+    assert expiry.replace(tzinfo=None) == row["expira_en"]
     assert row["token_sesion"] == digest_access_token(data["access_token"])
     assert row["token_sesion"] != data["access_token"]
     assert row["id_sucursal_operativa"] is None

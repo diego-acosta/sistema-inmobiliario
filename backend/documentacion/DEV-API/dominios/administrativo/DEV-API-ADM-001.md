@@ -1378,3 +1378,11 @@ requery. El producer EVT-ADM-079 comparte la transacción; #486 implementa su
 consumo remoto sin agregar una ruta HTTP pública. El entry point de
 sincronización es interno y reutiliza delivery, operation scope, retry y fencing
 de #512.
+
+### Serialización temporal HTTP de autenticación central (#544)
+
+`LoginData.expires_at` y `AuthenticatedPrincipalData.autenticado_en` son instantes
+absolutos UTC y se serializan en ISO-8601 con offset explícito `Z` o `+00:00`.
+La frontera API adjunta UTC al datetime interno UTC-naive sin sumar/restar horas.
+Persistencia y aplicación conservan UTC-naive; TTL absoluto de ocho horas intacto.
+OpenAPI conserva `type: string`, `format: date-time` en ambos campos.

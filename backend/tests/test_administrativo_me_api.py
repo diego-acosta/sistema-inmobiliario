@@ -1,5 +1,7 @@
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
+import pytest
 from sqlalchemy import text
 from tests.test_administrativo_login_api import _credential
 
@@ -24,7 +26,9 @@ def _login(client, db_session):
     return response.json()["data"]
 
 
-def test_me_returns_exact_principal_without_core_ef_headers(client, db_session):
+@pytest.mark.parametrize("zone", ["Pacific/Auckland", "America/Argentina/Buenos_Aires"])
+def test_me_returns_exact_principal_without_core_ef_headers(client, db_session, zone):
+    db_session.execute(text("SELECT set_config('TimeZone', :zone, true)"), {"zone": zone})
     login = _login(client, db_session)
     before = db_session.execute(text("""
         SELECT version_registro, updated_at, fecha_hora_ultima_actividad, estado_sesion
@@ -35,6 +39,11 @@ def test_me_returns_exact_principal_without_core_ef_headers(client, db_session):
 
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
+    authenticated_at = datetime.fromisoformat(response.json()["data"]["autenticado_en"])
+    assert authenticated_at.tzinfo is not None and authenticated_at.utcoffset() == timedelta(0)
+    persisted = db_session.execute(text("SELECT fecha_hora_inicio FROM sesion_usuario WHERE uid_global=:uid"),
+                                   {"uid": login["session_id"]}).scalar_one()
+    assert authenticated_at.replace(tzinfo=None) == persisted
     assert response.json() == {
         "ok": True,
         "data": {
