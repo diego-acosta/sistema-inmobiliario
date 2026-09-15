@@ -25,8 +25,10 @@ instalación ni configuración local. El principal contiene sólo identidad huma
 no proyecta sucursal. Sesión y procedencia de credencial admiten NULL conservando
 FKs, locks, Argon2id, digest, TTL 8h, replay y versionado físico. Relojes/defaults/
 triggers de estas capacidades usan UTC explícito. GEN-003 §19 registra la validación
-final externa sobre `c70ea181`: Windows/PostgreSQL 18.0, reset DEV/TEST PASS,
-29 focales y 104 del grupo PostgreSQL PASS; 149 unitarios PASS (1 warning por suite).
+vigente sobre `2d1ff2f`: Windows/PostgreSQL 18.0, 48 focales y
+106 del grupo PostgreSQL PASS (1 warning por suite), incluida la frontera HTTP UTC.
+La evidencia de rebuild anterior en `c70ea181` (29/104 y 149 unitarios) es histórica
+y permanece diferenciada en GEN-003 §19.
 Auth central y protección rebuild están implementados y validados; esto no cierra
 Gate 2 ni declara el backend completo centralizado.
 Los relatos de #454/#446/#447 posteriores son históricos en esos aspectos.

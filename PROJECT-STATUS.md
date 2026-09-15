@@ -42,8 +42,21 @@ técnicos (D2) siguen DECISIÓN ABIERTA; no se declara Gate 2 satisfecho.
 **ESTADO REAL DEL RUNTIME ACTUAL:** auth/sesión/bootstrap implementados en esta
 rama sin instalación: Settings opcional, principal y `/me` sin instalación/sucursal,
 procedencia nullable y SQL UTC. **Implementado y validado externamente en #544**:
-**Validación final externa confirmada por el responsable sobre
-`c70ea181d58c0eb2bb2a9bdb8b7d83e6a416f844` — Windows / PostgreSQL 18.0.**
+**Validación vigente confirmada por el responsable sobre
+`2d1ff2f227babd36040c6b0a767465304e7e2d72` — Windows / PostgreSQL 18.0.**
+Focal HTTP/auth (login, `/me`, helper/API UTC y auth central PostgreSQL):
+**48 passed, 1 warning**. Grupo PostgreSQL relacionado de siete archivos:
+**106 passed, 1 warning**. El warning de Starlette por httpx/testclient no es fallo funcional.
+Incluye JSON real con offset UTC explícito en `expires_at` y `autenticado_en`,
+sin desplazar instantes: persistencia UTC-naive, TTL 8h y SQL/schema intactos.
+Evidencia complementaria del Work previo: API/helper aislado **3 PASS**;
+unitarios solicitados **42 PASS**; ejecución conjunta **45 passed, 2 warnings**;
+compileall y git diff --check **PASS**, working tree **clean**.
+Estos resultados corresponden al head indicado; este ajuste sólo actualiza documentación.
+
+**Evidencia histórica previa al fix HTTP UTC:**
+Validación externa confirmada por el responsable sobre
+`c70ea181d58c0eb2bb2a9bdb8b7d83e6a416f844` — Windows / PostgreSQL 18.0.
 Reset oficial DEV/TEST **PASS**: DEV con baseline técnico, seed e índices financieros
 demo; TEST con baseline técnico. Suite focal **29 passed, 1 warning**;
 grupo PostgreSQL de siete archivos **104 passed, 1 warning**;
@@ -63,7 +76,7 @@ no debe escribirse manualmente y el antiguo marker de cutover no lo sustituye.
 Con el marker presente, la reejecución conserva filas, versiones y timestamps.
 Sin él y con cualquier fila auth, aborta atómicamente e indica usar rebuild oficial.
 No convierte instantes, cierra sesiones ni rota credenciales históricas.
-La protección de rebuild limpio está implementada y validada físicamente en el head indicado.
+La protección de rebuild limpio sigue validada en el head vigente `2d1ff2f`.
 Si aparecen datos útiles antes del corte, detener el rebuild y definir migración
 específica; esta política no se extrapola a futuras bases productivas.
 
