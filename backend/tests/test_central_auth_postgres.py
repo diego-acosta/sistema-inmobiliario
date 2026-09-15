@@ -317,14 +317,36 @@ def test_patch_first_initialization_requires_empty_auth(central_db):
     db.execute(text("COMMENT ON TABLE public.sesion_usuario IS NULL"))
     db.execute(text("ALTER TABLE sesion_usuario ALTER COLUMN id_instalacion_origen SET NOT NULL"))
     db.execute(text("ALTER TABLE sesion_usuario ALTER COLUMN created_at SET DEFAULT CURRENT_TIMESTAMP"))
-    constraints_before = _schema_snapshot(db)[3]
+    schema_before = _schema_snapshot(db)
+    constraints_before = schema_before[3]
+    nullability_before = {(r[0], r[1]): r[2] for r in schema_before[2]}
+    session_oid = db.execute(text("SELECT 'public.sesion_usuario'::regclass::oid")).scalar_one()
+    target = (session_oid, "id_instalacion_origen")
+    assert nullability_before[target] is True
+    # PostgreSQL 18 materializa NOT NULL en pg_constraint. Excluir sólo
+    # la constraint de esta tabla/columna y tipo, nunca por texto parcial.
+    expected_removed = set(db.execute(text("""SELECT c.oid
+        FROM pg_constraint c JOIN pg_attribute a
+          ON a.attrelid=c.conrelid AND a.attname='id_instalacion_origen'
+        WHERE c.conrelid='public.sesion_usuario'::regclass
+          AND c.contype='n' AND c.conkey=ARRAY[a.attnum]""")).scalars())
+    server_version = int(db.execute(text("SHOW server_version_num")).scalar_one())
+    assert len(expected_removed) == (1 if server_version >= 180000 else 0)
+    legacy_fks = db.execute(text("""SELECT conname, convalidated FROM pg_constraint
+        WHERE conrelid IN ('sesion_usuario'::regclass,'credencial_usuario'::regclass)
+          AND contype='f' AND confrelid='instalacion'::regclass""")).all()
+    assert len(legacy_fks) == 3 and all(r[1] for r in legacy_fks)
     with db.begin_nested():
         db.execute(text(_patch()))
     assert _marker(db) == CENTRAL_MARKER
     _assert_contract_functions(db)
     assert _auth_snapshot(db) == {"credencial_usuario": [], "sesion_usuario": []}
-    assert _schema_snapshot(db)[3] == constraints_before
-    assert not db.execute(text("SELECT attnotnull FROM pg_attribute WHERE attrelid='sesion_usuario'::regclass AND attname='id_instalacion_origen'")).scalar_one()
+    schema_after = _schema_snapshot(db)
+    # PK/UNIQUE/CHECK/FK, validación y otros NOT NULL quedan idénticos.
+    assert schema_after[3] == [r for r in constraints_before if r[0] not in expected_removed]
+    expected_nullability = dict(nullability_before)
+    expected_nullability[target] = False
+    assert {(r[0], r[1]): r[2] for r in schema_after[2]} == expected_nullability
     defaults = db.execute(text("""SELECT pg_get_expr(adbin,adrelid) FROM pg_attrdef
         WHERE adrelid IN ('sesion_usuario'::regclass,'credencial_usuario'::regclass)
         AND adnum IN (SELECT attnum FROM pg_attribute WHERE attrelid=adrelid
