@@ -111,8 +111,10 @@ def _bootstrap(db):
     return command, preview, secret, op
 
 
-def test_bootstrap_init_reset_replay_without_installation_utc(central_db):
+@pytest.mark.parametrize("zone", ["Pacific/Auckland", "America/Argentina/Buenos_Aires"])
+def test_bootstrap_init_reset_replay_without_installation_utc(central_db, zone):
     db = central_db
+    db.execute(text("SELECT set_config('TimeZone', :z, true)"), {"z": zone})
     command, preview, secret, op = _bootstrap(db)
     before = dict(db.execute(text("SELECT * FROM credencial_usuario WHERE id_usuario=:u"), {"u": preview.id_usuario}).mappings().one())
     assert before["id_instalacion_origen"] is before["id_instalacion_ultima_modificacion"] is None
@@ -160,8 +162,10 @@ def test_login_principal_logout_utc_without_installation(central_db, zone):
         auth.resolve_principal(result.access_token)
 
 
-def test_expired_session_utc_me_and_logout(central_db, client):
+@pytest.mark.parametrize("zone", ["Pacific/Auckland", "America/Argentina/Buenos_Aires"])
+def test_expired_session_utc_me_and_logout(central_db, client, zone):
     db = central_db
+    db.execute(text("SELECT set_config('TimeZone', :z, true)"), {"z": zone})
     _, preview, secret, _ = _bootstrap(db)
     auth = AuthenticationService(db)
     result = auth.login(preview.login, secret)
@@ -186,6 +190,7 @@ def test_patch_reexecution_preserves_rows_fks_and_nullable_contract(central_db, 
     db = central_db
     with db.begin_nested():
         db.execute(text(_patch()))
+    assert _marker(db) == CENTRAL_MARKER
     _, preview, secret, _ = _bootstrap(db)
     result = AuthenticationService(db).login(preview.login, secret)
     before = dict(db.execute(text("SELECT * FROM sesion_usuario WHERE uid_global=:u"), {"u": result.session_id}).mappings().one())
@@ -205,6 +210,8 @@ def test_patch_reexecution_preserves_rows_fks_and_nullable_contract(central_db, 
         with db.begin_nested():
             db.execute(text(_patch().replace("\n", patch_eol)))
         _assert_contract_functions(db)
+        assert _marker(db) == CENTRAL_MARKER
+        assert AuthenticationService(db).resolve_principal(result.access_token).id_usuario == preview.id_usuario
     assert db.execute(text("SELECT * FROM credencial_usuario WHERE id_usuario=:u"),
                       {"u": preview.id_usuario}).mappings().one() == credential_before
     assert db.execute(text("""SELECT count(*) FROM pg_attribute
@@ -274,49 +281,78 @@ def test_session_trigger_preserves_uid_created_and_increments_once(central_db):
     assert after["version_registro"] == before["version_registro"] + 1
 
 
-@pytest.mark.parametrize("zone", ["Pacific/Auckland", "America/Argentina/Buenos_Aires"])
-def test_cutover_invalidates_pre_utc_once(central_db, zone):
+def _marker(db):
+    return db.execute(text("SELECT obj_description('public.sesion_usuario'::regclass, 'pg_class')")).scalar_one()
+
+
+CENTRAL_MARKER = "AUTH_CENTRAL_EMPTY_INIT_V1: credencial_usuario y sesion_usuario vacias al inicializar."
+
+
+def _auth_snapshot(db):
+    return {
+        table: db.execute(text(f"SELECT * FROM public.{table} ORDER BY 1")).mappings().all()
+        for table in ("credencial_usuario", "sesion_usuario")
+    }
+
+
+def _schema_snapshot(db):
+    return (
+        _marker(db), _installed_bodies(db),
+        db.execute(text("""SELECT a.attrelid, a.attname, a.attnotnull,
+            pg_get_expr(d.adbin, d.adrelid)
+            FROM pg_attribute a LEFT JOIN pg_attrdef d
+              ON d.adrelid=a.attrelid AND d.adnum=a.attnum
+            WHERE a.attrelid IN ('credencial_usuario'::regclass,'sesion_usuario'::regclass)
+              AND a.attnum > 0 AND NOT a.attisdropped
+            ORDER BY a.attrelid,a.attnum""")).all(),
+        db.execute(text("""SELECT oid, pg_get_constraintdef(oid), convalidated
+            FROM pg_constraint WHERE conrelid IN
+            ('credencial_usuario'::regclass,'sesion_usuario'::regclass) ORDER BY oid""")).all(),
+    )
+
+
+def test_patch_first_initialization_requires_empty_auth(central_db):
     db = central_db
-    _, preview, secret, _ = _bootstrap(db)
-    auth = AuthenticationService(db)
-    already_closed = auth.login(preview.login, secret)
-    auth.logout(already_closed.access_token)
-    old = auth.login(preview.login, secret)
-    db.execute(text("SELECT set_config('TimeZone', :z, true)"), {"z": zone})
-    # Simular exclusivamente la semántica física anterior; no inferir su zona.
-    db.execute(text("""UPDATE sesion_usuario SET
-        fecha_hora_inicio=localtimestamp,
-        fecha_hora_ultima_actividad=localtimestamp,
-        expira_en=localtimestamp+interval '8 hours'
-        WHERE uid_global=:u"""), {"u": old.session_id})
-    db.execute(text("COMMENT ON TABLE public.sesion_usuario IS 'Baseline anterior al cutover'"))
-    def snapshot(uid):
-        return dict(db.execute(text("SELECT * FROM sesion_usuario WHERE uid_global=:u"),
-                               {"u": uid}).mappings().one())
-    closed_before = snapshot(already_closed.session_id)
-    before = snapshot(old.session_id)
+    assert _auth_snapshot(db) == {"credencial_usuario": [], "sesion_usuario": []}
+    db.execute(text("COMMENT ON TABLE public.sesion_usuario IS NULL"))
+    db.execute(text("ALTER TABLE sesion_usuario ALTER COLUMN id_instalacion_origen SET NOT NULL"))
+    db.execute(text("ALTER TABLE sesion_usuario ALTER COLUMN created_at SET DEFAULT CURRENT_TIMESTAMP"))
+    constraints_before = _schema_snapshot(db)[3]
     with db.begin_nested():
         db.execute(text(_patch()))
-    assert snapshot(already_closed.session_id) == closed_before
-    closed = snapshot(old.session_id)
-    assert closed["estado_sesion"] == "CERRADA"
-    assert closed["requiere_reautenticacion"] is True
-    assert closed["fecha_hora_cierre"] >= before["fecha_hora_inicio"]
-    assert closed["version_registro"] == before["version_registro"] + 1
-    for key in ("uid_global", "created_at", "token_sesion", "expira_en", "fecha_hora_inicio"):
-        assert closed[key] == before[key]
-    with pytest.raises(InvalidSession):
-        auth.resolve_principal(old.access_token)
-    new = auth.login(preview.login, secret)
-    fresh = snapshot(new.session_id)
-    now = db.execute(text("SELECT clock_timestamp() AT TIME ZONE 'UTC'")).scalar_one()
-    assert abs(now - fresh["fecha_hora_inicio"]) < timedelta(minutes=1)
-    assert fresh["expira_en"] - fresh["fecha_hora_inicio"] == timedelta(hours=8)
-    assert auth.resolve_principal(new.access_token).id_usuario == preview.id_usuario
-    with db.begin_nested():
+    assert _marker(db) == CENTRAL_MARKER
+    _assert_contract_functions(db)
+    assert _auth_snapshot(db) == {"credencial_usuario": [], "sesion_usuario": []}
+    assert _schema_snapshot(db)[3] == constraints_before
+    assert not db.execute(text("SELECT attnotnull FROM pg_attribute WHERE attrelid='sesion_usuario'::regclass AND attname='id_instalacion_origen'")).scalar_one()
+    defaults = db.execute(text("""SELECT pg_get_expr(adbin,adrelid) FROM pg_attrdef
+        WHERE adrelid IN ('sesion_usuario'::regclass,'credencial_usuario'::regclass)
+        AND adnum IN (SELECT attnum FROM pg_attribute WHERE attrelid=adrelid
+            AND attname IN ('created_at','updated_at','fecha_alta'))""")).scalars().all()
+    assert len(defaults) == 5 and all("UTC" in d for d in defaults)
+
+
+@pytest.mark.parametrize("legacy_table", ["credencial_usuario", "sesion_usuario"])
+@pytest.mark.parametrize("old_marker", [None, "Auth central: cutover pre-UTC v1 completado."])
+def test_patch_rejects_unmarked_auth_atomically(central_db, legacy_table, old_marker):
+    db = central_db
+    if legacy_table == "credencial_usuario":
+        _bootstrap(db)
+    else:
+        # Sesión independiente de credencial (FK nullable), sin borrar receipts.
+        db.execute(text("""INSERT INTO sesion_usuario
+            (id_usuario,token_sesion,fecha_hora_inicio,expira_en,estado_sesion)
+            VALUES (1,:digest,timezone('UTC',CURRENT_TIMESTAMP),
+                    timezone('UTC',CURRENT_TIMESTAMP)+interval '8 hours','ACTIVA')"""),
+                   {"digest": digest_access_token(uuid4().hex)})
+    db.execute(text("COMMENT ON TABLE public.sesion_usuario IS " +
+                    ("NULL" if old_marker is None else "'" + old_marker + "'")))
+    # Una semántica anterior reconocida tampoco autoriza migrar filas.
+    db.execute(text("ALTER TABLE sesion_usuario ALTER COLUMN created_at SET DEFAULT CURRENT_TIMESTAMP"))
+    rows_before, schema_before = _auth_snapshot(db), _schema_snapshot(db)
+    with pytest.raises(DBAPIError, match="Auth central requiere inicializacion limpia"), db.begin_nested():
         db.execute(text(_patch()))
-    assert snapshot(old.session_id) == closed
-    assert snapshot(new.session_id) == fresh
-    with pytest.raises(InvalidSession):
-        auth.resolve_principal(old.access_token)
-    assert auth.resolve_principal(new.access_token).id_usuario == preview.id_usuario
+    assert _auth_snapshot(db) == rows_before
+    assert _schema_snapshot(db) == schema_before
+    assert _marker(db) != CENTRAL_MARKER
+    assert db.execute(text("SELECT 1")).scalar_one() == 1

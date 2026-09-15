@@ -139,6 +139,19 @@ END $new$, E'\r\n', E'\n'), E'\r', E'\n'), E' \t\n\r')) THEN
   END IF;
 END $check$;
 
+-- Identidad exacta del marker; comentarios de cutover anteriores no lo sustituyen.
+-- Bajo los locks anteriores y después del preflight, antes de cualquier ALTER.
+DO $initialization$
+BEGIN
+  IF obj_description('public.sesion_usuario'::regclass, 'pg_class')
+       IS DISTINCT FROM 'AUTH_CENTRAL_EMPTY_INIT_V1: credencial_usuario y sesion_usuario vacias al inicializar.' THEN
+    IF EXISTS (SELECT 1 FROM public.credencial_usuario)
+       OR EXISTS (SELECT 1 FROM public.sesion_usuario) THEN
+      RAISE EXCEPTION 'Auth central requiere inicializacion limpia: credencial_usuario y sesion_usuario deben estar vacias. Migracion in-place no soportada en esta transicion; ejecutar reset/rebuild oficial.';
+    END IF;
+  END IF;
+END $initialization$;
+
 ALTER TABLE public.sesion_usuario ALTER COLUMN id_instalacion_origen DROP NOT NULL;
 ALTER TABLE public.sesion_usuario
   ALTER COLUMN created_at SET DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
@@ -183,26 +196,11 @@ BEGIN
   RETURN NEW;
 END $$;
 
--- Cutover único, bajo el LOCK y la transacción del patch. El comentario es
--- metadata de migración: no quitar el marcador en despliegues posteriores.
--- No inferir la zona de timestamps históricos ni recalcular su expiración.
-DO $cutover$
-BEGIN
-  IF position('Auth central: cutover pre-UTC v1 completado.' IN
-      coalesce(obj_description('public.sesion_usuario'::regclass, 'pg_class'), '')) = 0 THEN
-    UPDATE public.sesion_usuario
-       SET estado_sesion = 'CERRADA',
-           requiere_reautenticacion = true,
-           fecha_hora_cierre = GREATEST(
-             clock_timestamp() AT TIME ZONE 'UTC', fecha_hora_inicio)
-     WHERE estado_sesion = 'ACTIVA';
-    -- GREATEST satisface chk_sesion_usuario_periodo aun si el inicio local
-    -- histórico está adelantado respecto de UTC. Es un cierre de invalidación,
-    -- no una conversión ni una reconstrucción del instante histórico.
-    COMMENT ON TABLE public.sesion_usuario IS
-      'Sesiones centrales revocables no sincronizables; timestamps UTC, bearer sólo digest. Auth central: cutover pre-UTC v1 completado.';
-  END IF;
-END $cutover$;
+-- Metadata versionada: certifica primera inicialización con ambas tablas vacías.
+-- No registrar manualmente ni reutilizar el antiguo marker de cutover pre-UTC.
+-- Reejecutar no modifica filas, versiones ni timestamps de auth central.
+COMMENT ON TABLE public.sesion_usuario IS
+  'AUTH_CENTRAL_EMPTY_INIT_V1: credencial_usuario y sesion_usuario vacias al inicializar.';
 
 COMMENT ON COLUMN public.sesion_usuario.id_instalacion_origen IS
   'Compatibilidad legacy nullable; sesiones centrales no requieren instalación.';

@@ -159,3 +159,22 @@ Orden operativo recomendado para cambios:
 8. `../CODEX-WORKFLOW.md`.
 
 Este README es una guía de entrada y operación; no reemplaza esas fuentes.
+
+### Inicialización auth central en DEV/TEST (#544)
+
+`reset_db.sh` y `reset_db.bat` destruyen y recrean `inmobiliaria_dev` e
+`inmobiliaria_test`: el contenido anterior se pierde. Aplican schema desde cero,
+baseline técnico y cadena ordenada de patches (incluido `patch_auth_central_20260914.sql`),
+y luego seeds de DEV/datos de prueba según corresponda. TEST conserva el baseline
+sin seeds de negocio de DEV. Ni schema, baseline ni patches anteriores insertan
+credenciales/sesiones; auth llega vacío al patch. Los seeds tampoco incluyen secretos.
+El bootstrap administrativo de credenciales y los logins se ejecutan después.
+
+La primera aplicación exige ambas tablas auth vacías. Con datos y sin el marker
+exacto de inicialización central definido en GEN-003 §19, aborta antes de cambios:
+no se soporta upgrade in-place legacy. Las reejecuciones con marker preservan datos
+centrales. Ambos scripts usan `ON_ERROR_STOP` y control inmediato de fallo para
+este patch. No se preservan hashes ni bearer entre resets.
+
+Si aparecen datos útiles/productivos antes del corte, detener reset y diseñar una
+migración específica. Esta regla sólo rige la transición actual DEV/TEST.

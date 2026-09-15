@@ -27,6 +27,8 @@ META_COLUMNS = {
 }
 
 
+# Reconstrucción histórica estructural de #448, no soporte de migración de datos
+# legacy: el baseline ya tiene marker central; el patch central se reejecuta.
 def _patch_without_transaction() -> str:
     # #448 valida su contrato histórico de defaults. Reconstruir esa precondición
     # dentro de la transacción aislada del test, y aplicar luego la evolución UTC.
