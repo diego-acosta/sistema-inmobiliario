@@ -166,9 +166,9 @@ Para consumidores futuros, `hash_credencial` deberá persistir el PHC Argon2id y
 
 ## Bootstrap de credenciales — #454, actualizado a autoridad central
 
-La CLI local permite `init` cuando no hay credencial PASSWORD activa y `reset` cuando existe exactamente una activa y principal. El caso de uso es dueño del único commit/rollback; genera el hash antes de abrir la transacción, bloquea usuario y credenciales ordenadas, usa un único `CURRENT_TIMESTAMP AT TIME ZONE 'UTC'`, revoca históricamente e inserta una fila nueva. El replay por `op_id_alta` exige mismo usuario y verificación Argon2id.
+La CLI administrativa de bootstrap puede ejecutarse como proceso en el entorno del operador; su command opera contra la autoridad PostgreSQL central, sin depender de instalación ni persistir procedencia de instalación. Permite `init` cuando no hay credencial PASSWORD activa y `reset` cuando existe exactamente una activa y principal. El caso de uso es dueño del único commit/rollback; genera el hash antes de abrir la transacción, bloquea usuario y credenciales ordenadas, usa un único `CURRENT_TIMESTAMP AT TIME ZONE 'UTC'`, revoca históricamente e inserta una fila nueva. El replay por `op_id_alta` exige mismo usuario y verificación Argon2id.
 
-Clasificación CORE-EF: `COMMAND_WRITE_TECNICO`, local no sincronizable. Headers HTTP, `If-Match-Version`, outbox, eventos y lock lógico persistido: **NO APLICA**. El versionado se delega a los triggers SQL vigentes; la transacción revierte íntegramente ante fallos.
+Clasificación CORE-EF: `COMMAND_WRITE_TECNICO CENTRAL`, no sincronizable. La ejecución local del proceso CLI no convierte el command en una escritura local por instalación. Headers HTTP, `If-Match-Version`, outbox, eventos y lock lógico persistido: **NO APLICA**. El versionado se delega a los triggers SQL vigentes; la transacción revierte íntegramente ante fallos.
 
 ## Incremento #455 — exclusión del transporte
 
