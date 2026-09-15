@@ -1,11 +1,10 @@
-"""Caso de uso local y no sincronizable para bootstrap de credenciales."""
+"""Caso de uso central y no sincronizable para bootstrap de credenciales."""
 
 from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
-from app.application.common.local_installation import resolve_local_installation
 from app.application.common.security.password_hashing import (
     PASSWORD_HASH_ALGORITHM,
     InvalidPasswordInput,
@@ -62,15 +61,11 @@ class CredentialBootstrapPreview:
     id_usuario: int
     codigo_usuario: str
     login: str
-    codigo_instalacion: str
-    nombre_instalacion: str
 
 
 @dataclass(frozen=True, slots=True)
 class CredentialBootstrapResult:
     codigo_usuario: str
-    codigo_instalacion: str
-    nombre_instalacion: str
     result: str
 
 
@@ -115,14 +110,12 @@ def _translate_integrity_error(exc: IntegrityError) -> CredentialBootstrapError:
 
 
 class BootstrapCredentialCommand:
-    def __init__(self, session_factory, settings) -> None:
+    def __init__(self, session_factory) -> None:
         self.session_factory = session_factory
-        self.settings = settings
 
     def preflight(self, codigo_usuario: str) -> CredentialBootstrapPreview:
         with self.session_factory() as session:
             try:
-                identity = resolve_local_installation(session, self.settings)
                 user = UsuarioSistemaRepository(session).get_by_codigo_exact(
                     codigo_usuario
                 )
@@ -133,8 +126,6 @@ class BootstrapCredentialCommand:
                     user["id_usuario"],
                     user["codigo_usuario"],
                     user["login"],
-                    identity.codigo_instalacion,
-                    identity.nombre_instalacion,
                 )
             finally:
                 session.rollback()
@@ -162,7 +153,6 @@ class BootstrapCredentialCommand:
 
         try:
             with self.session_factory() as session, session.begin():
-                identity = resolve_local_installation(session, self.settings)
                 user = UsuarioSistemaRepository(session).get_by_codigo_exact_for_update(
                     preview.codigo_usuario
                 )
@@ -189,8 +179,6 @@ class BootstrapCredentialCommand:
                         )
                     return CredentialBootstrapResult(
                         user["codigo_usuario"],
-                        identity.codigo_instalacion,
-                        identity.nombre_instalacion,
                         "REPLAY_IDEMPOTENTE",
                     )
                 credentials = repo.list_password_credentials_for_update(
@@ -220,7 +208,6 @@ class BootstrapCredentialCommand:
                     repo.revoke_password(
                         active[0].id_credencial_usuario,
                         timestamp=timestamp,
-                        installation_id=identity.id_instalacion,
                         op_id=op_id,
                     )
                 repo.insert_active_password(
@@ -228,14 +215,11 @@ class BootstrapCredentialCommand:
                     password_hash=password_hash,
                     algorithm=PASSWORD_HASH_ALGORITHM,
                     timestamp=timestamp,
-                    installation_id=identity.id_instalacion,
                     op_id=op_id,
                 )
                 session.flush()
                 result = CredentialBootstrapResult(
                     user["codigo_usuario"],
-                    identity.codigo_instalacion,
-                    identity.nombre_instalacion,
                     "COMPLETADO",
                 )
             return result

@@ -164,16 +164,44 @@ Existe una primitiva interna transversal para credenciales futuras basada en Arg
 
 Para consumidores futuros, `hash_credencial` deberá persistir el PHC Argon2id y `algoritmo_hash` deberá persistir `argon2id:v1`. #450 y #446 siguen pendientes.
 
-## Incremento #454 — bootstrap administrativo local
+## Bootstrap de credenciales — #454, actualizado a autoridad central
 
-La CLI local permite `init` cuando no hay credencial PASSWORD activa y `reset` cuando existe exactamente una activa y principal. El caso de uso es dueño del único commit/rollback; genera el hash antes de abrir la transacción, bloquea usuario y credenciales ordenadas, usa un único `CURRENT_TIMESTAMP`, revoca históricamente e inserta una fila nueva. El replay por `op_id_alta` exige mismo usuario y verificación Argon2id.
+La CLI administrativa de bootstrap puede ejecutarse como proceso en el entorno del operador; su command opera contra la autoridad PostgreSQL central, sin depender de instalación ni persistir procedencia de instalación. Permite `init` cuando no hay credencial PASSWORD activa y `reset` cuando existe exactamente una activa y principal. El caso de uso es dueño del único commit/rollback; genera el hash antes de abrir la transacción, bloquea usuario y credenciales ordenadas, usa un único `CURRENT_TIMESTAMP AT TIME ZONE 'UTC'`, revoca históricamente e inserta una fila nueva. El replay por `op_id_alta` exige mismo usuario y verificación Argon2id. Los nuevos resets registran `motivo_revocacion = RESET_ADMINISTRATIVO`, sin atribuir topología; no se reescriben motivos históricos.
 
-Clasificación CORE-EF: `COMMAND_WRITE_TECNICO`, local no sincronizable. Headers HTTP, `If-Match-Version`, outbox, eventos y lock lógico persistido: **NO APLICA**. El versionado se delega a los triggers SQL vigentes; la transacción revierte íntegramente ante fallos.
+Clasificación CORE-EF: `COMMAND_WRITE_TECNICO CENTRAL`, no sincronizable. La ejecución local del proceso CLI no convierte el command en una escritura local por instalación. Headers HTTP, `If-Match-Version`, outbox, eventos y lock lógico persistido: **NO APLICA**. El versionado se delega a los triggers SQL vigentes; la transacción revierte íntegramente ante fallos.
 
-## Incremento #455 — exclusión del transporte
+## Incremento histórico #455 — exclusión del transporte
 
-Credenciales y sesiones son locales/no sincronizables en todos sus campos. No se implementan login, logout, tokens, autorización ni sesiones runtime. El contrato verificable está en `documentacion/SINCRONIZACION/SEGURIDAD-CREDENCIALES-455.md`.
+En el corte histórico #455, credenciales y sesiones eran locales/no sincronizables en todos sus campos y aún no se implementaban login, logout, tokens, autorización ni sesiones runtime. En #544 son centrales y conservan la exclusión del transporte Sync. El contrato verificable está en `documentacion/SINCRONIZACION/SEGURIDAD-CREDENCIALES-455.md`.
 
 ## Incremento #447 — resolución read-only del principal
 
-`get_authenticated_principal` reutiliza el parser bearer y el digest de #446, consulta una proyección explícita de `sesion_usuario` y `usuario`, y devuelve el value object inmutable `AuthenticatedPrincipal`. Toda sesión no utilizable o usuario no elegible colapsa públicamente a `401 INVALID_SESSION`; una falla técnica colapsa a `500 SESSION_TECHNICAL_ERROR`. No se revalida la credencial, no se hace commit, lock, outbox, sync, autorización ni actualización de actividad. La sucursal nullable y la instalación de origen se devuelven tal como están persistidas en la sesión.
+`get_authenticated_principal` reutiliza el parser bearer y el digest de #446, consulta una proyección explícita de `sesion_usuario` y `usuario`, y devuelve el value object inmutable `AuthenticatedPrincipal`. Toda sesión no utilizable o usuario no elegible colapsa públicamente a `401 INVALID_SESSION`; una falla técnica colapsa a `500 SESSION_TECHNICAL_ERROR`. No se revalida la credencial, no se hace commit, lock, outbox, sync, autorización ni actualización de actividad. El principal central ya no proyecta sucursal ni instalación; sólo los seis campos de identidad de GEN-003.
+
+## Slice central posterior a #543
+
+Login y bootstrap no reciben Settings ni llaman al resolver de instalación.
+Preflight/execute de CLI reciben usuario, secreto y op_id; preview/result no
+exponen instalación. Se conserva la frontera TTY administrativa, sin inventar
+D1/D2. Init/reset persisten procedencia NULL; op_id sigue justificándose por
+replay/conflicto de un command sensible. Las credenciales revocadas conservan
+su origen histórico si lo tenían, y la nueva modificación central usa NULL.
+Sesiones conservan token opaco/digest SHA-256, TTL absoluto de 8h y logout
+idempotente; se revalida usuario/credencial bajo lock antes del insert.
+El reloj real de sesión usa clock_timestamp AT TIME ZONE UTC; bootstrap usa
+instante transaccional UTC. Defaults/triggers físicos acompañan esa convención.
+No se modifican fechas económicas ni autorización GLOBAL/contextual.
+Validación vigente externa sobre `3503ff2`, Windows/PostgreSQL 18.0:
+83 passed sin DB (2 warnings); focal inicial 50 passed / 1 failed (1 warning),
+con un fallo concurrente transitorio no reproducido: luego 10/10 PASS aislado
+y 106 passed en el grupo PostgreSQL ampliado (1 warning), incluido ese caso.
+Incluye `RESET_ADMINISTRATIVO` y la frontera HTTP UTC; detalle en GEN-003 §19.
+`2d1ff2f` (48/106) es evidencia histórica del fix HTTP UTC, previa al cambio
+final de semántica local/reset. `c70ea181` (29/104 y 149 unitarios) es evidencia histórica
+anterior al fix HTTP UTC, conservada en GEN-003 §19.
+DEV/TEST se reconstruyen sin preservar auth legacy. Primera aplicación: ambas tablas
+auth vacías o rechazo atómico antes de cambios; reejecución con marker central:
+filas preservadas. Bootstrap de credenciales y nuevos logins son posteriores.
+No hay conversión, cierre ni rotación histórica. GEN-003 §19 define el marker y
+registra la validación PostgreSQL final de la inicialización limpia, sin declarar el backend
+completo centralizado. Si aparecen datos útiles, detener rebuild y definir migración específica.

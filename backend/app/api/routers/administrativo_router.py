@@ -82,6 +82,7 @@ from app.api.schemas.administrativo import (
     UsuarioSucursalData,
     UsuarioSucursalListResponse,
 )
+from app.api.temporal import utc_naive_to_aware
 from app.application.administrativo.authentication import (
     AuthenticatedPrincipal,
     AuthenticationService,
@@ -116,7 +117,6 @@ from app.application.administrativo.services.programar_calendario_comercial_serv
     ProgramarCalendarioComercialService,
 )
 from app.application.common.idempotency import IdempotencyRuntimeError
-from app.config.settings import get_settings
 from app.infrastructure.persistence.repositories.calendario_comercial_query_repository import (
     CalendarioComercialQueryRepository,
 )
@@ -194,14 +194,16 @@ def obtener_principal_autenticado(
     response: Response,
     principal: Annotated[AuthenticatedPrincipal, Depends(get_authenticated_principal)],
 ) -> AuthenticatedPrincipalResponse:
-    # CORE-EF: QUERY_READLIKE; Authorization autentica y no hay headers write.
+    # CORE-EF: QUERY_READLIKE central; Authorization autentica y no hay headers write.
     response.headers["Cache-Control"] = "no-store"
     return AuthenticatedPrincipalResponse(
         data=AuthenticatedPrincipalData(
             **{
                 field: getattr(principal, field)
                 for field in AuthenticatedPrincipalData.model_fields
-            }
+                if field != "autenticado_en"
+            },
+            autenticado_en=utc_naive_to_aware(principal.autenticado_en),
         )
     )
 
@@ -226,7 +228,7 @@ def obtener_principal_autenticado(
 async def login_administrativo(
     request: Request, response: Response, db: Session = Depends(get_db)
 ) -> LoginResponse | JSONResponse:
-    # CORE-EF: COMMAND_WRITE_TECNICO preautenticado, local y no sincronizable.
+    # CORE-EF: COMMAND_WRITE_TECNICO CENTRAL preautenticado y no sincronizable.
     try:
         payload = await request.json()
         credentials = LoginRequest.model_validate(payload)
@@ -237,7 +239,7 @@ async def login_administrativo(
             422, "VALIDATION_ERROR", "La solicitud de login no es válida."
         )
     try:
-        result = AuthenticationService(db, get_settings()).login(
+        result = AuthenticationService(db).login(
             credentials.login, credentials.password
         )
     except InvalidCredentials:
@@ -260,7 +262,7 @@ async def login_administrativo(
     return LoginResponse(
         data=LoginData(
             access_token=result.access_token,
-            expires_at=result.expires_at,
+            expires_at=utc_naive_to_aware(result.expires_at),
             session_id=str(result.session_id),
         )
     )
@@ -278,10 +280,10 @@ def logout_administrativo(
     authorization: str | None = Header(default=None, alias="Authorization"),
     db: Session = Depends(get_db),
 ) -> Response | JSONResponse:
-    # CORE-EF: COMMAND_WRITE_TECNICO local; Bearer es identidad e idempotency key natural.
+    # CORE-EF: COMMAND_WRITE_TECNICO central; Bearer es identidad e idempotency key natural.
     try:
         token = parse_bearer_header(authorization)
-        AuthenticationService(db, get_settings()).logout(token)
+        AuthenticationService(db).logout(token)
     except InvalidSession:
         return _auth_error(401, "INVALID_SESSION", "La sesión no es válida.")
     except SessionTechnicalError:

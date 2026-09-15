@@ -170,6 +170,17 @@ No se exige consolidación ni backfill productivo de los datos actuales.
 PR 01 no ejecuta reset. Si se incorporan datos útiles antes del corte final,
 debe reevaluarse esta premisa antes de cualquier operación destructiva.
 
+### Procedimiento de esta transición para DEV/TEST
+
+El flujo oficial destruye y reconstruye las bases desde schema, baseline técnico,
+patches y seeds reproducibles. No preserva credenciales ni sesiones legacy:
+la primera inicialización auth central exige ambas tablas vacías; de lo contrario
+aborta sin cambios e indica ejecutar rebuild. Un marker explícito versionado permite
+reejecuciones posteriores con datos centrales, preservándolos (GEN-003 §19).
+Las credenciales se crean por bootstrap posterior y las sesiones por nuevos logins.
+Si aparecen datos útiles/productivos antes del corte, detener este procedimiento y
+definir una migración específica. No es una política para futuras migraciones productivas.
+
 ## 9. Precedencia documental acotada
 
 Durante la transición y sus ramas derivadas, las decisiones explícitas de este

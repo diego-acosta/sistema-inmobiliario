@@ -62,8 +62,6 @@ def _principal(id_usuario=10):
         id_sesion=uuid4(),
         mecanismo_autenticacion="SESION_SERVIDOR",
         autenticado_en=datetime(2026, 9, 4, tzinfo=UTC).replace(tzinfo=None),
-        id_instalacion_origen_sesion=30,
-        id_sucursal_operativa=None,
     )
 
 
@@ -335,3 +333,15 @@ def test_falla_db_se_sanitiza_sin_commit_rollback_o_flush():
     session.commit.assert_not_called()
     session.rollback.assert_not_called()
     session.flush.assert_not_called()
+
+
+def test_legacy_context_without_configuration_still_fails_closed():
+    from app.application.common.local_installation import LocalInstallationNotConfigured
+    session = Mock()
+    with pytest.raises(LocalInstallationUnavailable) as error:
+        resolve_local_command_context(
+            session, SimpleNamespace(local_installation_code=None),
+            policy=_policy(), headers=_headers(), principal=_principal(),
+        )
+    assert isinstance(error.value.__cause__, LocalInstallationNotConfigured)
+    session.execute.assert_not_called()

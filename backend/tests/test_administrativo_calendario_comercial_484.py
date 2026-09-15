@@ -57,7 +57,7 @@ def _principal():
         id_usuario=1, codigo_usuario="ROL-ALTERNATIVO", login="bootstrap",
         id_sesion=uuid4(), mecanismo_autenticacion="SESION_SERVIDOR",
         autenticado_en=datetime.now(UTC).replace(tzinfo=None),
-        id_instalacion_origen_sesion=1, id_sucursal_operativa=None)
+    )
 
 
 def _headers(op_id=None):

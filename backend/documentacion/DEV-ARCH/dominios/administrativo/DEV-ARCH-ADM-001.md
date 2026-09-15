@@ -18,6 +18,26 @@ El evaluador GLOBAL actual se conserva como evidencia; no implementa roles por
 sucursal ni denegaciones. La composición contextual D1 sigue DECISIÓN ABIERTA;
 no se declara cerrada por centralizar ni se resuelve la parametrización #435.
 
+### Primer slice runtime central (posterior a #543)
+
+Auth/login/logout/principal/`/me` y bootstrap de credenciales ya no consumen
+instalación ni configuración local. El principal contiene sólo identidad humana;
+no proyecta sucursal. Sesión y procedencia de credencial admiten NULL conservando
+FKs, locks, Argon2id, digest, TTL 8h, replay y versionado físico. Relojes/defaults/
+triggers de estas capacidades usan UTC explícito. GEN-003 §19 registra la validación
+vigente sobre `3503ff2`: Windows/PostgreSQL 18.0, 83 passed sin DB (2 warnings),
+focal inicial 50 passed / 1 failed (1 warning), caso concurrente luego 10/10 PASS
+aislado y grupo ampliado 106 passed (1 warning). El fallo inicial queda registrado
+como transitorio no reproducido; detalle en GEN-003 §19. Incluye el motivo
+`RESET_ADMINISTRATIVO` y la frontera HTTP UTC. `2d1ff2f` (48/106) es evidencia
+histórica del fix HTTP UTC, anterior al cambio final de semántica local/reset.
+La evidencia de rebuild anterior en `c70ea181` (29/104 y 149 unitarios) es histórica
+y permanece diferenciada en GEN-003 §19.
+Auth central y protección rebuild están implementados y validados; esto no cierra
+Gate 2 ni declara el backend completo centralizado.
+Los relatos de #454/#446/#447 posteriores son históricos en esos aspectos.
+D1/D2, contexto general, caja, Sync y demás headers siguen pendientes/transicionales.
+
 ## 1. Propósito y estado
 
 Este documento congela la fuente de verdad arquitectónica de configuración y parametrización del dominio `administrativo`. Su origen fue un freeze documental; desde entonces, incrementos posteriores pueden materializar decisiones concretas mediante SQL, runtime y tests verificables. El estado vigente de cada capacidad debe leerse según su sección específica y la implementación real del repositorio; las capacidades marcadas como pendientes o no confirmadas permanecen únicamente como contrato o evolución futura.
@@ -34,9 +54,9 @@ inmutable. El repository Administrativo resuelve `uid_global` a la fila/PK local
 incluidas las bajas lógicas, sin fallback por login, email o PK remota.
 
 Esta materialización no cambia Bearer ni `AuthenticatedPrincipal.id_usuario`, que
-continúa siendo identidad autenticada local. Tampoco habilita sincronización de
-`credencial_usuario` o `sesion_usuario`: ambas siguen locales y prohibidas por la
-política #455. #508 / PR #509 materializó `usuario.uid_global` y su resolver;
+identifica al usuario autenticado en la autoridad central. Tampoco habilita
+sincronización de `credencial_usuario` o `sesion_usuario`: ambas son centrales
+desde #544 y siguen excluidas del transporte por la política #455. #508 / PR #509 materializó `usuario.uid_global` y su resolver;
 #510 materializa producer/outbox, consumer/inbox y aplicación remota de
 `usuario_creado` y `usuario_desactivado` sobre la infraestructura Técnico/Sync
 existente. Los demás eventos de lifecycle continúan sin runtime productivo y este

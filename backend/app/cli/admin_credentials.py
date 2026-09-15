@@ -17,13 +17,9 @@ from app.application.administrativo.commands.bootstrap_credential import (
     UserNotFound,
     validate_password_policy,
 )
+# Settings valida un código legacy si está presente; el bootstrap no resuelve instalación.
 from app.application.common.local_installation import (
     InvalidLocalInstallationCode,
-    LocalInstallationNotConfigured,
-    LocalInstallationNotEligible,
-    LocalInstallationNotFound,
-    LocalInstallationStateConflict,
-    LocalInstallationTechnicalError,
 )
 
 
@@ -36,7 +32,7 @@ def _uuid(value: str) -> UUID:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Bootstrap local de credenciales administrativas"
+        description="Bootstrap central de credenciales administrativas"
     )
     subparsers = parser.add_subparsers(dest="operation", required=True)
     for name in ("init", "reset"):
@@ -64,9 +60,6 @@ def _error_code(exc: Exception) -> int:
         exc,
         (
             UserNotEligible,
-            LocalInstallationNotFound,
-            LocalInstallationNotEligible,
-            LocalInstallationStateConflict,
             ActiveCredentialNotFound,
         ),
     ):
@@ -84,7 +77,6 @@ def _error_code(exc: Exception) -> int:
         exc,
         (
             InvalidCredentialInput,
-            LocalInstallationNotConfigured,
             InvalidLocalInstallationCode,
             EOFError,
         ),
@@ -103,17 +95,16 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         from app.config.database import SessionLocal
-        from app.config.settings import Settings
 
-        command = BootstrapCredentialCommand(SessionLocal, Settings())
+        command = BootstrapCredentialCommand(SessionLocal)
         preview = command.preflight(args.usuario)
         print(
-            f"Operación: {args.operation}\nInstalación: {preview.codigo_instalacion} — {preview.nombre_instalacion}\nUsuario: {preview.codigo_usuario}\nLogin: {preview.login}"
+            f"Operación: {args.operation}\nUsuario: {preview.codigo_usuario}\nLogin: {preview.login}"
         )
         secret = _read_password(preview.codigo_usuario, preview.login)
         result = command.execute(args.operation, preview, secret, args.op_id)
         print(
-            f"Operación: {args.operation}\nUsuario: {result.codigo_usuario}\nInstalación: {result.codigo_instalacion} — {result.nombre_instalacion}\nResultado: {result.result}\nOp ID: {args.op_id}"
+            f"Operación: {args.operation}\nUsuario: {result.codigo_usuario}\nResultado: {result.result}\nOp ID: {args.op_id}"
         )
         return 0
     except KeyboardInterrupt:
@@ -128,12 +119,7 @@ def main(argv: list[str] | None = None) -> int:
         CredentialStateConflict,
         CredentialIdempotencyConflict,
         CredentialBootstrapTechnicalError,
-        LocalInstallationNotConfigured,
         InvalidLocalInstallationCode,
-        LocalInstallationNotFound,
-        LocalInstallationNotEligible,
-        LocalInstallationStateConflict,
-        LocalInstallationTechnicalError,
         EOFError,
     ) as exc:
         print(str(exc), file=sys.stderr)

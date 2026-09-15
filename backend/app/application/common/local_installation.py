@@ -50,6 +50,8 @@ class LocalInstallationIdentity:
 
 def resolve_local_installation(session, settings: "Settings") -> LocalInstallationIdentity:
     """Resuelve exactamente una instalación elegible dentro de la sesión recibida."""
+    if settings.local_installation_code is None:
+        raise LocalInstallationNotConfigured("LOCAL_INSTALLATION_CODE no está configurada.")
     try:
         row = InstalacionRepository(session).get_by_codigo_exact(
             settings.local_installation_code

@@ -39,8 +39,64 @@ version_registro se conserva para concurrencia, no como obligación de réplica.
 La composición de roles GLOBAL/contextuales (D1) y el mecanismo de actores
 técnicos (D2) siguen DECISIÓN ABIERTA; no se declara Gate 2 satisfecho.
 
-**ESTADO REAL DEL RUNTIME ACTUAL:** no migrado por este PR. Persisten contexto de
-instalación, headers legacy, infraestructura Sync y adopción parcial de seguridad.
+**ESTADO REAL DEL RUNTIME ACTUAL:** auth/sesión/bootstrap implementados en esta
+rama sin instalación: Settings opcional, principal y `/me` sin instalación/sucursal,
+procedencia nullable y SQL UTC. **Implementado y validado externamente en #544**:
+**Validación vigente confirmada por el responsable sobre
+`3503ff284df0de8817456911f7655786db706ade` — Windows / PostgreSQL 18.0.**
+Incluye el cambio runtime de motivo de revocación a `RESET_ADMINISTRATIVO` y
+el cierre de semántica residual local/central de auth.
+
+- Sin DB: **83 passed, 2 warnings**.
+- Primera focal PostgreSQL: **50 passed, 1 failed, 1 warning**. El único fallo fue
+  `test_concurrent_reset_reset_are_legitimate_serial_rotations`.
+- Revalidación aislada posterior del caso concurrente: **10/10 PASS** consecutivos.
+- Grupo PostgreSQL ampliado relacionado: **106 passed, 1 warning**, incluido ese caso.
+- `python -m compileall -q backend/app backend/tests` y `git diff --check`: **PASS**;
+  working tree limpio según la validación reportada.
+
+El fallo concurrente inicial se conserva como evidencia: **fallo transitorio no
+reproducido**, no bug confirmado ni una ejecución siempre verde. El warning de
+PostgreSQL es `StarletteDeprecationWarning` por httpx/starlette.testclient, no fallo
+funcional. Estos resultados fueron aportados por el responsable; no se repitieron
+en este ajuste documental. UTC, TTL 8h y schema permanecen intactos.
+
+**Evidencia histórica del fix HTTP UTC, previa al cambio final de semántica local/reset:**
+`2d1ff2f227babd36040c6b0a767465304e7e2d72` — Windows / PostgreSQL 18.0:
+48 focales y 106 PostgreSQL relacionados passed, 1 warning por suite.
+Verificó JSON real con offset UTC explícito en `expires_at` y `autenticado_en`,
+con persistencia UTC-naive y TTL 8h intactos. API/helper aislado: 3 PASS;
+unitarios: 42 PASS; ejecución conjunta: 45 passed, 2 warnings;
+compileall/diff --check PASS y working tree clean en ese head anterior.
+
+**Evidencia histórica previa al fix HTTP UTC:**
+Validación externa confirmada por el responsable sobre
+`c70ea181d58c0eb2bb2a9bdb8b7d83e6a416f844` — Windows / PostgreSQL 18.0.
+Reset oficial DEV/TEST **PASS**: DEV con baseline técnico, seed e índices financieros
+demo; TEST con baseline técnico. Suite focal **29 passed, 1 warning**;
+grupo PostgreSQL de siete archivos **104 passed, 1 warning**;
+unitarios con `--noconftest` **149 passed, 1 warning**;
+`python -m compileall -q backend/app backend/tests` y `git diff --check` **PASS**;
+`git status`: **working tree clean** en el head validado.
+La ejecución confirma inicialización con auth vacío, marker `AUTH_CENTRAL_EMPTY_INIT_V1`,
+rechazo atómico sin cambios parciales ante auth legacy sin marker, reejecución
+preservadora con datos centrales, UTC, FKs, constraints, versionado y comparación
+contractual cross-platform. Es evidencia local aportada, no una ejecución en Work.
+La transición DEV/TEST usa reset destructivo y rebuild limpio; no soporta
+migración in-place de credenciales ni sesiones legacy. Antes de cualquier cambio
+material, bajo lock y tras el preflight, el patch exige ambas tablas auth vacías
+si falta el marker exacto `AUTH_CENTRAL_EMPTY_INIT_V1: credencial_usuario y sesion_usuario vacias al inicializar.`
+Ese COMMENT de `sesion_usuario` certifica inicialización central con auth vacío;
+no debe escribirse manualmente y el antiguo marker de cutover no lo sustituye.
+Con el marker presente, la reejecución conserva filas, versiones y timestamps.
+Sin él y con cualquier fila auth, aborta atómicamente e indica usar rebuild oficial.
+No convierte instantes, cierra sesiones ni rota credenciales históricas.
+La protección de rebuild limpio sigue validada en el head vigente `3503ff2`.
+Si aparecen datos útiles antes del corte, detener el rebuild y definir migración
+específica; esta política no se extrapola a futuras bases productivas.
+
+Persisten contexto general de instalación, headers
+legacy, infraestructura Sync y adopción parcial de seguridad.
 Outbox/inbox también sostienen efectos funcionales locales. Sync es arquitectura
 heredada/en retirada; su presencia temporal no es una obligación para nuevas
 features ni permite borrarlo sin revisar consumidores. CORE-EF conserva identidad
@@ -51,15 +107,15 @@ en el mismo commit que `main`: `e51e1f50cc51b39856a43480d3005a34526808d1`.
 Los PRs incrementales apuntan a la transición; `main` queda fuera de cambios
 parciales. #542 fue mergeado a la transición en
 `f1c4a4ce62240e08867ce8531fc3579540114d24`; main sigue separado en el corte inicial.
-PR 02 es contractual y no implementa centralización.
+#543 fue mergeado a transición en `3a32b8d80d267e3b20a19045156059bda2339d83`,
+verificado el 2026-09-14. El primer slice runtime parte de ese commit; main sigue
+separado e intacto. #533 fue reverificado abierto/Draft el mismo día.
 
 **Datos:** el responsable confirmó que la base no contiene datos útiles que deban
 preservarse. Se planifica bootstrap limpio; resets y simplificaciones SQL se
-resolverán en PRs posteriores conservando reglas funcionales. No se ejecutó reset.
+resolverán por incrementos conservando reglas funcionales.
 
-**Siguiente incremento recomendado de la transición:** migrar autenticación,
-sesión y bootstrap sin instalación, alineando SQL/callers, principal y `/me`,
-preservando Bearer opaco, TTL, revocación y UTC (GEN-003 §17). Cerrar D1 antes de
+**Siguiente paso:** continuar el flujo de revisión de #544; después, cerrar D1 antes de
 habilitar autorización contextual completa y D2 antes de automatización. Después,
 contexto/headers, composición idempotente y adopción por dominios/Flet. No alterar
 receipts legacy ni eliminar Sync sin migrar consumidores.
@@ -70,7 +126,8 @@ en el incremento Comercial preservando sus decisiones económicas, sin trasladar
 automáticamente prerrequisitos de portabilidad/Sync al producto central.
 
 Las secciones siguientes conservan estado funcional, cortes históricos y roadmap
-por dominio. Sus menciones de Sync obligatorio y próximos consumers describen
+por dominio. Los relatos de auth #454/#455/#446/#447 son históricos respecto de
+localidad por instalación; el estado central vigente es el de §2.1. Sus menciones de Sync obligatorio y próximos consumers describen
 el modelo heredado pendiente de migración, no el siguiente trabajo de esta serie.
 Se aplica la precedencia acotada de DEV-ARCH-GEN-002, §9, exclusivamente a esa
 dimensión; no se descartan reglas económicas, seguridad ni ownership, ni se
@@ -474,7 +531,8 @@ Sub-issues con estado verificable:
   estable e inmutable y agregó su resolver local, manteniendo `id_usuario` como PK local.
 - #510/PR #521 materializó `usuario_creado` y `usuario_desactivado` sobre el
   consumer `administrativo.usuario`, preservando UID y versión con PK local
-  independiente. Credenciales y sesiones continúan locales/no sincronizables por #455.
+  independiente. Credenciales y sesiones son centrales desde #544 y permanecen
+  excluidas de Sync por #455.
 
 Incrementos completados en catálogos:
 

@@ -110,15 +110,11 @@ def test_sanitized_success_output(monkeypatch, capsys, result):
                 id_usuario=1,
                 codigo_usuario=user,
                 login="login",
-                codigo_instalacion="INST",
-                nombre_instalacion="Local",
             )
 
         def execute(self, *args):
             return SimpleNamespace(
                 codigo_usuario="USER",
-                codigo_instalacion="INST",
-                nombre_instalacion="Local",
                 result=result,
             )
 
@@ -131,6 +127,7 @@ def test_sanitized_success_output(monkeypatch, capsys, result):
     )
     assert main(["init", "--usuario", "USER", "--op-id", str(uuid4())]) == 0
     captured = capsys.readouterr()
+    assert "Instalación" not in captured.out
     assert result in captured.out and captured.err == ""
     assert "Secret-safe-123" not in captured.out and "$argon2" not in captured.out
     assert (

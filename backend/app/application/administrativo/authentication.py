@@ -1,4 +1,4 @@
-"""Autenticación administrativa local y sesiones opacas revocables (#446)."""
+"""Autenticación administrativa central y sesiones opacas revocables (#446)."""
 
 import re
 import secrets
@@ -8,10 +8,6 @@ from hashlib import sha256
 from typing import Literal
 from uuid import UUID
 
-from app.application.common.local_installation import (
-    LocalInstallationError,
-    resolve_local_installation,
-)
 from app.application.common.security.password_hashing import (
     InvalidPasswordInput,
     verify_password,
@@ -75,7 +71,7 @@ class LoginResult:
 
 @dataclass(frozen=True, slots=True)
 class AuthenticatedPrincipal:
-    """Identidad humana mínima derivada de una sesión local utilizable."""
+    """Identidad humana mínima derivada de una sesión central utilizable."""
 
     id_usuario: int
     codigo_usuario: str
@@ -83,8 +79,6 @@ class AuthenticatedPrincipal:
     id_sesion: UUID
     mecanismo_autenticacion: Literal["SESION_SERVIDOR"]
     autenticado_en: datetime
-    id_instalacion_origen_sesion: int
-    id_sucursal_operativa: int | None
 
 
 def generate_access_token() -> str:
@@ -135,19 +129,13 @@ def _usable_credential(credential: dict | None, now: datetime) -> bool:
 
 
 class AuthenticationService:
-    def __init__(self, session, settings) -> None:
+    def __init__(self, session) -> None:
         self.db = session
-        self.settings = settings
 
     def login(self, login: str, password: str) -> LoginResult:
         auth = AuthenticationRepository(self.db)
         sessions = SesionUsuarioRepository(self.db)
         try:
-            try:
-                installation = resolve_local_installation(self.db, self.settings)
-            except LocalInstallationError as exc:
-                raise AuthenticationUnavailable("Autenticación temporalmente no disponible.") from exc
-
             now = sessions.get_wall_clock_timestamp()
             user = auth.get_user_by_login_exact(login)
             credentials = auth.list_password_credentials(user["id_usuario"]) if user else []
@@ -182,7 +170,6 @@ class AuthenticationService:
                         session_id = sessions.insert(
                             id_usuario=locked_user["id_usuario"],
                             id_credencial_usuario=locked_credential["id_credencial_usuario"],
-                            id_instalacion_origen=installation.id_instalacion,
                             token_digest=digest_access_token(token),
                             started_at=locked_now,
                             expires_at=expires_at,
@@ -232,8 +219,6 @@ class AuthenticationService:
                 id_sesion=UUID(str(row["uid_global"])),
                 mecanismo_autenticacion="SESION_SERVIDOR",
                 autenticado_en=row["fecha_hora_inicio"],
-                id_instalacion_origen_sesion=row["id_instalacion_origen"],
-                id_sucursal_operativa=row["id_sucursal_operativa"],
             )
         except InvalidSession:
             raise

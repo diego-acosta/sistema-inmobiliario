@@ -1,7 +1,11 @@
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
+import pytest
 from sqlalchemy import text
 from tests.test_administrativo_login_api import _credential
+
+UTC_WALL_CLOCK_SQL = "(clock_timestamp() AT TIME ZONE 'UTC')"
 
 PATH = "/api/v1/administrativo/seguridad/me"
 INVALID = {
@@ -22,7 +26,9 @@ def _login(client, db_session):
     return response.json()["data"]
 
 
-def test_me_returns_exact_principal_without_core_ef_headers(client, db_session):
+@pytest.mark.parametrize("zone", ["Pacific/Auckland", "America/Argentina/Buenos_Aires"])
+def test_me_returns_exact_principal_without_core_ef_headers(client, db_session, zone):
+    db_session.execute(text("SELECT set_config('TimeZone', :zone, true)"), {"zone": zone})
     login = _login(client, db_session)
     before = db_session.execute(text("""
         SELECT version_registro, updated_at, fecha_hora_ultima_actividad, estado_sesion
@@ -33,6 +39,11 @@ def test_me_returns_exact_principal_without_core_ef_headers(client, db_session):
 
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
+    authenticated_at = datetime.fromisoformat(response.json()["data"]["autenticado_en"])
+    assert authenticated_at.tzinfo is not None and authenticated_at.utcoffset() == timedelta(0)
+    persisted = db_session.execute(text("SELECT fecha_hora_inicio FROM sesion_usuario WHERE uid_global=:uid"),
+                                   {"uid": login["session_id"]}).scalar_one()
+    assert authenticated_at.replace(tzinfo=None) == persisted
     assert response.json() == {
         "ok": True,
         "data": {
@@ -42,8 +53,6 @@ def test_me_returns_exact_principal_without_core_ef_headers(client, db_session):
             "id_sesion": login["session_id"],
             "mecanismo_autenticacion": "SESION_SERVIDOR",
             "autenticado_en": response.json()["data"]["autenticado_en"],
-            "id_instalacion_origen_sesion": 1,
-            "id_sucursal_operativa": None,
         },
     }
     after = db_session.execute(text("""
@@ -129,10 +138,10 @@ def test_me_sanitizes_database_error_and_never_logs_secrets(client, caplog, caps
 def test_me_collapses_closed_expired_and_ineligible_user(client, db_session):
     login = _login(client, db_session)
     cases = [
-        "UPDATE sesion_usuario SET estado_sesion='CERRADA', fecha_hora_cierre=clock_timestamp() WHERE uid_global=:uid",
+        f"UPDATE sesion_usuario SET estado_sesion='CERRADA', fecha_hora_cierre={UTC_WALL_CLOCK_SQL} WHERE uid_global=:uid",
         "UPDATE sesion_usuario SET estado_sesion='EXPIRADA' WHERE uid_global=:uid",
-        "UPDATE sesion_usuario SET estado_sesion='ACTIVA', fecha_hora_cierre=NULL, expira_en=clock_timestamp() WHERE uid_global=:uid",
-        "UPDATE sesion_usuario SET expira_en=clock_timestamp()+interval '1 hour', requiere_reautenticacion=true WHERE uid_global=:uid",
+        f"UPDATE sesion_usuario SET estado_sesion='ACTIVA', fecha_hora_cierre=NULL, expira_en={UTC_WALL_CLOCK_SQL} WHERE uid_global=:uid",
+        f"UPDATE sesion_usuario SET expira_en={UTC_WALL_CLOCK_SQL}+interval '1 hour', requiere_reautenticacion=true WHERE uid_global=:uid",
     ]
     for statement in cases:
         db_session.execute(text(statement), {"uid": login["session_id"]})
@@ -141,15 +150,15 @@ def test_me_collapses_closed_expired_and_ineligible_user(client, db_session):
         assert response.status_code == 401
         assert response.json() == INVALID
 
-    db_session.execute(text("""
+    db_session.execute(text(f"""
         UPDATE sesion_usuario SET requiere_reautenticacion=false, estado_sesion='ACTIVA',
-          fecha_hora_cierre=NULL, expira_en=clock_timestamp()+interval '1 hour'
+          fecha_hora_cierre=NULL, expira_en={UTC_WALL_CLOCK_SQL}+interval '1 hour'
         WHERE uid_global=:uid
     """), {"uid": login["session_id"]})
     user_id = db_session.execute(text("SELECT id_usuario FROM usuario WHERE login='usr.adm.001'")).scalar_one()
     for column, value in (
         ("estado_usuario", "'INACTIVO'"),
-        ("deleted_at", "clock_timestamp()"),
+        ("deleted_at", UTC_WALL_CLOCK_SQL),
         ("fecha_baja", "CURRENT_DATE"),
     ):
         db_session.execute(text("UPDATE usuario SET estado_usuario='ACTIVO', deleted_at=NULL, fecha_baja=NULL WHERE id_usuario=:id"), {"id": user_id})

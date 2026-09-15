@@ -59,12 +59,6 @@ def test_revalidates_policy_against_locked_user_before_credentials(monkeypatch):
         lambda value: "unused-phc",
     )
     monkeypatch.setattr(
-        "app.application.administrativo.commands.bootstrap_credential.resolve_local_installation",
-        lambda *a: SimpleNamespace(
-            codigo_instalacion="I", nombre_instalacion="Inst", id_instalacion=1
-        ),
-    )
-    monkeypatch.setattr(
         "app.application.administrativo.commands.bootstrap_credential.UsuarioSistemaRepository",
         lambda *_: user_repo,
     )
@@ -72,9 +66,9 @@ def test_revalidates_policy_against_locked_user_before_credentials(monkeypatch):
         "app.application.administrativo.commands.bootstrap_credential.CredencialUsuarioRepository",
         lambda *_: credential_repo,
     )
-    preview = CredentialBootstrapPreview(7, "USER", "login-anterior", "I", "Inst")
+    preview = CredentialBootstrapPreview(7, "USER", "login-anterior")
     with pytest.raises(InvalidCredentialInput):
-        BootstrapCredentialCommand(lambda: session, object()).execute(
+        BootstrapCredentialCommand(lambda: session).execute(
             "init", preview, locked["login"], uuid4()
         )
     credential_repo.find_created_by_op_id.assert_not_called()
@@ -114,6 +108,8 @@ def test_unknown_integrity_constraint_is_technical():
 def test_public_results_do_not_expose_hash():
     assert "hash" not in CredentialBootstrapPreview.__dataclass_fields__
     assert "hash" not in CredentialBootstrapResult.__dataclass_fields__
+    assert set(CredentialBootstrapPreview.__dataclass_fields__) == {"id_usuario", "codigo_usuario", "login"}
+    assert set(CredentialBootstrapResult.__dataclass_fields__) == {"codigo_usuario", "result"}
 
 
 def test_invalid_operation_is_rejected_before_hashing(monkeypatch):
@@ -122,9 +118,9 @@ def test_invalid_operation_is_rejected_before_hashing(monkeypatch):
         "app.application.administrativo.commands.bootstrap_credential.hash_password",
         called,
     )
-    preview = CredentialBootstrapPreview(1, "USER", "login", "I", "Inst")
+    preview = CredentialBootstrapPreview(1, "USER", "login")
     with pytest.raises(InvalidCredentialInput):
-        BootstrapCredentialCommand(MagicMock(), object()).execute(
+        BootstrapCredentialCommand(MagicMock()).execute(
             "delete", preview, "Valid-secret-123", uuid4()
         )
     called.assert_not_called()

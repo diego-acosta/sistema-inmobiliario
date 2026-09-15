@@ -1265,19 +1265,19 @@ CORE-EF para endpoints: `NO APLICA`, porque no hay rutas nuevas ni modificadas. 
 - `POST /api/v1/administrativo/seguridad/logout`: recibe exactamente
   `Authorization: Bearer <token>` y responde 204 de forma idempotente, incluso
   para tokens bien formados desconocidos o sesiones ya finalizadas.
-- Login inválido es siempre `INVALID_CREDENTIALS`; fallos de instalación se
-  publican como `AUTHENTICATION_UNAVAILABLE`. No existe `/seguridad/me`, principal,
-  roles, permisos, scopes, refresh ni autorización en #446.
+- Login inválido es siempre `INVALID_CREDENTIALS`. En el slice central posterior
+  a #543 no se resuelve instalación; errores técnicos se sanitizan como
+  `AUTHENTICATION_TECHNICAL_ERROR`. No se requiere sucursal ni instalación.
 
 # Seguridad administrativa implementada por #447
 
 ## `GET /api/v1/administrativo/seguridad/me`
 
-Clasificación CORE-EF: `QUERY_READLIKE`. Requiere únicamente `Authorization: Bearer <access_token>` y devuelve `ok` más los campos exactos `id_usuario`, `codigo_usuario`, `login`, `id_sesion` (UUID público), `mecanismo_autenticacion = SESION_SERVIDOR`, `autenticado_en`, `id_instalacion_origen_sesion` e `id_sucursal_operativa` nullable. Éxitos y errores usan `Cache-Control: no-store`.
+Clasificación CORE-EF: `QUERY_READLIKE`. Requiere únicamente `Authorization: Bearer <access_token>` y devuelve `ok` más los campos exactos `id_usuario`, `codigo_usuario`, `login`, `id_sesion` (UUID público), `mecanismo_autenticacion = SESION_SERVIDOR`, `autenticado_en`. Éxitos y errores usan `Cache-Control: no-store`.
 
 No exige `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id` ni `If-Match-Version`. `Authorization` identifica a la persona; los demás headers representan operación, contexto o concurrencia y no autentican. `X-Usuario-Id` queda deprecado como identidad HTTP y su migración corresponde a #461.
 
-Una ausencia o invalidez de bearer, sesión o usuario devuelve el mismo `401 INVALID_SESSION`; una falla de persistencia devuelve `500 SESSION_TECHNICAL_ERROR`, ambos sin detalle interno. La query es read-only, sin locks, actividad, outbox o sync. No hay roles, permisos, scopes ni autorización (#443 pendiente). No hubo cambio SQL.
+Una ausencia o invalidez de bearer, sesión o usuario devuelve el mismo `401 INVALID_SESSION`; una falla de persistencia devuelve `500 SESSION_TECHNICAL_ERROR`, ambos sin detalle interno. La query es read-only, sin locks, actividad, outbox o sync. Esta query no concede roles, permisos ni scopes. El helper GLOBAL #443 se mantiene separado. El slice central usa el patch `patch_auth_central_20260914.sql`; validado externamente sobre `3503ff2` (Windows/PostgreSQL 18.0: 83 passed sin DB, 2 warnings; focal inicial 50 passed / 1 failed, 1 warning; caso concurrente luego 10/10 PASS aislado y grupo ampliado 106 passed, 1 warning). El fallo inicial se registra como transitorio no reproducido, no bug confirmado; detalle en GEN-003 §19. `2d1ff2f` (48/106) es evidencia histórica del fix HTTP UTC, anterior al cambio final de semántica local/reset. Se conserva la cobertura incluyendo JSON con offset UTC explícito en `expires_at` y `autenticado_en`. La evidencia 29/104 de `c70ea181` es histórica, previa al fix HTTP UTC (GEN-003 §19). La inicialización limpia y el rechazo atómico quedaron validados; evidencia detallada en GEN-003 §19. DEV/TEST se reconstruyen: primera aplicación con credencial_usuario/sesion_usuario vacías, o rechazo atómico sin marker central. No se soporta migración in-place legacy; reejecuciones con marker preservan datos centrales. Si aparecen datos útiles, detener rebuild y definir migración específica.
 
 La afirmación histórica de la introducción de que Administrativo no implementaba login queda superada por #446 y esta sección; se conserva únicamente como registro del corte anterior.
 
@@ -1378,3 +1378,11 @@ requery. El producer EVT-ADM-079 comparte la transacción; #486 implementa su
 consumo remoto sin agregar una ruta HTTP pública. El entry point de
 sincronización es interno y reutiliza delivery, operation scope, retry y fencing
 de #512.
+
+### Serialización temporal HTTP de autenticación central (#544)
+
+`LoginData.expires_at` y `AuthenticatedPrincipalData.autenticado_en` son instantes
+absolutos UTC y se serializan en ISO-8601 con offset explícito `Z` o `+00:00`.
+La frontera API adjunta UTC al datetime interno UTC-naive sin sumar/restar horas.
+Persistencia y aplicación conservan UTC-naive; TTL absoluto de ocho horas intacto.
+OpenAPI conserva `type: string`, `format: date-time` en ambos campos.
