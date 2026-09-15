@@ -1,11 +1,13 @@
-"""Auth central sobre schema oficial, sin filas de instalación y con zona no UTC."""
+"""Auth central independiente de instalación, preservando el baseline oficial."""
+import os
+import re
 from dataclasses import fields
 from datetime import timedelta
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import sessionmaker
 
@@ -27,12 +29,45 @@ def _patch():
 @pytest.fixture
 def central_db(db_session, monkeypatch):
     monkeypatch.delenv("LOCAL_INSTALLATION_CODE", raising=False)
-    # Sólo dentro de la transacción externa revertida por db_session: no desactivar
-    # constraints ni sustituir tablas. CASCADE vacía consumidores de seeds legacy.
-    db_session.execute(text("TRUNCATE public.instalacion CASCADE"))
-    assert db_session.execute(text("SELECT count(*) FROM instalacion")).scalar_one() == 0
-    db_session.execute(text("SET LOCAL TIME ZONE 'Pacific/Auckland'"))
-    return db_session
+    assert "LOCAL_INSTALLATION_CODE" not in os.environ
+    connection = db_session.connection()
+    baseline = db_session.execute(
+        text("SELECT * FROM public.instalacion ORDER BY id_instalacion")
+    ).mappings().all()
+    assert baseline, "El fixture conserva las instalaciones del baseline oficial"
+
+    def forbidden_resolution(*args, **kwargs):
+        pytest.fail("Auth/bootstrap central no debe resolver instalación")
+
+    # Cubrir tanto imports por módulo como aliases directos en los consumidores.
+    monkeypatch.setattr(
+        "app.application.common.local_installation.resolve_local_installation",
+        forbidden_resolution,
+    )
+    for module in (
+        "app.application.administrativo.authentication",
+        "app.application.administrativo.commands.bootstrap_credential",
+    ):
+        monkeypatch.setattr(
+            module + ".resolve_local_installation", forbidden_resolution, raising=False
+        )
+
+    def forbid_installation_query(conn, cursor, statement, parameters, context, executemany):
+        # Detectar también un lookup directo que eluda el resolver. No afecta
+        # introspección pg_catalog ni validaciones FK internas de PostgreSQL.
+        if re.search(r'\b(?:FROM|JOIN)\s+(?:"?public"?\.)?"?instalacion"?\b', statement, re.I):
+            pytest.fail("Auth/bootstrap central no debe consultar instalación")
+
+    event.listen(connection, "before_cursor_execute", forbid_installation_query)
+    try:
+        db_session.execute(text("SET LOCAL TIME ZONE 'Pacific/Auckland'"))
+        yield db_session
+    finally:
+        event.remove(connection, "before_cursor_execute", forbid_installation_query)
+    after = db_session.execute(
+        text("SELECT * FROM public.instalacion ORDER BY id_instalacion")
+    ).mappings().all()
+    assert after == baseline
 
 
 def _bootstrap(db):
@@ -106,6 +141,7 @@ def test_expired_session_utc_me_and_logout(central_db, client):
     path = "/api/v1/administrativo/seguridad/me"
     response = client.get(path, headers=headers)
     assert response.status_code == 200 and response.headers["cache-control"] == "no-store"
+    assert set(response.json()["data"]) == {f.name for f in fields(AuthenticatedPrincipal)}
     db.execute(text("""UPDATE sesion_usuario SET
         fecha_hora_inicio=(clock_timestamp() AT TIME ZONE 'UTC')-interval '9 hours',
         fecha_hora_ultima_actividad=(clock_timestamp() AT TIME ZONE 'UTC')-interval '9 hours',
