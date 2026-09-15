@@ -44,22 +44,23 @@ BEGIN
   END LOOP;
 END $$;
 
+-- Comparación completa: sólo terminadores de línea y whitespace exterior.
 DO $check$
 DECLARE body text;
 BEGIN
   SELECT prosrc INTO body FROM pg_proc WHERE oid=to_regprocedure('public.trg_sesion_usuario_core_ef_insert()')
     AND prorettype='trigger'::regtype AND NOT prosecdef;
-  IF body IS NULL OR btrim(body) NOT IN (btrim($old$
+  IF body IS NULL OR btrim(replace(replace(body, E'\r\n', E'\n'), E'\r', E'\n'), E' \t\n\r') NOT IN (btrim(replace(replace($old$
 BEGIN
  NEW.uid_global:=COALESCE(NEW.uid_global,gen_random_uuid()); NEW.version_registro:=1;
  NEW.created_at:=COALESCE(NEW.created_at,CURRENT_TIMESTAMP); NEW.updated_at:=COALESCE(NEW.updated_at,CURRENT_TIMESTAMP);
  RETURN NEW;
-END $old$),btrim($new$
+END $old$, E'\r\n', E'\n'), E'\r', E'\n'), E' \t\n\r'),btrim(replace(replace($new$
 BEGIN
  NEW.uid_global:=COALESCE(NEW.uid_global,gen_random_uuid()); NEW.version_registro:=1;
  NEW.created_at:=COALESCE(NEW.created_at,(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')); NEW.updated_at:=COALESCE(NEW.updated_at,(CURRENT_TIMESTAMP AT TIME ZONE 'UTC'));
  RETURN NEW;
-END $new$)) THEN
+END $new$, E'\r\n', E'\n'), E'\r', E'\n'), E' \t\n\r')) THEN
     RAISE EXCEPTION 'Función incompatible: trg_sesion_usuario_core_ef_insert';
   END IF;
 END $check$;
@@ -69,15 +70,15 @@ DECLARE body text;
 BEGIN
   SELECT prosrc INTO body FROM pg_proc WHERE oid=to_regprocedure('public.trg_sesion_usuario_core_ef_update()')
     AND prorettype='trigger'::regtype AND NOT prosecdef;
-  IF body IS NULL OR btrim(body) NOT IN (btrim($old$
+  IF body IS NULL OR btrim(replace(replace(body, E'\r\n', E'\n'), E'\r', E'\n'), E' \t\n\r') NOT IN (btrim(replace(replace($old$
 BEGIN
  NEW.uid_global:=OLD.uid_global; NEW.created_at:=OLD.created_at;
  NEW.version_registro:=OLD.version_registro+1; NEW.updated_at:=CURRENT_TIMESTAMP; RETURN NEW;
-END $old$),btrim($new$
+END $old$, E'\r\n', E'\n'), E'\r', E'\n'), E' \t\n\r'),btrim(replace(replace($new$
 BEGIN
  NEW.uid_global:=OLD.uid_global; NEW.created_at:=OLD.created_at;
  NEW.version_registro:=OLD.version_registro+1; NEW.updated_at:=(CURRENT_TIMESTAMP AT TIME ZONE 'UTC'); RETURN NEW;
-END $new$)) THEN
+END $new$, E'\r\n', E'\n'), E'\r', E'\n'), E' \t\n\r')) THEN
     RAISE EXCEPTION 'Función incompatible: trg_sesion_usuario_core_ef_update';
   END IF;
 END $check$;
@@ -87,7 +88,7 @@ DECLARE body text;
 BEGIN
   SELECT prosrc INTO body FROM pg_proc WHERE oid=to_regprocedure('public.trg_credencial_usuario_core_ef_insert()')
     AND prorettype='trigger'::regtype AND NOT prosecdef;
-  IF body IS NULL OR btrim(body) NOT IN (btrim($old$
+  IF body IS NULL OR btrim(replace(replace(body, E'\r\n', E'\n'), E'\r', E'\n'), E' \t\n\r') NOT IN (btrim(replace(replace($old$
 BEGIN
   NEW.uid_global := COALESCE(NEW.uid_global, gen_random_uuid());
   NEW.version_registro := 1;
@@ -96,7 +97,7 @@ BEGIN
   NEW.id_instalacion_ultima_modificacion := COALESCE(NEW.id_instalacion_ultima_modificacion, NEW.id_instalacion_origen);
   NEW.op_id_ultima_modificacion := COALESCE(NEW.op_id_ultima_modificacion, NEW.op_id_alta);
   RETURN NEW;
-END $old$),btrim($new$
+END $old$, E'\r\n', E'\n'), E'\r', E'\n'), E' \t\n\r'),btrim(replace(replace($new$
 BEGIN
   NEW.uid_global := COALESCE(NEW.uid_global, gen_random_uuid());
   NEW.version_registro := 1;
@@ -105,7 +106,7 @@ BEGIN
   NEW.id_instalacion_ultima_modificacion := COALESCE(NEW.id_instalacion_ultima_modificacion, NEW.id_instalacion_origen);
   NEW.op_id_ultima_modificacion := COALESCE(NEW.op_id_ultima_modificacion, NEW.op_id_alta);
   RETURN NEW;
-END $new$)) THEN
+END $new$, E'\r\n', E'\n'), E'\r', E'\n'), E' \t\n\r')) THEN
     RAISE EXCEPTION 'Función incompatible: trg_credencial_usuario_core_ef_insert';
   END IF;
 END $check$;
@@ -115,7 +116,7 @@ DECLARE body text;
 BEGIN
   SELECT prosrc INTO body FROM pg_proc WHERE oid=to_regprocedure('public.trg_credencial_usuario_core_ef_update()')
     AND prorettype='trigger'::regtype AND NOT prosecdef;
-  IF body IS NULL OR btrim(body) NOT IN (btrim($old$
+  IF body IS NULL OR btrim(replace(replace(body, E'\r\n', E'\n'), E'\r', E'\n'), E' \t\n\r') NOT IN (btrim(replace(replace($old$
 BEGIN
   NEW.uid_global := OLD.uid_global;
   NEW.created_at := OLD.created_at;
@@ -124,7 +125,7 @@ BEGIN
   NEW.updated_at := CURRENT_TIMESTAMP;
   NEW.version_registro := OLD.version_registro + 1;
   RETURN NEW;
-END $old$),btrim($new$
+END $old$, E'\r\n', E'\n'), E'\r', E'\n'), E' \t\n\r'),btrim(replace(replace($new$
 BEGIN
   NEW.uid_global := OLD.uid_global;
   NEW.created_at := OLD.created_at;
@@ -133,7 +134,7 @@ BEGIN
   NEW.updated_at := (CURRENT_TIMESTAMP AT TIME ZONE 'UTC');
   NEW.version_registro := OLD.version_registro + 1;
   RETURN NEW;
-END $new$)) THEN
+END $new$, E'\r\n', E'\n'), E'\r', E'\n'), E' \t\n\r')) THEN
     RAISE EXCEPTION 'Función incompatible: trg_credencial_usuario_core_ef_update';
   END IF;
 END $check$;

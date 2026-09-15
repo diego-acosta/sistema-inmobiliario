@@ -23,7 +23,35 @@ PATCH = Path(__file__).resolve().parents[1] / "database/patch_auth_central_20260
 
 
 def _patch():
-    return PATCH.read_text().replace("\nBEGIN;\n", "\n", 1).replace("\nCOMMIT;\n", "\n", 1)
+    return PATCH.read_text(encoding="utf-8").replace("\nBEGIN;\n", "\n", 1).replace("\nCOMMIT;\n", "\n", 1)
+
+
+# Bodies completos del contrato; no comparación parcial ni normalización interna.
+def _normalize_body(body):
+    return body.replace("\r\n", "\n").replace("\r", "\n").strip(" \t\n\r")
+
+
+def _contract_functions():
+    definitions = re.findall(
+        r"CREATE OR REPLACE FUNCTION public\.(trg_\w+)\(\) RETURNS trigger LANGUAGE plpgsql AS \$\$(.*?)\$\$;",
+        _patch(), re.S,
+    )
+    assert len(definitions) == 4
+    return dict(definitions)
+
+
+def _installed_bodies(db):
+    return {
+        name: db.execute(text("SELECT prosrc FROM pg_proc WHERE oid=to_regprocedure(:name)"),
+                         {"name": "public." + name + "()"}).scalar_one()
+        for name in _contract_functions()
+    }
+
+
+def _assert_contract_functions(db):
+    assert {n: _normalize_body(b) for n, b in _installed_bodies(db).items()} == {
+        n: _normalize_body(b) for n, b in _contract_functions().items()
+    }
 
 
 @pytest.fixture
@@ -152,19 +180,64 @@ def test_expired_session_utc_me_and_logout(central_db, client):
     assert db.execute(text("SELECT estado_sesion FROM sesion_usuario WHERE uid_global=:u"), {"u": result.session_id}).scalar_one() == "EXPIRADA"
 
 
-def test_patch_reexecution_preserves_rows_fks_and_nullable_contract(central_db):
+@pytest.mark.parametrize("body_eol", ["\n", "\r\n", "\r"], ids=["body-LF", "body-CRLF", "body-CR"])
+@pytest.mark.parametrize("patch_eol", ["\n", "\r\n", "\r"], ids=["patch-LF", "patch-CRLF", "patch-CR"])
+def test_patch_reexecution_preserves_rows_fks_and_nullable_contract(central_db, body_eol, patch_eol):
     db = central_db
     _, preview, secret, _ = _bootstrap(db)
     result = AuthenticationService(db).login(preview.login, secret)
     before = dict(db.execute(text("SELECT * FROM sesion_usuario WHERE uid_global=:u"), {"u": result.session_id}).mappings().one())
-    db.execute(text(_patch()))
-    db.execute(text(_patch()))
+    _assert_contract_functions(db)
+    credential_before = db.execute(text("SELECT * FROM credencial_usuario WHERE id_usuario=:u"),
+                                   {"u": preview.id_usuario}).mappings().one()
+    assert before["id_instalacion_origen"] is None
+    assert credential_before["id_instalacion_origen"] is None
+    assert credential_before["id_instalacion_ultima_modificacion"] is None
+    # Reproducir prosrc de distintos checkouts/psql sin cambiar los statements.
+    for name, body in _contract_functions().items():
+        source = body.replace("\n", body_eol)
+        db.execute(text(f"CREATE OR REPLACE FUNCTION public.{name}() RETURNS trigger "
+                        f"LANGUAGE plpgsql AS $body${source}$body$"))
+        assert _installed_bodies(db)[name] == source
+    for _ in range(2):
+        with db.begin_nested():
+            db.execute(text(_patch().replace("\n", patch_eol)))
+        _assert_contract_functions(db)
+    assert db.execute(text("SELECT * FROM credencial_usuario WHERE id_usuario=:u"),
+                      {"u": preview.id_usuario}).mappings().one() == credential_before
+    assert db.execute(text("""SELECT count(*) FROM pg_attribute
+        WHERE attrelid='credencial_usuario'::regclass
+          AND attname IN ('id_instalacion_origen','id_instalacion_ultima_modificacion')
+          AND NOT attnotnull AND NOT attisdropped""")).scalar_one() == 2
+    assert db.execute(text("""SELECT count(*) FROM pg_constraint
+        WHERE conname IN ('fk_sesion_inst', 'fk_credencial_usuario_instalacion_origen',
+                          'fk_credencial_usuario_instalacion_ultima_modificacion')
+          AND conrelid IN ('sesion_usuario'::regclass, 'credencial_usuario'::regclass)
+          AND contype='f' AND confrelid='instalacion'::regclass
+          AND confdeltype='r' AND convalidated""")).scalar_one() == 3
     assert dict(db.execute(text("SELECT * FROM sesion_usuario WHERE uid_global=:u"), {"u": result.session_id}).mappings().one()) == before
     assert not db.execute(text("SELECT attnotnull FROM pg_attribute WHERE attrelid='sesion_usuario'::regclass AND attname='id_instalacion_origen'")).scalar_one()
     with pytest.raises(DBAPIError), db.begin_nested():
         db.execute(text("UPDATE sesion_usuario SET id_instalacion_origen=987654321 WHERE uid_global=:u"), {"u": result.session_id})
     with pytest.raises(DBAPIError), db.begin_nested():
         db.execute(text("UPDATE credencial_usuario SET id_instalacion_ultima_modificacion=987654321 WHERE id_usuario=:u"), {"u": preview.id_usuario})
+
+
+@pytest.mark.parametrize("function_name", list(_contract_functions()))
+def test_patch_rejects_material_function_change(central_db, function_name):
+    db = central_db
+    _assert_contract_functions(db)
+    original = _contract_functions()[function_name]
+    # Cambio material: la función dejaría de retornar NEW. Nunca ejecutar el trigger.
+    altered = original.replace("RETURN NEW;", "RETURN NULL;")
+    assert altered != original
+    with pytest.raises(DBAPIError, match="Función incompatible: " + function_name), db.begin_nested():
+        db.execute(text(f"CREATE OR REPLACE FUNCTION public.{function_name}() RETURNS trigger "
+                        f"LANGUAGE plpgsql AS $body${altered}$body$"))
+        db.execute(text(_patch()))
+    # El rollback localizado restaura la función y mantiene utilizable el fixture.
+    _assert_contract_functions(db)
+    assert db.execute(text("SELECT 1")).scalar_one() == 1
 
 
 def test_patch_rejects_incompatible_structure(db_session):
