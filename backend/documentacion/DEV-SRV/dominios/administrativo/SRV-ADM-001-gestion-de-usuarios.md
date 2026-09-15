@@ -191,9 +191,13 @@ idempotente; se revalida usuario/credencial bajo lock antes del insert.
 El reloj real de sesión usa clock_timestamp AT TIME ZONE UTC; bootstrap usa
 instante transaccional UTC. Defaults/triggers físicos acompañan esa convención.
 No se modifican fechas económicas ni autorización GLOBAL/contextual.
-Validación vigente externa sobre `2d1ff2f`, Windows/PostgreSQL 18.0:
-48 focales y 106 del grupo PostgreSQL passed, 1 warning por suite, incluyendo
-la frontera HTTP UTC. `c70ea181` (29/104 y 149 unitarios) es evidencia histórica
+Validación vigente externa sobre `3503ff2`, Windows/PostgreSQL 18.0:
+83 passed sin DB (2 warnings); focal inicial 50 passed / 1 failed (1 warning),
+con un fallo concurrente transitorio no reproducido: luego 10/10 PASS aislado
+y 106 passed en el grupo PostgreSQL ampliado (1 warning), incluido ese caso.
+Incluye `RESET_ADMINISTRATIVO` y la frontera HTTP UTC; detalle en GEN-003 §19.
+`2d1ff2f` (48/106) es evidencia histórica del fix HTTP UTC, previa al cambio
+final de semántica local/reset. `c70ea181` (29/104 y 149 unitarios) es evidencia histórica
 anterior al fix HTTP UTC, conservada en GEN-003 §19.
 DEV/TEST se reconstruyen sin preservar auth legacy. Primera aplicación: ambas tablas
 auth vacías o rechazo atómico antes de cambios; reejecución con marker central:

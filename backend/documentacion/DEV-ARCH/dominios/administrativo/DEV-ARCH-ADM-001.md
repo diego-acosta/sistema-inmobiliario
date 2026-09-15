@@ -25,8 +25,12 @@ instalación ni configuración local. El principal contiene sólo identidad huma
 no proyecta sucursal. Sesión y procedencia de credencial admiten NULL conservando
 FKs, locks, Argon2id, digest, TTL 8h, replay y versionado físico. Relojes/defaults/
 triggers de estas capacidades usan UTC explícito. GEN-003 §19 registra la validación
-vigente sobre `2d1ff2f`: Windows/PostgreSQL 18.0, 48 focales y
-106 del grupo PostgreSQL PASS (1 warning por suite), incluida la frontera HTTP UTC.
+vigente sobre `3503ff2`: Windows/PostgreSQL 18.0, 83 passed sin DB (2 warnings),
+focal inicial 50 passed / 1 failed (1 warning), caso concurrente luego 10/10 PASS
+aislado y grupo ampliado 106 passed (1 warning). El fallo inicial queda registrado
+como transitorio no reproducido; detalle en GEN-003 §19. Incluye el motivo
+`RESET_ADMINISTRATIVO` y la frontera HTTP UTC. `2d1ff2f` (48/106) es evidencia
+histórica del fix HTTP UTC, anterior al cambio final de semántica local/reset.
 La evidencia de rebuild anterior en `c70ea181` (29/104 y 149 unitarios) es histórica
 y permanece diferenciada en GEN-003 §19.
 Auth central y protección rebuild están implementados y validados; esto no cierra

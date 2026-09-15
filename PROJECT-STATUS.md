@@ -43,16 +43,31 @@ técnicos (D2) siguen DECISIÓN ABIERTA; no se declara Gate 2 satisfecho.
 rama sin instalación: Settings opcional, principal y `/me` sin instalación/sucursal,
 procedencia nullable y SQL UTC. **Implementado y validado externamente en #544**:
 **Validación vigente confirmada por el responsable sobre
-`2d1ff2f227babd36040c6b0a767465304e7e2d72` — Windows / PostgreSQL 18.0.**
-Focal HTTP/auth (login, `/me`, helper/API UTC y auth central PostgreSQL):
-**48 passed, 1 warning**. Grupo PostgreSQL relacionado de siete archivos:
-**106 passed, 1 warning**. El warning de Starlette por httpx/testclient no es fallo funcional.
-Incluye JSON real con offset UTC explícito en `expires_at` y `autenticado_en`,
-sin desplazar instantes: persistencia UTC-naive, TTL 8h y SQL/schema intactos.
-Evidencia complementaria del Work previo: API/helper aislado **3 PASS**;
-unitarios solicitados **42 PASS**; ejecución conjunta **45 passed, 2 warnings**;
-compileall y git diff --check **PASS**, working tree **clean**.
-Estos resultados corresponden al head indicado; este ajuste sólo actualiza documentación.
+`3503ff284df0de8817456911f7655786db706ade` — Windows / PostgreSQL 18.0.**
+Incluye el cambio runtime de motivo de revocación a `RESET_ADMINISTRATIVO` y
+el cierre de semántica residual local/central de auth.
+
+- Sin DB: **83 passed, 2 warnings**.
+- Primera focal PostgreSQL: **50 passed, 1 failed, 1 warning**. El único fallo fue
+  `test_concurrent_reset_reset_are_legitimate_serial_rotations`.
+- Revalidación aislada posterior del caso concurrente: **10/10 PASS** consecutivos.
+- Grupo PostgreSQL ampliado relacionado: **106 passed, 1 warning**, incluido ese caso.
+- `python -m compileall -q backend/app backend/tests` y `git diff --check`: **PASS**;
+  working tree limpio según la validación reportada.
+
+El fallo concurrente inicial se conserva como evidencia: **fallo transitorio no
+reproducido**, no bug confirmado ni una ejecución siempre verde. El warning de
+PostgreSQL es `StarletteDeprecationWarning` por httpx/starlette.testclient, no fallo
+funcional. Estos resultados fueron aportados por el responsable; no se repitieron
+en este ajuste documental. UTC, TTL 8h y schema permanecen intactos.
+
+**Evidencia histórica del fix HTTP UTC, previa al cambio final de semántica local/reset:**
+`2d1ff2f227babd36040c6b0a767465304e7e2d72` — Windows / PostgreSQL 18.0:
+48 focales y 106 PostgreSQL relacionados passed, 1 warning por suite.
+Verificó JSON real con offset UTC explícito en `expires_at` y `autenticado_en`,
+con persistencia UTC-naive y TTL 8h intactos. API/helper aislado: 3 PASS;
+unitarios: 42 PASS; ejecución conjunta: 45 passed, 2 warnings;
+compileall/diff --check PASS y working tree clean en ese head anterior.
 
 **Evidencia histórica previa al fix HTTP UTC:**
 Validación externa confirmada por el responsable sobre
@@ -76,7 +91,7 @@ no debe escribirse manualmente y el antiguo marker de cutover no lo sustituye.
 Con el marker presente, la reejecución conserva filas, versiones y timestamps.
 Sin él y con cualquier fila auth, aborta atómicamente e indica usar rebuild oficial.
 No convierte instantes, cierra sesiones ni rota credenciales históricas.
-La protección de rebuild limpio sigue validada en el head vigente `2d1ff2f`.
+La protección de rebuild limpio sigue validada en el head vigente `3503ff2`.
 Si aparecen datos útiles antes del corte, detener el rebuild y definir migración
 específica; esta política no se extrapola a futuras bases productivas.
 
