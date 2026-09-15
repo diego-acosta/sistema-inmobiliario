@@ -88,24 +88,26 @@ No hay fallback servidor a instalación, primera fila, ID fijo, sesión o predet
 `usuario_sucursal.es_sucursal_predeterminada` puede orientar la selección inicial
 del cliente; éste debe enviar el selector. Una predeterminada inexistente,
 inactiva o no autorizada no habilita nada. Con múltiples sucursales se selecciona
-explícitamente; sin sucursales se puede autenticar, pero no operar bajo una sucursal.
+explícitamente; sin asignación a sucursal se puede autenticar y se evalúa la
+habilitación específica de cada operación, sin inventar un vínculo (§5).
 
-Para un command contextual humano de escritura, antes de ejecutar o devolver replay
-(orden completo y reglas de lectura en §5):
+Para una operación contextual humana, antes de ejecutar o devolver replay
+(predicado funcional específico y orden completo en §5):
 
 1. Validar principal y sintaxis del selector.
 2. Validar sucursal existente, ACTIVA, `permite_operacion = true`, sin baja ni
    `deleted_at`, conforme a la proyección existente de #536.
-3. Validar `usuario_sucursal` del actor: ACTIVO, `puede_operar = true`, no eliminado,
-   `fecha_desde <= ahora` y `fecha_hasta IS NULL OR ahora < fecha_hasta`, en UTC.
-   Intervalo vacío no habilita; no usar el reader de listas como prueba de vigencia.
-4. Evaluar permiso y denegación aplicables (§5). `puede_operar` no concede permisos.
+3. Validar `H_op(s)` declarado por la operación (§5): capacidad vigente o base
+   funcional aplicable. Si exige `usuario_sucursal`, validar vínculo ACTIVO, no
+   eliminado e intervalo vigente UTC, además de las capacidades declaradas. No
+   imponer ese vínculo a una base de autoría que contractualmente no lo requiere.
+4. Evaluar permiso y denegación aplicables (§5). La habilitación no concede permisos.
 5. Comprobar que el target y las entidades afectadas pertenecen al alcance funcional
    del command. El selector no mueve recursos ni suplanta su sucursal persistida.
 
 Ausencia/invalidez del selector requerido es error de contrato; alcance insuficiente
-es rechazo de autorización, sin efectos. §5.3 distingue los flags para reads y
-writes; ninguno concede por sí solo un permiso.
+es rechazo de autorización, sin efectos. §5.3 define la habilitación por operación;
+ninguna capacidad o relación funcional concede por sí sola un permiso.
 
 **Commands GLOBAL sin contexto operativo:** su contrato puede declarar
 `id_sucursal = NULL`, con permiso GLOBAL y sin `usuario_sucursal` ficticio.
@@ -161,20 +163,26 @@ no se ejecutaron suites en PR04.
 ### 5.2 Perfiles y composición única
 
 Cada operación protegida declara en servidor su perfil **GLOBAL** o **CONTEXTUAL**,
-su `permission_code` exacto y si es lectura o escritura. El cliente no elige el
-perfil. No inferirlo del nombre del permiso ni agregar una columna scope a permiso.
+su `permission_code` exacto, si requiere habilitación funcional de sucursal y,
+cuando la requiere, el predicado funcional aplicable. También declara si es
+lectura o escritura, sin derivar de ello capacidades. El cliente no elige el
+perfil ni el predicado. No inferirlos del nombre del permiso ni agregar una
+columna scope a permiso.
 Una operación puede usar varios permisos sólo si su contrato expresa cómo se
 combinan; para cada permiso se aplica D1, sin permisos implícitos por rol nominal.
 
 Definiciones: P = principal válido; E = permiso contractual definido y ACTIVO;
 G = concesión GLOBAL vigente; C(s) = concesión contextual vigente en sucursal s;
-H(s) = habilitación vigente correspondiente a lectura/escritura; D = existe
+H_op(s) = predicado funcional requerido por el contrato de esa operación/dominio
+sobre la sucursal efectiva; D = existe
 `denegacion_explicita` para usuario/permiso. La validación del target es adicional.
 
 - **GLOBAL:** P AND E AND G AND NOT D. `id_sucursal = NULL`; no se consulta ni
-  exige usuario_sucursal. C(s) nunca sustituye G, aunque se envíe un selector.
-- **CONTEXTUAL:** P AND sucursal válida s AND H(s) AND E AND (G OR C(s)) AND NOT D.
-  G satisface el permiso contextual, pero no crea H(s) ni acceso a otra sucursal.
+  exige usuario_sucursal por D1. Se preservan otros controles funcionales explícitos
+  del contrato GLOBAL, sin crear capacidades nuevas. C(s) nunca sustituye G,
+  aunque se envíe un selector.
+- **CONTEXTUAL:** P AND sucursal válida s AND H_op(s) AND E AND (G OR C(s)) AND NOT D.
+  G satisface el permiso contextual, pero no crea H_op(s) ni acceso a otra sucursal.
 - **DENY > ALLOW**: una denegación aplicable bloquea todas las vías de concesión.
   No hay bypass de administrador, permiso por header, herencia entre roles ni
   asignación automática al autenticar.
@@ -197,11 +205,18 @@ hora local. El resolver read-only no hace commit ni modifica actividad de sesió
 
 - Sucursal contextual: existente, `estado_sucursal = ACTIVA`,
   `permite_operacion = true`, `deleted_at IS NULL`, `fecha_baja IS NULL` (§4).
-- H(s): vínculo del mismo usuario/sucursal, `estado_vinculo = ACTIVO`, no eliminado
-  y vigente. Para writes se exige `puede_operar = true`; para queries contextuales
-  `puede_consultar = true`. Consultar no exige puede_operar, ni operar lo implica.
-  `puede_administrar` no sustituye el permiso ni ninguno de esos flags y no se
-  convierte en un tercer bypass. No se infiere acceso del tipo de habilitación.
+- H_op(s): predicado declarado por el dominio para esa operación: puede exigir
+  `puede_consultar`, `puede_operar`, `puede_administrar`, una combinación explícita
+  o una base funcional de visibilidad/relación con el target ya definida. No hay
+  equivalencia universal read→consulta ni write→operación. Si usa una capacidad de
+  `usuario_sucursal`, exige vínculo del mismo usuario/sucursal, ACTIVO, no eliminado
+  y vigente, y el flag o combinación declarados. No basta con el flag aislado.
+  Una base independiente de autoría no recibe artificialmente esos requisitos.
+  Si el contrato declara que no requiere habilitación adicional, H_op(s) no agrega
+  una condición (TRUE); esa declaración explícita nunca se infiere de un dato
+  ausente ni omite principal, selector, permiso, deny o pertenencia del target.
+  Una declaración contractual faltante es inconsistencia técnica, no allow.
+  Ninguna capacidad implica las otras ni sustituye autorización efectiva.
 - G: usuario_rol_seguridad del actor, vigente y `deleted_at IS NULL`, unido por
   id_rol_seguridad a rol ACTIVO y por rol_seguridad_permiso al permiso ACTIVO.
 - C(s): usuario_rol_sucursal del actor y s, vigente, unido al mismo catálogo de
@@ -221,8 +236,33 @@ hora local. El resolver read-only no hace commit ni modifica actividad de sesió
   que viola unicidades contractuales son error técnico, no 403 ni allow. Varios
   roles/asignaciones/concesiones coherentes se reducen con EXISTS/OR; no se
   confunden con corrupción. Un solapamiento de habilitaciones válidas satisface
-  H si al menos una fila cumple todos sus predicados; no combinar flags de filas
+  el predicado basado en vínculo si una fila cumple todos sus requisitos; no combinar flags de filas
   inactivas/fuera de vigencia. Sólo denegacion_explicita expresa un deny prevalente.
+
+**Responsabilidades y evidencia normativa.** Administrativo administra identidad,
+roles, permisos, concesiones GLOBAL/contextuales, denegaciones y su evaluación
+para autorización efectiva. El dominio consumidor declara la habilitación de la
+operación, visibilidad, relación funcional con el target y pertenencia al scope.
+No se crea un motor paralelo de permisos en el dominio.
+
+[GOP-FREEZE-001 §§20.0–20.2](../GOP-FREEZE-001.md) y
+[DEV-ARCH-GOP-001 §14](dominios/gestion_operativa/DEV-ARCH-GOP-001.md)
+son evidencia normativa de la selección por operación, sin modificar sus reglas:
+
+| Ejemplo funcional GOP (no universal) | Predicado/base funcional preservada |
+| --- | --- |
+| Crear/gestionar tarea por scope de sucursal | Capacidad administrativa vigente: `puede_administrar`; no exigir `puede_operar` por ser write |
+| Responsabilidad/elegibilidad operativa | `puede_operar` vigente y demás condiciones de elegibilidad del responsable; no sustituye autorización efectiva |
+| Consulta ordinaria por scope | `puede_consultar` vigente |
+| Visibilidad administrativa por scope | `puede_administrar` vigente; no implica `puede_consultar` |
+| Visibilidad por creador | Autoría; no exige por sí sola los tres flags ni vínculo de sucursal |
+| Visibilidad por responsable | Relación de responsable actual con elegibilidad vigente según GOP |
+
+Las bases alternativas conservan su combinación funcional contractual. Ser creador
+no habilita toda mutación; se preserva la matriz GOP. Capacidad/relación funcional
+AND autorización efectiva siguen siendo acumulativas en endpoints protegidos.
+Estos ejemplos no asignan nuevos perfiles HTTP ni permisos GOP y no modifican
+sus reglas funcionales, incluidas las de gestión residual.
 
 ### 5.4 Request, headers, lecturas y recursos
 
@@ -239,11 +279,16 @@ preautenticadas/login, logout y `/me` conservan el contrato #544; no se les aña
 un permiso D1 ni un selector.
 
 Un usuario sin sucursales puede autenticarse, usar `/me` y ejecutar operaciones
-GLOBAL autorizadas; todas sus operaciones contextuales se deniegan. Con varias
+GLOBAL autorizadas. Se deniega una operación contextual si su H_op(s) exige un
+vínculo que no tiene; una base independiente de autoría se evalúa según su contrato,
+sin conceder por ello el permiso ni omitir los demás controles D1. Con varias
 sucursales, cada request elige una: la misma sesión puede atender requests
 simultáneos en A y B si ambos pasan D1. La predeterminada sólo es preferencia UI.
 
-Reads protegidos también requieren permiso y deny actuales; no heredan op_id,
+Reads y writes contextuales exigen su H_op(s) específico: una lectura puede
+basarse en consulta, administración, autoría o responsabilidad elegible según el
+dominio; una escritura no implica puede_operar. Reads protegidos también
+requieren permiso y deny actuales; no heredan op_id,
 CAS ni efectos write. Un listado contextual filtra por s en DB antes de contar,
 agrupar o paginar; no trae datos ajenos para filtrarlos después de exponer totales.
 Una lectura GLOBAL usa concesión GLOBAL sin sucursal; no convierte automáticamente
@@ -262,9 +307,11 @@ central exige alinear callers y tests antes de declarar el endpoint migrado.
 ### 5.5 Orden y errores cerrados
 
 Orden: autenticar → validar selector contractual → permiso definido/configuración
-coherente → sucursal/habilitación → concesiones y deny actuales → target/scope →
-idempotencia (§12) → EXECUTE o REPLAY autorizado. En GLOBAL se omiten sucursal/H.
-Una lectura coherente puede agrupar consultas, pero nunca exponer un receipt antes
+coherente → sucursal/H_op(s) declarado → concesiones y deny actuales → target/scope →
+idempotencia (§12) → EXECUTE o REPLAY autorizado. En GLOBAL se omiten sucursal/H_op de D1.
+Si H_op(s) usa una relación con el target, esa relación se verifica como parte
+del predicado antes de exponer resultados; no se omite la comprobación separada
+de pertenencia. Una lectura coherente puede agrupar consultas, pero nunca exponer un receipt antes
 de esos controles. Configuración incoherente detectada es error técnico aunque
 ninguna concesión permitiría continuar; no disfrazarla de falta de privilegios.
 
@@ -272,7 +319,7 @@ ninguna concesión permitiría continuar; no disfrazarla de falta de privilegios
 | --- | --- |
 | Bearer requerido ausente/malformado, sesión expirada/revocada/inválida, usuario inelegible | 401 `INVALID_SESSION`, según #544; ningún permiso se evalúa sin principal |
 | Selector contextual ausente/inválido/repetido | 400 `LOCAL_COMMAND_HEADER_INVALID` legacy se migra a `CENTRAL_CONTEXT_HEADER_INVALID`; ErrorResponse, header y razón sin datos sensibles |
-| Principal válido sin H, sucursal inexistente/inactiva/no operable, sin concesión, deny o target fuera de scope | 403 `autorizacion_insuficiente`, mismo mensaje sanitizado; no revelar cuál control falló |
+| Principal válido sin H_op(s) requerido, sucursal inexistente/inactiva/no operable, sin concesión, deny o target fuera de scope | 403 `autorizacion_insuficiente`, mismo mensaje sanitizado; no revelar cuál control falló |
 | Permiso contractual inexistente, configuración/resultado incoherente, corrupción de referencias, fallo de persistencia | 500 `inconsistencia_roles_permisos`, sanitizado; detalles sólo en diagnóstico protegido |
 
 Se reutilizan los mapeos 401/403/500 actuales donde corresponden; el código central
@@ -283,41 +330,49 @@ una vez superado D1. Un 403 no revoca ni renueva sesión.
 ### 5.6 Tabla de decisión y adversarios
 
 Salvo indicación: principal/permiso válidos, target del ámbito, sin error técnico.
-H representa vínculo vigente y flag requerido; A/B son sucursales diferentes.
+H_op representa el predicado funcional declarado; A/B son sucursales diferentes.
+Los casos de vínculo/flags se aplican sólo si la operación declara esa exigencia.
 
-| Caso | Sucursal | H | Permiso GLOBAL | Permiso contextual | Deny | Resultado |
+| Caso | Sucursal | H_op | Permiso GLOBAL | Permiso contextual | Deny | Resultado |
 | --- | --- | --- | --- | --- | --- | --- |
 | GLOBAL con G | NULL | No aplica | Sí | No | No | ALLOW |
 | GLOBAL sólo C | NULL | No aplica | No | A | No | 403 |
 | CONTEXTUAL con G | A | Sí | Sí | No | No | ALLOW |
 | CONTEXTUAL con C(A) | A | Sí | No | A | No | ALLOW |
 | CONTEXTUAL sólo C(B) | A | Sí | No | B | No | 403 |
-| CONTEXTUAL sin vínculo | A | No | Sí | A | No | 403 |
-| Vínculo inactivo/eliminado/futuro/vencido | A | No | Sí | A | No | 403 |
+| Operación que exige vínculo, sin vínculo | A | No | Sí | A | No | 403 |
+| Vínculo requerido inactivo/eliminado/futuro/vencido | A | No | Sí | A | No | 403 |
 | GLOBAL con deny | NULL | No aplica | Sí | A | Sí | 403 |
 | CONTEXTUAL G + deny | A | Sí | Sí | No | Sí | 403 |
 | CONTEXTUAL C + deny | A | Sí | No | A | Sí | 403 |
 | Usuario sin sucursales, GLOBAL con G | NULL | No aplica | Sí | No | No | ALLOW; login/me también permitidos por #544 |
-| Usuario sin sucursales, CONTEXTUAL | A | No | Sí | No | No | 403 |
+| Usuario sin sucursales, CONTEXTUAL que exige vínculo | A | No | Sí | No | No | 403 |
 | Selector requerido ausente | Ausente | — | Sí | A | No | 400 |
 | Selector requerido inválido/ambiguo | Inválida | — | Sí | A | No | 400 |
 | Target B, actor autorizado A | A | Sí | Sí | A | No | 403 |
-| Header manipulado a B sin H(B) | B | No | Sí | A | No | 403 |
-| Write con puede_operar=false | A | No | Sí | A | No | 403 |
-| Read con puede_consultar=false | A | No | Sí | A | No | 403 |
+| Header manipulado a B sin H_op(B) | B | No | Sí | A | No | 403 |
+| Predicado funcional requerido no satisfecho | A | No | Sí | A | No | 403 |
+| Ejemplo: exige puede_operar, flag false | A | No | Sí | A | No | 403 |
+| Ejemplo: exige puede_consultar, flag false | A | No | Sí | A | No | 403 |
+| Ejemplo: exige puede_administrar, flag false | A | No | Sí | A | No | 403 |
+| Ejemplo: creación por administración vigente, puede_operar=false | A | Sí | Sí | No | No | ALLOW; ser write no agrega puede_operar |
+| Ejemplo: visibilidad administrativa vigente, puede_consultar=false | A | Sí | Sí | No | No | ALLOW; ser read no agrega puede_consultar |
+| Ejemplo: visibilidad por autoría, sin vínculo ni flags | A | Sí, autoría | Sí | No | No | ALLOW; demás controles D1 satisfechos |
+| Ejemplo: responsabilidad registrada sin elegibilidad requerida, sin otra base | A | No | Sí | No | No | 403 |
 | Único rol vencido o inactivo | A | Sí | No vigente | No vigente | No | 403 |
 | Permiso existente inactivo | A | Sí | No efectiva | No efectiva | No | 403 |
 | Permiso borrado físicamente/no definido | A | Sí | — | — | — | 500 |
 | Única asociación rol-permiso ausente | A | Sí | No | No | No | 403 |
 | Asociación huérfana/inconsistencia física | A | Sí | — | — | — | 500 |
 | Sesión válida sin roles | NULL (GLOBAL) | No aplica | No | No | No | 403; /me sigue permitido |
-| G y H(A), H(B), requests simultáneos | A / B | Sí / Sí | Sí | No | No | ALLOW independiente por request |
+| G y H_op(A), H_op(B), requests simultáneos | A / B | Sí / Sí | Sí | No | No | ALLOW independiente por request |
 | GLOBAL con selector extra inválido | NULL | No aplica | Sí | No | No | ALLOW; selector ignorado |
-| Replay tras perder permiso/H o adquirir deny | A | Según estado actual | No efectiva | No efectiva | Puede existir | 403; sin receipt |
+| Replay tras perder permiso/H_op requerido o adquirir deny | A | Según estado actual | No efectiva | No efectiva | Puede existir | 403; sin receipt |
 
 PR05 debe convertir la tabla en pruebas de comportamiento: UTC no dependiente de
 TimeZone, límites exactos desde/hasta, roles múltiples con OR, intervalos vacíos,
-flags independientes, deny duplicado, selector manipulado, targets ajenos y replay
+predicados por operación, flags independientes, autoría/responsabilidad y
+visibilidad administrativa sin exigir consulta, deny duplicado, selector manipulado, targets ajenos y replay
 tras revocación. No eliminar tests legacy para aparentar D1 implementada.
 
 ### 5.7 Consumidores y aceptación de PR05
@@ -338,6 +393,10 @@ cubre write UTC, flags y predeterminada. Es evidencia parcial, no D1 completa.
 
 PR05 debe materializar contexto humano central, evaluador GLOBAL/contextual/deny,
 reloj y writers técnicos UTC afectados, mapeos y regresión de esos consumidores.
+El caller/contrato aporta o selecciona explícitamente H_op(s), incluida la
+declaración de no requerir habilitación adicional. PR05 no lo deduce del verbo
+HTTP ni de read/write; preserva las bases funcionales del dominio. PR04 no fija
+clases, enums, callbacks, signatures ni repositories para ese mecanismo.
 El catálogo de permisos existente se reutiliza; no crear permisos directos,
 herencia entre roles ni una nueva autenticación. Adoptar cada ruta con su caller,
 fingerprint y pertenencia coherentes; una ruta no queda migrada por cambiar sólo
