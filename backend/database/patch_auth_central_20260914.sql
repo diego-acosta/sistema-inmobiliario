@@ -183,8 +183,27 @@ BEGIN
   RETURN NEW;
 END $$;
 
+-- Cutover único, bajo el LOCK y la transacción del patch. El comentario es
+-- metadata de migración: no quitar el marcador en despliegues posteriores.
+-- No inferir la zona de timestamps históricos ni recalcular su expiración.
+DO $cutover$
+BEGIN
+  IF position('Auth central: cutover pre-UTC v1 completado.' IN
+      coalesce(obj_description('public.sesion_usuario'::regclass, 'pg_class'), '')) = 0 THEN
+    UPDATE public.sesion_usuario
+       SET estado_sesion = 'CERRADA',
+           requiere_reautenticacion = true,
+           fecha_hora_cierre = GREATEST(
+             clock_timestamp() AT TIME ZONE 'UTC', fecha_hora_inicio)
+     WHERE estado_sesion = 'ACTIVA';
+    -- GREATEST satisface chk_sesion_usuario_periodo aun si el inicio local
+    -- histórico está adelantado respecto de UTC. Es un cierre de invalidación,
+    -- no una conversión ni una reconstrucción del instante histórico.
+    COMMENT ON TABLE public.sesion_usuario IS
+      'Sesiones centrales revocables no sincronizables; timestamps UTC, bearer sólo digest. Auth central: cutover pre-UTC v1 completado.';
+  END IF;
+END $cutover$;
+
 COMMENT ON COLUMN public.sesion_usuario.id_instalacion_origen IS
   'Compatibilidad legacy nullable; sesiones centrales no requieren instalación.';
-COMMENT ON TABLE public.sesion_usuario IS
-  'Sesiones centrales revocables no sincronizables; timestamps UTC, bearer sólo digest.';
 COMMIT;

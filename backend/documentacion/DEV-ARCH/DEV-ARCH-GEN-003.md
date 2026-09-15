@@ -2,7 +2,7 @@
 
 ## 1. Estado, alcance y evidencia
 
-**ARQUITECTURA OBJETIVO — contrato de PR 02; primer slice auth implementado en la rama, validación PostgreSQL pendiente.**
+**ARQUITECTURA OBJETIVO — contrato de PR 02; primer slice auth implementado en la rama, validado externamente en c872425e (§19); cutover pendiente de revalidación.**
 Base auditada: `transition/central-authority`, commit
 `f1c4a4ce62240e08867ce8531fc3579540114d24`, merge de #542 (2026-09-11).
 `main` permanece separado en `e51e1f50cc51b39856a43480d3005a34526808d1`.
@@ -64,7 +64,7 @@ No se promete un mecanismo de revocación administrativa aún inexistente.
 
 La autoridad temporal es PostgreSQL en UTC; comparar instantes independientes
 de `TimeZone`. Sesiones y bootstrap usan UTC explícito en consultas, defaults y triggers;
-sus pruebas PostgreSQL no UTC están agregadas pero pendientes de ejecución.
+sus pruebas PostgreSQL no UTC fueron validadas en el head c872425e (§19).
 El cast de autorización GLOBAL permanece pendiente de migración (§16). No convertir timestamps económicos
 ni fechas operativas mediante esta regla.
 
@@ -381,14 +381,14 @@ precedencia no permite inventar la composición de roles que D1 deja abierta.
 ## 16. Matriz de evidencia objetivo vs runtime actual
 
 Rutas relativas al repositorio. Matriz actualizada para el slice auth central;
-§19 distingue unitarios ejecutados de validación PostgreSQL pendiente.
+§19 registra validación externa y revalidación del nuevo cutover.
 
 | Área / evidencia concreta | Runtime actual | Objetivo / pendiente responsable |
 | --- | --- | --- |
-| `backend/app/application/administrativo/authentication.py`; `backend/app/api/authentication.py` | Login/principal sin resolver instalación ni proyectar sucursal; TTL 8h y logout revocable | Implementado en rama; validación PostgreSQL pendiente |
+| `backend/app/application/administrativo/authentication.py`; `backend/app/api/authentication.py` | Login/principal sin resolver instalación ni proyectar sucursal; TTL 8h y logout revocable | Implementado en rama; validado externamente en c872425e (§19); cutover pendiente de revalidación |
 | `backend/app/infrastructure/persistence/repositories/sesion_usuario_repository.py`; `backend/database/patch_sesion_usuario_runtime_20260807.sql` | Insert central con instalación/sucursal NULL, digest/TTL; patch_auth_central_20260914.sql conserva FK y usa UTC explícito | Validar patch, triggers y zona no UTC en PostgreSQL real |
 | `backend/app/config/settings.py`; `backend/app/application/common/local_installation.py`; `backend/app/infrastructure/persistence/repositories/instalacion_repository.py` | Settings permite LOCAL_INSTALLATION_CODE ausente; DATABASE_URL sigue obligatorio; resolver legacy falla explícitamente antes del lookup si falta configuración | Sólo contexto legacy sigue consumiendo el resolver; sin fallback |
-| `backend/app/application/administrativo/commands/bootstrap_credential.py`; `backend/database/patch_credencial_usuario_core_ef_20260805.sql` | CLI crea/resetea sin resolver ni campos de instalación en preview/result; procedencia NULL, FKs conservadas | Preserva Argon2id/locks/replay; validación física pendiente |
+| `backend/app/application/administrativo/commands/bootstrap_credential.py`; `backend/database/patch_credencial_usuario_core_ef_20260805.sql` | CLI crea/resetea sin resolver ni campos de instalación en preview/result; procedencia NULL, FKs conservadas | Preserva Argon2id/locks/replay; validado externamente en c872425e (§19); cutover pendiente de revalidación |
 | `backend/app/application/common/local_command_context.py`, `local_command_headers.py`; `backend/app/api/local_command_context.py` | Sucursal por request; instalación resuelta incluso sin assertion; op_id requerido; adapters sin adopción productiva encontrada fuera del módulo | Técnico: contexto §7 sin instalación, policy idempotencia/CAS; no quitar protecciones legacy en bloque |
 | `backend/app/infrastructure/persistence/repositories/technical_context_repository.py` | Reloj UTC, sucursal elegible, vínculo vigente + instalación↔sucursal | Técnico/Administrativo/Operativo: conservar scope, retirar sólo validación instalación |
 | `backend/app/infrastructure/persistence/repositories/usuario_sucursal_repository.py`; `backend/database/patch_usuario_sucursal_core_ef_20260702.sql` | Flags, predeterminada e índices; listas no sustituyen proyección temporal #536 | Administrativo: reutilizar asignaciones y UTC; no crear asignación a deployment |
@@ -429,7 +429,7 @@ no equivale a auditoría completa de cada suite ni a ejecución:
 ## 17. Orden de migración y criterios del siguiente PR
 
 1. **Primer slice runtime: autenticación/sesión y bootstrap sin instalación.**
-   Implementado en rama; validación PostgreSQL pendiente (§19).
+   Implementado en rama; validado externamente en c872425e (§19); cutover pendiente de revalidación (§19).
    Partir de transición tras integrar este contrato. Alcance Administrativo +
    settings/SQL estrictamente necesarios: mantener bearer/Argon2id/revocación/TTL,
    desacoplar login, credenciales y principal; alinear `/me`, DEV-API y sus callers.
@@ -487,13 +487,21 @@ conservan UID/versionado/procedencia legacy, cambiando la representación tempor
 a UTC. Reaplicar patches históricos aislados no es el procedimiento de despliegue:
 resets aplican la cadena ordenada y la reejecución del patch central es idempotente.
 
-Validación disponible: 149 pruebas unitarias aisladas de fixtures DB, compilación
-y diff sin whitespace inválido. **BLOQUEO DE VALIDACIÓN:** reset_db.sh se detuvo
-antes de recrear bases porque falta psql; no se ejecutaron pruebas PostgreSQL ni
-se acredita el gate de persistencia. Tests físicos nuevos cubren ausencia de filas
-instalación, init/reset/replay, UTC en dos zonas, expiración, logout y constraints.
-No presentar este slice como aceptado hasta completar reset DEV/TEST y regresión
-física. Después: cerrar D1 y migrar contexto general; D2 antes de actores técnicos.
+Validación externa confirmada por el responsable sobre `c872425e9be5acf45d0e100a8bc9b7c2001131ea`
+(Windows / PostgreSQL 18.0): 14 casos UTC **14 passed, 1 warning**;
+grupo PostgreSQL **97 passed, 1 warning**; unitarios **149 passed, 1 warning**;
+compileall y git diff --check **PASS**, working tree **clean**.
+El fix posterior de cutover invalida sesiones preexistentes sin convertir sus
+zonas horarias; su revalidación PostgreSQL local queda pendiente. Esa pendiente
+corresponde al nuevo fix, no invalida la evidencia del head anterior.
+
+Cutover: bajo lock/transacción, cierra todas las sesiones ACTIVA una única vez.
+El marcador de migración se conserva en el comentario de sesion_usuario.
+CERRADA/EXPIRADA no se mutan. El cierre usa GREATEST(UTC actual, inicio físico)
+para satisfacer la constraint de período, sin reinterpretar inicio/expira_en.
+UID/created_at se preservan y el trigger incrementa versión/updated_at.
+La reejecución no invalida nuevas sesiones centrales. No retirar el marcador.
+Después: D1/contexto general; D2 antes de actores técnicos.
 
 Recuperación antes de usar el slice: revertir código junto con su patch aplicado
 sobre una DB de desarrollo reconstruida por la cadena anterior. No restaurar

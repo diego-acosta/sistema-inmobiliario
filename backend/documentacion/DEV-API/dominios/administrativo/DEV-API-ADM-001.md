@@ -1277,7 +1277,7 @@ Clasificación CORE-EF: `QUERY_READLIKE`. Requiere únicamente `Authorization: B
 
 No exige `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id` ni `If-Match-Version`. `Authorization` identifica a la persona; los demás headers representan operación, contexto o concurrencia y no autentican. `X-Usuario-Id` queda deprecado como identidad HTTP y su migración corresponde a #461.
 
-Una ausencia o invalidez de bearer, sesión o usuario devuelve el mismo `401 INVALID_SESSION`; una falla de persistencia devuelve `500 SESSION_TECHNICAL_ERROR`, ambos sin detalle interno. La query es read-only, sin locks, actividad, outbox o sync. Esta query no concede roles, permisos ni scopes. El helper GLOBAL #443 se mantiene separado. El slice central usa el patch `patch_auth_central_20260914.sql`; su validación PostgreSQL permanece pendiente.
+Una ausencia o invalidez de bearer, sesión o usuario devuelve el mismo `401 INVALID_SESSION`; una falla de persistencia devuelve `500 SESSION_TECHNICAL_ERROR`, ambos sin detalle interno. La query es read-only, sin locks, actividad, outbox o sync. Esta query no concede roles, permisos ni scopes. El helper GLOBAL #443 se mantiene separado. El slice central usa el patch `patch_auth_central_20260914.sql`; validado externamente en c872425e (Windows/PostgreSQL 18.0: 97 passed, 1 warning). El nuevo cutover requiere revalidación local; evidencia detallada en GEN-003 §19.
 
 La afirmación histórica de la introducción de que Administrativo no implementaba login queda superada por #446 y esta sección; se conserva únicamente como registro del corte anterior.
 

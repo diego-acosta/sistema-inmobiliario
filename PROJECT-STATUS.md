@@ -41,9 +41,16 @@ técnicos (D2) siguen DECISIÓN ABIERTA; no se declara Gate 2 satisfecho.
 
 **ESTADO REAL DEL RUNTIME ACTUAL:** auth/sesión/bootstrap implementados en esta
 rama sin instalación: Settings opcional, principal y `/me` sin instalación/sucursal,
-procedencia nullable y SQL UTC. **Aceptación pendiente de PostgreSQL real**:
-reset_db.sh falló por ausencia de psql; 149 unitarios aislados pasaron, sin acreditar
-persistencia ni regresión DB. Persisten contexto general de instalación, headers
+procedencia nullable y SQL UTC. **Implementado y validado externamente en #544**:
+Validación externa confirmada por el responsable sobre `c872425e9be5acf45d0e100a8bc9b7c2001131ea`
+(Windows / PostgreSQL 18.0): 14 casos UTC **14 passed, 1 warning**;
+grupo PostgreSQL **97 passed, 1 warning**; unitarios **149 passed, 1 warning**;
+compileall y git diff --check **PASS**, working tree **clean**.
+El fix posterior de cutover invalida sesiones preexistentes sin convertir sus
+zonas horarias; su revalidación PostgreSQL local queda pendiente. Esa pendiente
+corresponde al nuevo fix, no invalida la evidencia del head anterior.
+
+Persisten contexto general de instalación, headers
 legacy, infraestructura Sync y adopción parcial de seguridad.
 Outbox/inbox también sostienen efectos funcionales locales. Sync es arquitectura
 heredada/en retirada; su presencia temporal no es una obligación para nuevas
@@ -61,11 +68,9 @@ separado e intacto. #533 fue reverificado abierto/Draft el mismo día.
 
 **Datos:** el responsable confirmó que la base no contiene datos útiles que deban
 preservarse. Se planifica bootstrap limpio; resets y simplificaciones SQL se
-resolverán por incrementos conservando reglas funcionales. El reset intentado
-se detuvo antes de recrear bases por falta de psql.
+resolverán por incrementos conservando reglas funcionales.
 
-**Siguiente paso:** completar reset DEV/TEST y pruebas PostgreSQL del slice
-auth/sesión/bootstrap, incluidas UTC y regresión legacy, antes de aceptarlo.
+**Siguiente paso:** revalidar localmente el nuevo cutover de sesiones pre-UTC.
 Después, cerrar D1 antes de
 habilitar autorización contextual completa y D2 antes de automatización. Después,
 contexto/headers, composición idempotente y adopción por dominios/Flet. No alterar

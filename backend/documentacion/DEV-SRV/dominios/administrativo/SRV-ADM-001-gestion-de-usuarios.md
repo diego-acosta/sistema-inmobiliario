@@ -191,5 +191,6 @@ idempotente; se revalida usuario/credencial bajo lock antes del insert.
 El reloj real de sesión usa clock_timestamp AT TIME ZONE UTC; bootstrap usa
 instante transaccional UTC. Defaults/triggers físicos acompañan esa convención.
 No se modifican fechas económicas ni autorización GLOBAL/contextual.
-Validación PostgreSQL pendiente por falta de servidor/psql en el entorno;
-GEN-003 §19 detalla el gate, sin declarar el backend completo centralizado.
+Validado externamente en c872425e (Windows/PostgreSQL 18.0: 97 passed, 1 warning).
+El nuevo cutover requiere revalidación local. GEN-003 §19 registra la evidencia
+y el cierre único de sesiones pre-UTC, sin declarar el backend completo centralizado.
