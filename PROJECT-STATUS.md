@@ -36,8 +36,10 @@ queda fuera del objetivo sin sustituto persistido; LOCAL_INSTALLATION_CODE es
 transicional → retirar. X-Op-Id es condicional por idempotencia material (obligatorio
 en pagos/emisión/orquestación); If-Match-Version por CAS de snapshots existentes;
 version_registro se conserva para concurrencia, no como obligación de réplica.
-La composición de roles GLOBAL/contextuales (D1) y el mecanismo de actores
-técnicos (D2) siguen DECISIÓN ABIERTA; no se declara Gate 2 satisfecho.
+PR04 cierra **D1 contractualmente** en GEN-003 §5. El runtime general de autorización
+GLOBAL/contextual y contexto central humano todavía NO está implementado; PR05
+lo materializará. El mecanismo de actores técnicos (D2) sigue DECISIÓN ABIERTA;
+no se declara Gate 2 satisfecho.
 
 **ESTADO REAL DEL RUNTIME ACTUAL:** auth/sesión/bootstrap implementados en esta
 rama sin instalación: Settings opcional, principal y `/me` sin instalación/sucursal,
@@ -110,15 +112,19 @@ parciales. #542 fue mergeado a la transición en
 #543 fue mergeado a transición en `3a32b8d80d267e3b20a19045156059bda2339d83`,
 verificado el 2026-09-14. El primer slice runtime parte de ese commit; main sigue
 separado e intacto. #533 fue reverificado abierto/Draft el mismo día.
+#544 está **MERGED** a `transition/central-authority` en
+`5bcefa5a6215557eb9644c67deb7c27de2b1e671`, head base de PR04 verificado en GitHub.
+`main` permanece en `e51e1f50cc51b39856a43480d3005a34526808d1`.
 
 **Datos:** el responsable confirmó que la base no contiene datos útiles que deban
-preservarse. Se planifica bootstrap limpio; resets y simplificaciones SQL se
-resolverán por incrementos conservando reglas funcionales.
+preservarse. Es premisa cerrada de PR04: DEV/TEST se reconstruyen; no se diseñan
+migraciones in-place, backfills, dual-read ni compatibilidad para datos inexistentes.
+Si aparecen datos útiles reales en un incremento futuro, se revisará esa premisa.
 
-**Siguiente paso:** continuar el flujo de revisión de #544; después, cerrar D1 antes de
-habilitar autorización contextual completa y D2 antes de automatización. Después,
-contexto/headers, composición idempotente y adopción por dominios/Flet. No alterar
-receipts legacy ni eliminar Sync sin migrar consumidores.
+**Siguiente paso:** PR05 materializará el evaluador D1 y contexto humano de request,
+con la matriz de GEN-003 §5, UTC, errores y regresión de consumidores GLOBAL.
+Después, adopción coordinada de headers/replay por dominios y Flet. D2 requiere
+incremento propio antes de automatización; no eliminar Sync sin migrar consumidores.
 
 **PRs verificados el 2026-09-11:** #540 y #541 cerrados sin merge; sus políticas no
 se reincorporan automáticamente. #533 abierto/Draft e intacto; se reconciliará

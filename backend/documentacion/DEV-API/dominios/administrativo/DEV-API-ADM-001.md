@@ -1,5 +1,15 @@
 # DEV-API-ADM-001 — Dominio Administrativo
 
+## Precedencia contractual D1 — PR04
+
+[GEN-003 §5](../../../DEV-ARCH/DEV-ARCH-GEN-003.md#5-d1-cerrada--autorización-global-y-contextual-pr04)
+cierra el objetivo de autorización GLOBAL/CONTEXTUAL para humanos y el tratamiento
+de selector, deny, target y replay. El evaluador completo se materializará en PR05.
+Las rutas, headers y replay descritos como implementados en este documento siguen
+siendo evidencia del runtime previo: PR04 no los cambia ni declara migrados los
+writes GLOBAL que aún exigen contexto de instalación. Su adopción debe ser coherente
+con callers y tests antes de habilitar nuevos consumidores D1. D2 sigue abierta.
+
 ## 1. Alcance y fuentes auditadas
 
 Este documento consolida el contrato DEV-API vigente del dominio `administrativo` para los endpoints implementados después de las issues/PRs #249, #259, #260 y #261.

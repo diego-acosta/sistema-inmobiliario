@@ -1,5 +1,16 @@
 # SRV-ADM-003 — Gestión de autorizaciones
 
+## Contrato central D1 — PR04
+
+[DEV-ARCH-GEN-003 §5](../../../DEV-ARCH/DEV-ARCH-GEN-003.md#5-d1-cerrada--autorización-global-y-contextual-pr04)
+es la fuente única de composición GLOBAL/SUCURSAL, deny, contexto de request y
+replay humano. D1 está cerrada contractualmente; runtime general pendiente de
+PR05 y D2 abierta. Los nombres conceptuales heredados de este documento no crean
+tablas distintas de las inventariadas allí ni habilitan herencia entre roles.
+El workflow de solicitudes/aprobaciones de este servicio no sustituye el
+evaluador de permisos D1. La sección de autenticación #446 es histórica; el
+contrato auth central implementado por #544 se conserva en GEN-003 §§2–3 y §19.
+
 ## Objetivo
 Gestionar autorizaciones del sistema, permitiendo registrar solicitudes, aprobar, rechazar, revocar y consultar decisiones administrativas sobre operaciones sensibles, preservando consistencia y trazabilidad.
 
