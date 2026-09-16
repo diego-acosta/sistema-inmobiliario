@@ -77,10 +77,12 @@ passwords/tokens a logs, outbox, Sync ni auditoría; mantener `no-store` y error
 sanitizados. La sesión y credencial pasan de locales por instalación a centrales
 no replicables; la prohibición de distribuir secretos permanece.
 
-## 4. Sucursal efectiva: un único modelo por request
+## 4. Sucursal efectiva y modo de resolución de scope
 
 Se conserva la selección explícita `X-Sucursal-Id` del resolver actual para
-commands con contexto operativo. La sesión no selecciona ni fija sucursal.
+commands con contexto operativo y queries de un único scope explícito
+(`EXPLICIT_CONTEXT`). Las queries `RESOURCE_DERIVED` no tienen una única sucursal
+efectiva: derivan el scope por recurso según §5.4.1. La sesión no selecciona ni fija sucursal.
 Cambiar de sucursal cambia el contexto del siguiente request, no el bearer ni
 la sesión; dos requests concurrentes pueden usar sucursales diferentes autorizadas.
 No hay fallback servidor a instalación, primera fila, ID fijo, sesión o predeterminada.
@@ -91,7 +93,7 @@ inactiva o no autorizada no habilita nada. Con múltiples sucursales se seleccio
 explícitamente; sin asignación a sucursal se puede autenticar y se evalúa la
 habilitación específica de cada operación, sin inventar un vínculo (§5).
 
-Para una operación contextual humana, antes de ejecutar o devolver replay
+Para una operación contextual humana de scope explícito, antes de ejecutar o devolver replay
 (predicado funcional específico y orden completo en §5):
 
 1. Validar principal y sintaxis del selector.
@@ -163,11 +165,14 @@ no se ejecutaron suites en PR04.
 
 ### 5.2 Perfiles y composición única
 
-Cada operación protegida declara en servidor su perfil **GLOBAL** o **CONTEXTUAL**,
-su `permission_code` exacto, si requiere habilitación funcional de sucursal y,
+Cada operación protegida declara en servidor su `permission_code` exacto y el
+modo de resolución de scope. Los perfiles de autorización siguen siendo **GLOBAL**
+y **CONTEXTUAL**: para commands/targets simples se fija el perfil de la operación;
+en queries `RESOURCE_DERIVED` se aplica el perfil correspondiente a cada recurso
+(§5.4.1). El contrato declara si requiere habilitación funcional de sucursal y,
 cuando la requiere, el predicado funcional aplicable. También declara si es
 lectura o escritura, sin derivar de ello capacidades. El cliente no elige el
-perfil ni el predicado. No inferirlos del nombre del permiso ni agregar una
+perfil, modo ni predicado. No inferirlos del nombre del permiso ni agregar una
 columna scope a permiso.
 Una operación puede usar varios permisos sólo si su contrato expresa cómo se
 combinan; para cada permiso se aplica D1, sin permisos implícitos por rol nominal.
@@ -281,8 +286,9 @@ sus reglas funcionales, incluidas las de gestión residual.
 
 ### 5.4 Request, headers, lecturas y recursos
 
-`X-Sucursal-Id` es obligatorio en CONTEXTUAL, incluidos reads contextuales. Usar
-parsing común de entero positivo, dentro del rango bigint de la FK; ausencia,
+`X-Sucursal-Id` es obligatorio en `EXPLICIT_CONTEXT` (CONTEXTUAL de scope único),
+incluidos reads de ese modo; no en `RESOURCE_DERIVED` (§5.4.1). En
+EXPLICIT_CONTEXT usar parsing común de entero positivo, dentro del rango bigint de la FK; ausencia,
 valor inválido, ambiguo o repetido se rechaza con 400 antes de consultar target.
 No se toma sucursal de sesión, instalación, predeterminada, primera asignación,
 payload o target. Manipular el selector sólo cambia la sucursal a validar.
@@ -306,7 +312,7 @@ o permite_operacion=false si H_op(s) permite ese estado. Reads y writes contextu
 basarse en consulta, administración, autoría o responsabilidad elegible según el
 dominio; una escritura no implica puede_operar. Reads protegidos también
 requieren permiso y deny actuales; no heredan op_id,
-CAS ni efectos write. Un listado contextual filtra por s en DB antes de contar,
+CAS ni efectos write. Un listado `EXPLICIT_CONTEXT` filtra por s en DB antes de contar,
 agrupar o paginar; no trae datos ajenos para filtrarlos después de exponer totales.
 Una lectura GLOBAL usa concesión GLOBAL sin sucursal; no convierte automáticamente
 un listado contextual en una consulta de todas las sucursales.
@@ -336,9 +342,67 @@ vigentes al caer la vigencia de sucursal: conservar su referencia no concede
 acceso; necesita otra base independiente válida. Son reglas GOP, no privilegios
 residuales universales para otros dominios ni reinterpretación de sus invariantes.
 
+### 5.4.1 Queries protegidas multi-scope: RESOURCE_DERIVED
+
+El **perfil de autorización** selecciona la vía GLOBAL o CONTEXTUAL de concesión.
+El **modo de resolución de scope** determina cómo se obtiene el ámbito que se
+somete a esa evaluación. Son dimensiones distintas:
+
+| Modo conceptual | Resolución / autorización | X-Sucursal-Id |
+| --- | --- | --- |
+| GLOBAL | Alcance completo global; perfil GLOBAL, P AND E AND G AND NOT D; id_sucursal = NULL | Ignorado como hasta ahora |
+| EXPLICIT_CONTEXT | Un scope s explícito; perfil CONTEXTUAL con H_op(s) y (G OR C(s)) | Obligatorio según el contrato de scope único vigente |
+| RESOURCE_DERIVED | Sin sucursal efectiva única; scope persistido y perfil aplicable por recurso | No se exige selector único; si se envía, se ignora, no selecciona ni limita scopes |
+
+RESOURCE_DERIVED es una modalidad de **query**, no tercer perfil de permisos,
+rol, concesión, ACL ni scope persistido. No cambia commands/targets simples ni
+habilita writes multi-scope. No usa sesión, predeterminada, primera asignación,
+instalación ni N requests por sucursal como sustituto de la consulta completa.
+
+El servidor identifica candidatos por la relación funcional de la query, conserva
+su scope persistido, deriva y verifica ese scope por recurso y evalúa visibilidad
+más autorización efectiva actual. Para cada candidato r:
+
+- scope(r) = NULL o sucursal s persistida, incluida una sucursal histórica.
+- H_query(r) = base funcional de visibilidad definida por esa query/dominio.
+- Grant(r) = G si scope(r) es NULL; G OR C(s) si es contextual, conforme D1.
+- Auth(r) = P AND E AND Grant(r) AND NOT D AND H_query(r), con identidad del
+  scope y pertenencia del recurso comprobadas. No se omiten otros controles
+  funcionales explícitos de su contrato.
+
+Una concesión G sólo satisface Grant(r); no vuelve visibles todos los recursos.
+La autoría satisface una base funcional, nunca reemplaza E, Grant ni ausencia de
+D. C(s) no autoriza recursos globales ni otra sucursal. No transformar A/B/C en
+NULL ni declarar GLOBAL toda la query porque incluya recursos globales.
+
+**Caso normativo: Tareas creadas por mí.** Para principal X, los candidatos tienen
+`Tarea.id_usuario_creador = X`. GOP-FREEZE-001 §20.1 y DEV-ARCH-GOP-001 §§13–14
+permiten una respuesta con scopes NULL + A + B + C histórica. La autoría persiste
+tras asignación/reasignación/desasignación y pérdida de acceso operativo al scope;
+no se le añade usuario_sucursal ni capacidad operativa por ese solo motivo.
+Cada recurso debe superar además su autorización efectiva aplicable: sin G no se
+incluye una Tarea global; sin G ni C(s) no se incluye la contextual de s.
+**Mis tareas** es otra query: requiere responsabilidad actual y elegibilidad
+vigente, no sólo autoría. No se modifican esas reglas GOP ni su scope inmutable.
+
+Visibilidad, autorización y pertenencia filtran el conjunto **antes** de conteos,
+totales, paginación y agregaciones visibles. No devolver páginas calculadas antes
+del filtro, cantidades de rechazados ni metadatos derivados de candidatos ajenos.
+La forma concreta de consultas y ejecución queda para PR05, sin diseñar SQL aquí.
+
+Identidad inválida conserva 401. Permiso contractual inexistente o inconsistencia
+conserva 500 sanitizado; no se oculta como conjunto vacío ni se filtra como una
+fila denegada. E inactivo o deny usuario/permiso aplicable deniega la operación
+con 403: no existe deny por recurso/sucursal. Con operación válida, un candidato
+sin Grant(r), sin H_query(r) o fuera del scope comprobable se excluye; no falla
+toda la colección por ese candidato. Si ninguno resulta visible, la query
+retorna conjunto vacío y totales visibles cero. El acceso a un target individual
+no autorizado conserva 403. No se introduce ledger ni replay para estas queries;
+un command/replay asociado sigue requiriendo los controles actuales de §12.
+
 ### 5.5 Orden y errores cerrados
 
-Orden: autenticar → validar selector contractual → permiso definido/configuración
+Para scope único, orden: autenticar → validar selector contractual → permiso definido/configuración
 coherente → identificación del scope contextual → H_op(s) declarado → concesiones y deny actuales → target/scope →
 idempotencia (§12) → EXECUTE o REPLAY autorizado. En GLOBAL se omiten sucursal/H_op de D1.
 Si H_op(s) usa una relación con el target, esa relación se verifica como parte
@@ -361,6 +425,10 @@ una vez superado D1. Un 403 no revoca ni renueva sesión. Sucursal inactiva o co
 baja/eliminación no provoca 403 antes de evaluar H_op(s). En target histórico,
 EXECUTE, consulta y replay pasan los mismos controles actuales de acceso residual,
 permiso, deny y pertenencia; un receipt no evita H_op(s).
+
+En RESOURCE_DERIVED se aplica §5.4.1: autenticación y controles de operación
+antes de exponer resultados, luego resolución/controles por recurso y filtrado
+antes de metadatos/paginación. No se exige un selector contextual único.
 
 ### 5.6 Tabla de decisión y adversarios
 
@@ -409,6 +477,20 @@ Los casos de vínculo/flags se aplican sólo si la operación declara esa exigen
 | GLOBAL con selector extra inválido | NULL | No aplica | Sí | No | No | ALLOW; selector ignorado |
 | Replay tras perder permiso/H_op requerido o adquirir deny | A | Según estado actual | No efectiva | No efectiva | Puede existir | 403; sin receipt |
 
+Casos adicionales de queries multi-scope (principal/permiso válidos salvo indicación):
+
+| Query / caso | Resolución | Resultado |
+| --- | --- | --- |
+| GLOBAL puro con G y sin deny | GLOBAL, NULL | Comportamiento GLOBAL vigente; no amplía el alcance contractual |
+| Query de sucursal A | EXPLICIT_CONTEXT, selector A | Sólo A, sujeto a H_op y autorización contextual |
+| Tareas creadas por mí, autoría y autorización en cada recurso | RESOURCE_DERIVED, sin selector único | Puede incluir NULL + A + B + C histórica, conservando cada scope |
+| Autoría válida, recurso contextual sin G ni C(s) | Por recurso | Excluir ese recurso; no 403 de toda la colección |
+| Autoría válida, recurso global sin G | Por recurso | Excluir ese recurso aunque exista C(A) |
+| G vigente, recurso sin base funcional de visibilidad | Por recurso | Excluir; G no sustituye H_query |
+| Ningún candidato autorizado, operación válida | Por recurso | Conjunto vacío, total visible cero |
+| Deny usuario/permiso aplicable | Control de operación | 403, prevalece sobre G y C; no deny por fila |
+| Permiso contractual inexistente/inconsistencia | Control técnico | 500 sanitizado, no resultado parcial ni vacío aparente |
+
 PR05 debe convertir la tabla en pruebas de comportamiento: UTC no dependiente de
 TimeZone, límites exactos desde/hasta, roles múltiples con OR, intervalos vacíos,
 predicados por operación, flags independientes, autoría/responsabilidad y
@@ -438,6 +520,11 @@ el scope histórico sin descartarlo por estado, baja o eliminación. No copia lo
 filtros de vigencia/permite_operacion del resolver legacy #536 como gate universal.
 Debe cubrir acceso residual, rechazo cuando H_op exige vigencia y conservación
 de id_sucursal, sin tercer perfil ni conversión de targets contextuales en GLOBAL.
+PR05 debe soportar GLOBAL, EXPLICIT_CONTEXT y queries RESOURCE_DERIVED con
+evaluación por recurso, scope persistido intacto y filtrado antes de conteo,
+paginación y agregaciones sin filtraciones. Debe cubrir Tareas creadas por mí
+con recursos globales y de varias sucursales, incluidas históricas. No se fijan
+endpoints, SQL ni API Python de esa implementación en PR04.
 El caller/contrato aporta o selecciona explícitamente H_op(s), incluida la
 declaración de no requerir habilitación adicional. PR05 no lo deduce del verbo
 HTTP ni de read/write; preserva las bases funcionales del dominio. PR04 no fija
@@ -519,6 +606,9 @@ el control sin adaptar su escritura/SQL en el PR responsable.
 
 ## 7. Contexto canónico de command central
 
+Este contexto de command no impone una sucursal efectiva única a queries
+RESOURCE_DERIVED; su resolución por recurso se rige por §5.4.1.
+
 Reemplazo conceptual de `ResolvedLocalCommandContext`, no nueva entidad persistida
 ni implementación de DTO en este PR. Lo resuelve el servidor, sin commits internos.
 
@@ -541,7 +631,7 @@ No incluir instalación, UID de instalación ni deployment por herencia.
 | --- | --- |
 | `Authorization: Bearer` | OBLIGATORIO en commands humanos protegidos; login tiene contrato propio |
 | `X-Usuario-Id` | RETIRAR del contrato central; ninguna identidad/autorización; sólo callers legacy hasta migración |
-| `X-Sucursal-Id` | CONDICIONAL: obligatorio en CONTEXTUAL (reads/writes); ignorado en GLOBAL, contexto NULL; §§4–5 |
+| `X-Sucursal-Id` | CONDICIONAL: obligatorio en EXPLICIT_CONTEXT; ignorado en GLOBAL; sin selector único e ignorado en RESOURCE_DERIVED; §§4–5 |
 | `X-Instalacion-Id` | NO APLICA al contrato nuevo; COMPATIBILIDAD_TRANSICIONAL |
 | `X-Op-Id` | CONDICIONAL por seguridad de comando, no universal; §9 |
 | `If-Match-Version` | CONDICIONAL por concurrencia de entidad/agregado; §10 |
@@ -682,6 +772,9 @@ op_id cuando aplique, instante UTC, entidad/operación y resultado. Separar
 correlación de intento, operación lógica y resultado de negocio; replay no es
 segunda ejecución. Nunca registrar credenciales, bearer, hashes sensibles ni
 payloads secretos. Respetar los contratos de auditoría y privacidad existentes.
+En RESOURCE_DERIVED no inventar una sucursal efectiva ni usar NULL para afirmar
+que todos los recursos son globales: registrar el modo de query sin exponer
+scopes de recursos rechazados; cada recurso conserva su scope funcional.
 
 `id_instalacion_origen` e `id_instalacion_ultima_modificacion` dejan de ser
 metadata obligatoria objetivo; las FKs/columnas que persisten son transicionales.
