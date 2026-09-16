@@ -375,7 +375,9 @@ La autoría satisface una base funcional, nunca reemplaza E, Grant ni ausencia d
 D. C(s) no autoriza recursos globales ni otra sucursal. No transformar A/B/C en
 NULL ni declarar GLOBAL toda la query porque incluya recursos globales.
 
-**Caso normativo: Tareas creadas por mí.** Para principal X, los candidatos tienen
+**Caso normativo / consumidor futuro: Tareas creadas por mí.** Su adopción real
+y prueba end-to-end corresponden al incremento GOP que materialice Tarea; no
+son gate runtime de PR05. Para principal X, los candidatos tienen
 `Tarea.id_usuario_creador = X`. GOP-FREEZE-001 §20.1 y DEV-ARCH-GOP-001 §§13–14
 permiten una respuesta con scopes NULL + A + B + C histórica. La autoría persiste
 tras asignación/reasignación/desasignación y pérdida de acceso operativo al scope;
@@ -491,7 +493,9 @@ Casos adicionales de queries multi-scope (principal/permiso válidos salvo indic
 | Deny usuario/permiso aplicable | Control de operación | 403, prevalece sobre G y C; no deny por fila |
 | Permiso contractual inexistente/inconsistencia | Control técnico | 500 sanitizado, no resultado parcial ni vacío aparente |
 
-PR05 debe convertir la tabla en pruebas de comportamiento: UTC no dependiente de
+PR05 debe probar los casos genéricos del mecanismo de esta tabla; las filas GOP
+son casos normativos de adopción futura, no cobertura end-to-end exigida a PR05
+(§5.7). Las pruebas genéricas incluyen UTC no dependiente de
 TimeZone, límites exactos desde/hasta, roles múltiples con OR, intervalos vacíos,
 predicados por operación, flags independientes, autoría/responsabilidad y
 visibilidad administrativa sin exigir consulta, deny duplicado, selector manipulado, targets ajenos y replay
@@ -520,11 +524,34 @@ el scope histórico sin descartarlo por estado, baja o eliminación. No copia lo
 filtros de vigencia/permite_operacion del resolver legacy #536 como gate universal.
 Debe cubrir acceso residual, rechazo cuando H_op exige vigencia y conservación
 de id_sucursal, sin tercer perfil ni conversión de targets contextuales en GLOBAL.
-PR05 debe soportar GLOBAL, EXPLICIT_CONTEXT y queries RESOURCE_DERIVED con
-evaluación por recurso, scope persistido intacto y filtrado antes de conteo,
-paginación y agregaciones sin filtraciones. Debe cubrir Tareas creadas por mí
-con recursos globales y de varias sucursales, incluidas históricas. No se fijan
-endpoints, SQL ni API Python de esa implementación en PR04.
+**Gate genérico de PR05 frente a adopción futura GOP.** En el corte auditado
+`02ca832614500b6b6671cd9acdf502a201cf751f`, GOP-FREEZE-001 §20.1 y
+DEV-ARCH-GOP-001 §§28–29/33–34 definen la query y los artefactos posteriores,
+no su implementación. La búsqueda focal en `backend/app`, `backend/database` y
+`backend/tests` no encuentra Tarea, su persistencia/queries ni permission_codes
+GOP concretos materializados. DER/física SQL/runtime final siguen pendientes en
+este corte; el contrato documental no demuestra un consumer ejecutable.
+
+| Incremento | Evidencia de aceptación exigida |
+| --- | --- |
+| PR04 | Contrato D1 y RESOURCE_DERIVED; Tareas creadas por mí como evidencia normativa que justifica la modalidad |
+| PR05 | Mecanismo genérico GLOBAL, EXPLICIT_CONTEXT y RESOURCE_DERIVED; G/C(s), DENY, H_op/H_query, errores, UTC donde corresponda y ausencia de instalación |
+| Futuro incremento GOP | Tarea real, repositorios/queries, permisos definitivos y contratos ejecutables; adopción y pruebas end-to-end de Tareas creadas por mí con autoría, scopes NULL + varias sucursales (incluidas históricas), paginación real y scopes intactos |
+
+PR05 debe probar RESOURCE_DERIVED con recursos genéricos r1(scope NULL, Grant=G),
+r2(scope A, Grant=G OR C(A)) y r3(scope B, Grant=G OR C(B)). Debe demostrar
+scope conservado sin mutación, ausencia de selector único, H_query por recurso,
+deny aplicable, exclusión de candidatos no autorizados sin 403 de toda la colección,
+filtrado antes de conteo/paginación/agregaciones y ausencia de filtraciones de
+scopes rechazados. Un error técnico de operación no se convierte en conjunto vacío.
+
+Usar fixtures controlados, estructuras mínimas o dobles apropiados al evaluador
+sin inventar pseudo-Tarea, persistencia productiva GOP, SQL, endpoints ni códigos
+de permisos GOP. PR04 no prescribe clases ni diseño concreto de fixtures/API Python.
+Las pruebas genéricas demuestran capacidad del mecanismo, **no adopción GOP**.
+Tareas creadas por mí permanece como consumidor normativo futuro; su cobertura
+end-to-end sólo se acredita con la implementación real del incremento GOP.
+No se exige esa implementación para aceptar PR05 ni se degrada RESOURCE_DERIVED.
 El caller/contrato aporta o selecciona explícitamente H_op(s), incluida la
 declaración de no requerir habilitación adicional. PR05 no lo deduce del verbo
 HTTP ni de read/write; preserva las bases funcionales del dominio. PR04 no fija
