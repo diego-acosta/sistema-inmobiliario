@@ -15,8 +15,9 @@ no habilitan esos requisitos en nuevos commands centrales. GEN-003 §§9–12 fi
 la aplicación condicional de op_id, CAS/versionado y la revalidación de seguridad
 en replay, sin cambiar endpoints ni receipts existentes en este PR.
 El evaluador GLOBAL actual se conserva como evidencia; no implementa roles por
-sucursal ni denegaciones. La composición contextual D1 sigue DECISIÓN ABIERTA;
-no se declara cerrada por centralizar ni se resuelve la parametrización #435.
+sucursal ni denegaciones. PR04 cierra D1 contractualmente en
+[GEN-003 §5](../../DEV-ARCH-GEN-003.md#5-d1-cerrada--autorización-global-y-contextual-pr04);
+PR05 materializará el evaluador y contexto humano. No resuelve la parametrización #435.
 
 ### Primer slice runtime central (posterior a #543)
 
@@ -36,7 +37,7 @@ y permanece diferenciada en GEN-003 §19.
 Auth central y protección rebuild están implementados y validados; esto no cierra
 Gate 2 ni declara el backend completo centralizado.
 Los relatos de #454/#446/#447 posteriores son históricos en esos aspectos.
-D1/D2, contexto general, caja, Sync y demás headers siguen pendientes/transicionales.
+Runtime D1/contexto general, D2, caja, Sync y demás headers siguen pendientes/transicionales.
 
 ## 1. Propósito y estado
 

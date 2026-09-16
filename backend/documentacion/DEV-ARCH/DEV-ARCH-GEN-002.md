@@ -50,8 +50,8 @@ hasta migrar consumidores; no condicionan nuevas funcionalidades centrales.
 
 No se exige una identidad persistida del deployment para commands humanos.
 GEN-003 define sesión/principal, selección de sucursal por request, contexto,
-headers e idempotencia, y registra explícitamente las decisiones abiertas de
-autorización contextual y actores técnicos sin inventar mecanismos.
+headers e idempotencia; PR04 cierra autorización contextual D1 en GEN-003 §5.
+Actores técnicos D2 siguen abiertos y el evaluador D1 permanece pendiente de PR05.
 
 Los commands humanos centrales se basan en usuario autenticado mediante
 `AuthenticatedPrincipal`, permisos y alcance autorizado. `USUARIO ≠ PERSONA`
@@ -243,8 +243,8 @@ El procedimiento y sincronización se definen en `CODEX-WORKFLOW.md`, §6.1.
 | Pendiente de migración | Trabajo todavía necesario y su área responsable |
 
 Después de PR 02: aplicar GEN-003 para migrar autenticación/sesión sin
-instalación; cerrar sus decisiones abiertas D1/D2 antes de los consumidores
-correspondientes; reconciliar CORE-EF y migrar contexto/SQL/runtime por
+instalación (materializado por #544); aplicar D1 cerrada por PR04 en GEN-003 §5
+y resolver D2 antes de actores técnicos; reconciliar CORE-EF y migrar contexto/SQL/runtime por
 incrementos; adaptar Flet, bootstrap y deployment;
 validar regresión y cerrar estado/documentación. Las dependencias concretas y
 el paralelismo se fijan en cada PR, sin mezclar dominios por conveniencia.

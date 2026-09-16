@@ -1,5 +1,13 @@
 # SRV-ADM-002 — Gestión de roles y permisos
 
+## Contrato central D1 — PR04
+
+[DEV-ARCH-GEN-003 §5](../../../DEV-ARCH/DEV-ARCH-GEN-003.md#5-d1-cerrada--autorización-global-y-contextual-pr04)
+es la fuente única de composición GLOBAL/SUCURSAL, deny, contexto de request y
+replay humano. D1 está cerrada contractualmente; runtime general pendiente de
+PR05 y D2 abierta. Los nombres conceptuales heredados de este documento no crean
+tablas distintas de las inventariadas allí ni habilitan herencia entre roles.
+
 ## Objetivo
 Gestionar roles y permisos del sistema, permitiendo su definición, modificación, asignación, baja lógica y consulta, preservando consistencia administrativa y trazabilidad.
 
@@ -165,7 +173,7 @@ Permite visualizar roles, permisos y relaciones de asignación.
 
 ## Pendientes abiertos
 - catálogo final de permisos del sistema
-- definición exacta de alcances por sucursal o instalación
-- estrategia de herencia entre roles
-- coexistencia entre permisos directos e indirectos
+- materialización de alcances D1 cerrados en GEN-003 §5 (sin instalación objetivo)
+- administración de asignaciones; D1 no incorpora herencia entre roles
+- gestión de concesiones por roles y denegaciones existentes; D1 no introduce permisos directos
 - relación con autenticación externa
