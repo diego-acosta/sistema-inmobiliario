@@ -198,6 +198,84 @@ GLOBAL y las FKs directas contextuales existentes y evita duplicar roles por
 sucursal para un usuario GLOBAL ya habilitado. El runtime GLOBAL no resuelve esa
 unión todavía; sus tests no son evidencia de implementación D1.
 
+### 5.2.1 Frontera normativa D1 / H_op / H_query / PR05
+
+**D1 responde:** ¿el actor está autorizado según identidad, permiso, concesión,
+deny, scope y predicado funcional declarado? Administrativo/D1 es dueño de la
+identidad, roles, permisos, concesiones GLOBAL/contextuales, denegaciones,
+evaluación efectiva e infraestructura genérica del evaluador. Evalúa P, E, G,
+C(s), D, el modo de resolución de scope y ejecuta el predicado declarado;
+no define la semántica funcional del dominio consumidor.
+
+**H_op(s)** es el predicado funcional requerido por **esa operación** sobre
+**ese scope contextual**. No es permiso, rol, concesión ni deny. Sólo cuando el
+contrato consumidor lo establece, puede ser capacidad vigente de consulta,
+operación o administración; autoría; responsabilidad elegible; sucursal activa
+AND permite_operacion; una combinación contractual; o TRUE por declaración
+explícita de no requerir habilitación adicional. Ninguno es un requisito universal.
+**H_query(r)** es el predicado funcional de visibilidad de esa query sobre el
+recurso r en RESOURCE_DERIVED (§5.4.1), con la misma separación: no es permiso,
+rol, concesión ni deny. Satisfacer H nunca sustituye autorización efectiva.
+
+El **dominio consumidor** es dueño del significado de la operación, relación con
+el target, pertenencia, elegibilidad, visibilidad, autoría, responsabilidad,
+capacidades funcionales y definición de H_op/H_query. Por ejemplo, GOP define
+creador, responsable elegible, operaciones que requieren puede_administrar y
+acceso residual. D1 ejecuta esas reglas declaradas sin redefinirlas; el dominio
+no crea un motor paralelo de permisos.
+
+**Regla de implementabilidad — gate runtime.** Un H_op/H_query concreto sólo
+puede exigirse como aceptación runtime de un incremento si existe una
+representación técnica contractual suficiente para evaluarlo sin inventar estado,
+tablas, columnas, carriers, capacidades, permission_codes, relaciones funcionales
+ni semántica del dominio. Si falta esa representación, permanece como contrato
+funcional futuro: no bloquea el motor genérico, no se declara cubierto por tests
+sintéticos y su adopción runtime corresponde al incremento que materialice la
+capacidad. Esto no habilita a ejecutar un consumidor omitiendo H ni sustituyéndolo
+por TRUE: ese consumidor concreto sigue pendiente.
+
+**PR05 materializa el mecanismo genérico D1 para actores humanos.** Implementa
+y prueba GLOBAL, EXPLICIT_CONTEXT y RESOURCE_DERIVED, P/E/G/C(s)/D, resolución
+de scope, ejecución de H_op/H_query suministrados por el contrato, orden de
+evaluación, errores, UTC donde corresponda, ausencia de instalación y filtrado
+seguro antes de conteo/paginación/agregación. Su gate concreto se limita a
+predicados ya materializados; fixtures genéricos prueban el mecanismo, no adopción
+de consumidores futuros (§5.7). No diseña semántica funcional de dominios,
+administración residual GOP, alcance administrativo global funcional pendiente,
+puede_administrar_global, tablas para satisfacer H, permission_codes GOP finales,
+Tarea, endpoints/SQL GOP ni relaciones funcionales pendientes.
+
+| Concepto | Dueño | PR05 lo implementa | PR05 puede inventarlo |
+| --- | --- | --- | --- |
+| P: principal | Administrativo/Auth | Sí, consume el principal existente | No |
+| E: permiso contractual activo | Administrativo | Sí, su evaluación | No |
+| G: concesión GLOBAL | Administrativo | Sí, su evaluación | No |
+| C(s): concesión contextual | Administrativo | Sí, su evaluación | No |
+| D: deny | Administrativo | Sí, su evaluación | No |
+| Mecanismo H_op/H_query | D1 | Sí, ejecución del predicado declarado | No, respeta este contrato |
+| Significado concreto de H_op/H_query | Dominio consumidor | Sólo si ya está materializado contractualmente | No |
+| puede_operar / puede_consultar / puede_administrar existentes | Contrato vigente correspondiente | Puede consumirlos con sus reglas | No |
+| Autoría de Tarea | GOP | No en PR05 | No |
+| Administración residual GOP | GOP define semántica; Administrativo tiene pendiente su representación de alcance global | No mientras no tenga carrier técnico cerrado | No |
+| RESOURCE_DERIVED genérico | D1 | Sí | No, respeta §5.4.1 |
+| Adopción real de Tareas creadas por mí | Futuro incremento GOP | No | No |
+
+**Ejemplo implementable del mecanismo.** Operación contextual X, permission_code
+p definido y activo en el catálogo, scope A y H_op(A) ya materializado por su
+contrato. P válido → A identificado → H_op(A) satisfecho → E válido → G OR C(A)
+→ NOT D → ALLOW. X/p son notación ilustrativa, no un endpoint ni un código nuevo.
+El ejemplo no define clases ni API Python.
+
+**Ejemplo no implementable todavía como consumidor de PR05.** La administración
+residual GOP requiere alcance administrativo global funcional vigente además de
+autorización efectiva. GOP-FREEZE-001 §20.0 deja su representación técnica para
+artefactos posteriores; DEV-ARCH-GOP-001 §13 exige ese alcance para gestión residual.
+No existe un carrier técnico cerrado de ese alcance en el corte auditado.
+**G es una concesión GLOBAL de un permission_code, no ese alcance funcional.**
+PR05 no inventa el carrier, no equipara G a esa capacidad y no declara el caso
+cubierto. La cobertura concreta pertenece al incremento que materialice ese
+alcance, manteniendo intacto el contrato funcional GOP.
+
 ### 5.3 Elegibilidad exacta, temporalidad y denegaciones
 
 Un único instante de autorización por request se obtiene de PostgreSQL mediante
@@ -218,8 +296,9 @@ hora local. El resolver read-only no hace commit ni modifica actividad de sesió
 - H_op(s): predicado declarado por el dominio para esa operación: puede exigir
   sucursal ACTIVA, no dada de baja/no eliminada, `permite_operacion`,
   `puede_consultar`, `puede_operar`, `puede_administrar`, administración residual
-  cuando corresponda, una combinación explícita
-  o una base funcional de visibilidad/relación con el target ya definida. No hay
+  cuando corresponda (contrato futuro en GOP, fuera del gate PR05 mientras falte
+  el carrier técnico del alcance administrativo global funcional; §5.2.1),
+  una combinación explícita o una base funcional de visibilidad/relación con el target ya definida. No hay
   equivalencia universal read→consulta ni write→operación. Si usa una capacidad de
   `usuario_sucursal`, exige vínculo del mismo usuario/sucursal, ACTIVO, no eliminado
   y vigente, y el flag o combinación declarados. La vigencia de la sucursal se
@@ -253,13 +332,9 @@ hora local. El resolver read-only no hace commit ni modifica actividad de sesió
   el predicado basado en vínculo si una fila cumple todos sus requisitos; no combinar flags de filas
   inactivas/fuera de vigencia. Sólo denegacion_explicita expresa un deny prevalente.
 
-**Responsabilidades y evidencia normativa.** Administrativo administra identidad,
-roles, permisos, concesiones GLOBAL/contextuales, denegaciones y su evaluación
-para autorización efectiva. El dominio consumidor declara la habilitación de la
-operación, condiciones de operabilidad, visibilidad, relación funcional con el
-target y pertenencia al scope. D1 identifica el scope; su vigencia y operabilidad
-pertenecen a estos predicados específicos, no a un gate universal anterior.
-No se crea un motor paralelo de permisos en el dominio.
+**Responsabilidades y evidencia normativa.** Rige la frontera de ownership e
+implementabilidad de §5.2.1. Los ejemplos siguientes preservan semántica funcional;
+no acreditan implementación ni incorporan consumidores pendientes al gate PR05.
 
 [GOP-FREEZE-001 §§20.0–20.2](../GOP-FREEZE-001.md) y
 [DEV-ARCH-GOP-001 §14](dominios/gestion_operativa/DEV-ARCH-GOP-001.md)
@@ -495,7 +570,8 @@ Casos adicionales de queries multi-scope (principal/permiso válidos salvo indic
 
 PR05 debe probar los casos genéricos del mecanismo de esta tabla; las filas GOP
 son casos normativos de adopción futura, no cobertura end-to-end exigida a PR05
-(§5.7). Las pruebas genéricas incluyen UTC no dependiente de
+(§5.7); cada predicado concreto está sujeto a la regla de implementabilidad de
+§5.2.1. Las pruebas genéricas incluyen UTC no dependiente de
 TimeZone, límites exactos desde/hasta, roles múltiples con OR, intervalos vacíos,
 predicados por operación, flags independientes, autoría/responsabilidad y
 visibilidad administrativa sin exigir consulta, deny duplicado, selector manipulado, targets ajenos y replay
@@ -522,8 +598,13 @@ reloj y writers técnicos UTC afectados, mapeos y regresión de esos consumidore
 PR05 separa identificación de scope y pertenencia de H_op(s), y permite resolver
 el scope histórico sin descartarlo por estado, baja o eliminación. No copia los
 filtros de vigencia/permite_operacion del resolver legacy #536 como gate universal.
-Debe cubrir acceso residual, rechazo cuando H_op exige vigencia y conservación
-de id_sucursal, sin tercer perfil ni conversión de targets contextuales en GLOBAL.
+Debe probar genéricamente la ejecución de predicados funcionales ya materializados,
+el rechazo cuando el H_op declarado exige vigencia y la conservación de
+id_sucursal, sin tercer perfil ni conversión de targets contextuales en GLOBAL.
+La administración residual GOP queda fuera de este gate: su alcance administrativo
+global funcional carece de carrier técnico cerrado y G no lo sustituye (§5.2.1).
+Su cobertura concreta pertenece al incremento que materialice ese alcance.
+
 **Gate genérico de PR05 frente a adopción futura GOP.** En el corte auditado
 `02ca832614500b6b6671cd9acdf502a201cf751f`, GOP-FREEZE-001 §20.1 y
 DEV-ARCH-GOP-001 §§28–29/33–34 definen la query y los artefactos posteriores,
