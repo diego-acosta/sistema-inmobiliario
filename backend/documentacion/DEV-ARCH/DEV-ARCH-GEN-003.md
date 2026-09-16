@@ -168,8 +168,9 @@ no se ejecutaron suites en PR04.
 Cada operación protegida declara en servidor su `permission_code` exacto y el
 modo de resolución de scope. Los perfiles de autorización siguen siendo **GLOBAL**
 y **CONTEXTUAL**: para commands/targets simples se fija el perfil de la operación;
-en queries `RESOURCE_DERIVED` se aplica el perfil correspondiente a cada recurso
-(§5.4.1). El contrato declara si requiere habilitación funcional de sucursal y,
+en queries `RESOURCE_DERIVED` el contrato declara vías funcionales y su regla
+de autorización por recurso, sin inferirla sólo del scope persistido (§5.4.1).
+El contrato declara si requiere habilitación funcional de sucursal y,
 cuando la requiere, el predicado funcional aplicable. También declara si es
 lectura o escritura, sin derivar de ello capacidades. El cliente no elige el
 perfil, modo ni predicado. No inferirlos del nombre del permiso ni agregar una
@@ -216,6 +217,11 @@ explícita de no requerir habilitación adicional. Ninguno es un requisito unive
 **H_query(r)** es el predicado funcional de visibilidad de esa query sobre el
 recurso r en RESOURCE_DERIVED (§5.4.1), con la misma separación: no es permiso,
 rol, concesión ni deny. Satisfacer H nunca sustituye autorización efectiva.
+En RESOURCE_DERIVED, H_query se desglosa por vías H_v(r), cada una acompañada
+por su regla de autorización efectiva A_v(r) (§5.4.1). El dominio define la
+relación funcional; su contrato con Administrativo debe cerrar la autorización
+correspondiente. A_v no se infiere del scope, no equivale a H_v y está sujeto a
+la misma regla de implementabilidad siguiente: PR05 no inventa A_AUTORIA GOP.
 
 El **dominio consumidor** es dueño del significado de la operación, relación con
 el target, pertenencia, elegibilidad, visibilidad, autoría, responsabilidad,
@@ -427,40 +433,69 @@ somete a esa evaluación. Son dimensiones distintas:
 | --- | --- | --- |
 | GLOBAL | Alcance completo global; perfil GLOBAL, P AND E AND G AND NOT D; id_sucursal = NULL | Ignorado como hasta ahora |
 | EXPLICIT_CONTEXT | Un scope s explícito; perfil CONTEXTUAL con H_op(s) y (G OR C(s)) | Obligatorio según el contrato de scope único vigente |
-| RESOURCE_DERIVED | Sin sucursal efectiva única; scope persistido y perfil aplicable por recurso | No se exige selector único; si se envía, se ignora, no selecciona ni limita scopes |
+| RESOURCE_DERIVED | Sin sucursal efectiva única; scope persistido y vías H_v/A_v declaradas por recurso | No se exige selector único; si se envía, se ignora, no selecciona ni limita scopes |
 
 RESOURCE_DERIVED es una modalidad de **query**, no tercer perfil de permisos,
 rol, concesión, ACL ni scope persistido. No cambia commands/targets simples ni
 habilita writes multi-scope. No usa sesión, predeterminada, primera asignación,
 instalación ni N requests por sucursal como sustituto de la consulta completa.
 
-El servidor identifica candidatos por la relación funcional de la query, conserva
-su scope persistido, deriva y verifica ese scope por recurso y evalúa visibilidad
-más autorización efectiva actual. Para cada candidato r:
+**Regla normativa: el scope persistido del recurso se conserva y se valida,
+pero no determina por sí solo la vía de autorización efectiva.** Scope(r) es
+NULL o la sucursal s persistida, incluida una sucursal histórica. La vía de acceso
+no cambia ownership ni transforma A/B/C en NULL. Tampoco convierte toda la query
+en GLOBAL por incluir recursos globales.
 
-- scope(r) = NULL o sucursal s persistida, incluida una sucursal histórica.
-- H_query(r) = base funcional de visibilidad definida por esa query/dominio.
-- Grant(r) = G si scope(r) es NULL; G OR C(s) si es contextual, conforme D1.
-- Auth(r) = P AND E AND Grant(r) AND NOT D AND H_query(r), con identidad del
-  scope y pertenencia del recurso comprobadas. No se omiten otros controles
-  funcionales explícitos de su contrato.
+El servidor identifica candidatos según la relación funcional de la query,
+deriva y verifica su scope y pertenencia, y evalúa una o más vías v declaradas
+por el contrato consumidor:
 
-Una concesión G sólo satisface Grant(r); no vuelve visibles todos los recursos.
-La autoría satisface una base funcional, nunca reemplaza E, Grant ni ausencia de
-D. C(s) no autoriza recursos globales ni otra sucursal. No transformar A/B/C en
-NULL ni declarar GLOBAL toda la query porque incluya recursos globales.
+- H_v(r): predicado funcional de esa vía; responde por qué relación puede ser
+  visible el recurso. Ejemplos no universales: visibilidad por scope, autoría,
+  responsabilidad elegible o relación administrativa funcional.
+- A_v(r): regla de autorización efectiva correspondiente a esa vía. No es H_v,
+  no se deduce del scope persistido ni del verbo HTTP y no la inventa el evaluador.
+- Path_v(r) = H_v(r) AND A_v(r); las vías se combinan por OR.
+- Auth(r) = P AND E AND NOT D AND EXISTS v (H_v(r) AND A_v(r)), además de
+  identificación y pertenencia comprobadas y otros controles contractuales.
 
-**Caso normativo / consumidor futuro: Tareas creadas por mí.** Su adopción real
-y prueba end-to-end corresponden al incremento GOP que materialice Tarea; no
-son gate runtime de PR05. Para principal X, los candidatos tienen
-`Tarea.id_usuario_creador = X`. GOP-FREEZE-001 §20.1 y DEV-ARCH-GOP-001 §§13–14
-permiten una respuesta con scopes NULL + A + B + C histórica. La autoría persiste
-tras asignación/reasignación/desasignación y pérdida de acceso operativo al scope;
-no se le añade usuario_sucursal ni capacidad operativa por ese solo motivo.
-Cada recurso debe superar además su autorización efectiva aplicable: sin G no se
-incluye una Tarea global; sin G ni C(s) no se incluye la contextual de s.
-**Mis tareas** es otra query: requiere responsabilidad actual y elegibilidad
-vigente, no sólo autoría. No se modifican esas reglas GOP ni su scope inmutable.
+P, E y NOT D siguen siendo controles comunes obligatorios del permission_code
+contractual de la operación. A_v no es tercer perfil, nuevo grant, ACL, rol ni
+permission_code: es una regla contractual de autorización efectiva. Los perfiles
+siguen siendo GLOBAL y CONTEXTUAL; sus fórmulas de scope único no cambian.
+Una vía faltante o sin definición técnica suficiente no se sustituye por TRUE:
+es consumidor pendiente conforme §5.2.1, no autorización implícita.
+
+**Vía por scope.** Si el contrato declara que la autorización de esa vía depende
+del scope persistido, H_SCOPE(r) expresa su base funcional y A_SCOPE(r) usa G
+para scope NULL, o G OR C(s) para scope s. C(s) no concede sobre otra sucursal
+ni sustituye G en esa vía global. La falta de G/C(s) descarta esa vía; no excluye
+por sí sola otras vías independientes declaradas. G tampoco vuelve visibles
+recursos sin la correspondiente base H_v.
+
+**Caso normativo / consumidor futuro: Tareas creadas por mí.** Para principal X,
+H_AUTORIA(r) = Tarea.id_usuario_creador = X. GOP-FREEZE-001 §20.1,
+DEV-ARCH-GOP-001 §14.1 y [DER-GESTION-OPERATIVA](../DER/DER-GESTION-OPERATIVA.md)
+preservan creador + autorización efectiva como base independiente. El freeze y
+DEV-ARCH explicitan que la autoría conserva visibilidad tras asignación,
+reasignación/desasignación y pérdida de acceso al scope. Puede abarcar scopes
+NULL + A + B + C histórica, sin selector único ni modificación de id_sucursal.
+
+A_AUTORIA(r) es la autorización efectiva correspondiente que deberá materializar
+el contrato GOP/Administrativo. Esas fuentes no cierran su permission_code ni
+carrier técnico concreto: **A_AUTORIA queda pendiente de materialización**.
+No se impone C(s) vigente, ni G como sustituto automático, ni se crea permiso,
+grant o perfil. Perder C(s) no invalida automáticamente la base de autoría ni
+resuelve por sí solo A_AUTORIA. H_AUTORIA=true nunca implica ALLOW automático:
+siempre se exige H_AUTORIA AND A_AUTORIA más los controles comunes.
+
+Una query puede combinar POR_AUTORIA OR POR_RESPONSABILIDAD OR
+POR_SCOPE_ADMINISTRATIVO cuando su contrato declare esas vías y sus respectivos
+H_v/A_v; este ejemplo no define permisos GOP. **Mis tareas** conserva su relación
+de responsabilidad actual y elegibilidad, distinta de autoría. No se modifican
+las reglas GOP. Su adopción real y prueba end-to-end corresponden al futuro
+incremento GOP: sin A_AUTORIA materializada no se declara ese consumer cubierto
+por PR05 ni por fixtures genéricos.
 
 Visibilidad, autorización y pertenencia filtran el conjunto **antes** de conteos,
 totales, paginación y agregaciones visibles. No devolver páginas calculadas antes
@@ -471,8 +506,8 @@ Identidad inválida conserva 401. Permiso contractual inexistente o inconsistenc
 conserva 500 sanitizado; no se oculta como conjunto vacío ni se filtra como una
 fila denegada. E inactivo o deny usuario/permiso aplicable deniega la operación
 con 403: no existe deny por recurso/sucursal. Con operación válida, un candidato
-sin Grant(r), sin H_query(r) o fuera del scope comprobable se excluye; no falla
-toda la colección por ese candidato. Si ninguno resulta visible, la query
+sin ninguna vía H_v AND A_v satisfecha o fuera del scope comprobable se excluye;
+no falla toda la colección por ese candidato. Si ninguno resulta visible, la query
 retorna conjunto vacío y totales visibles cero. El acceso a un target individual
 no autorizado conserva 403. No se introduce ledger ni replay para estas queries;
 un command/replay asociado sigue requiriendo los controles actuales de §12.
@@ -561,8 +596,10 @@ Casos adicionales de queries multi-scope (principal/permiso válidos salvo indic
 | GLOBAL puro con G y sin deny | GLOBAL, NULL | Comportamiento GLOBAL vigente; no amplía el alcance contractual |
 | Query de sucursal A | EXPLICIT_CONTEXT, selector A | Sólo A, sujeto a H_op y autorización contextual |
 | Tareas creadas por mí, autoría y autorización en cada recurso | RESOURCE_DERIVED, sin selector único | Puede incluir NULL + A + B + C histórica, conservando cada scope |
-| Autoría válida, recurso contextual sin G ni C(s) | Por recurso | Excluir ese recurso; no 403 de toda la colección |
-| Autoría válida, recurso global sin G | Por recurso | Excluir ese recurso aunque exista C(A) |
+| Vía por scope contextual sin G ni C(s) | Por vía | Vía no satisfecha; excluir recurso sólo si ninguna otra vía declarada satisface H_v AND A_v |
+| Vía por scope global sin G | Por vía | Esa vía no concede; C(A) no la sustituye |
+| Autoría válida sin C(s) | Vía de autoría | No se decide sólo por scope: depende de A_AUTORIA; consumidor GOP pendiente mientras no esté materializada |
+| Una vía falla y otra satisface H_v AND A_v | RESOURCE_DERIVED genérico | Recurso visible con controles comunes satisfechos y scope intacto |
 | G vigente, recurso sin base funcional de visibilidad | Por recurso | Excluir; G no sustituye H_query |
 | Ningún candidato autorizado, operación válida | Por recurso | Conjunto vacío, total visible cero |
 | Deny usuario/permiso aplicable | Control de operación | 403, prevalece sobre G y C; no deny por fila |
@@ -616,15 +653,21 @@ este corte; el contrato documental no demuestra un consumer ejecutable.
 | Incremento | Evidencia de aceptación exigida |
 | --- | --- |
 | PR04 | Contrato D1 y RESOURCE_DERIVED; Tareas creadas por mí como evidencia normativa que justifica la modalidad |
-| PR05 | Mecanismo genérico GLOBAL, EXPLICIT_CONTEXT y RESOURCE_DERIVED; G/C(s), DENY, H_op/H_query, errores, UTC donde corresponda y ausencia de instalación |
+| PR05 | Mecanismo genérico GLOBAL, EXPLICIT_CONTEXT y RESOURCE_DERIVED; G/C(s), DENY, H_op y vías H_v/A_v por recurso, errores, UTC donde corresponda y ausencia de instalación |
 | Futuro incremento GOP | Tarea real, repositorios/queries, permisos definitivos y contratos ejecutables; adopción y pruebas end-to-end de Tareas creadas por mí con autoría, scopes NULL + varias sucursales (incluidas históricas), paginación real y scopes intactos |
 
-PR05 debe probar RESOURCE_DERIVED con recursos genéricos r1(scope NULL, Grant=G),
-r2(scope A, Grant=G OR C(A)) y r3(scope B, Grant=G OR C(B)). Debe demostrar
-scope conservado sin mutación, ausencia de selector único, H_query por recurso,
-deny aplicable, exclusión de candidatos no autorizados sin 403 de toda la colección,
-filtrado antes de conteo/paginación/agregaciones y ausencia de filtraciones de
-scopes rechazados. Un error técnico de operación no se convierte en conjunto vacío.
+PR05 debe probar RESOURCE_DERIVED genérico con scopes NULL/A/B y múltiples
+vías por recurso: separación H_v/A_v, OR entre vías y controles comunes P/E/NOT D.
+Por ejemplo, Path A con H_A y A_A=G OR C(s) para una vía contextual por scope;
+Path B con H_B y A_B=G expresamente declarado por el contrato de prueba. Esto
+prueba composición, no A_AUTORIA ni adopción GOP. Debe cubrir una vía fallida y
+otra satisfecha, ausencia de vías satisfechas y deny común que bloquea todas.
+Debe demostrar scope conservado sin mutación, ausencia de selector único,
+exclusión de candidatos no autorizados sin 403 de toda la colección, filtrado
+antes de conteo/paginación/agregaciones y ausencia de filtraciones de scopes
+rechazados. Un error técnico de operación no se convierte en conjunto vacío.
+No exigir Tarea real, autoría GOP end-to-end, su permission_code/carrier ni
+administración residual concreta: PR05 no inventa A_AUTORIA (§5.2.1).
 
 Usar fixtures controlados, estructuras mínimas o dobles apropiados al evaluador
 sin inventar pseudo-Tarea, persistencia productiva GOP, SQL, endpoints ni códigos
