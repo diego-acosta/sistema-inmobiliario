@@ -1,11 +1,17 @@
+from uuid import uuid4
+
 import pytest
 from sqlalchemy import text
 
+from app.api.core_ef_headers import CoreEFHeaders
 from app.application.administrativo.authorization import (
     AdministrativeAuthorizationDecision,
     AdministrativeAuthorizationMode,
     AdministrativeAuthorizationService,
     AdministrativeAuthorizationTechnicalError,
+)
+from app.infrastructure.persistence.repositories.usuario_rol_seguridad_repository import (
+    UsuarioRolSeguridadRepository,
 )
 
 
@@ -126,7 +132,10 @@ def test_postgres_multiple_global_roles_and_explicit_deny_precedence(db_session)
         """)
     ).scalar_one()
     db_session.execute(
-        text("INSERT INTO rol_seguridad_permiso VALUES (:role, :permission)"),
+        text("""
+            INSERT INTO rol_seguridad_permiso (id_rol_seguridad, id_permiso)
+            VALUES (:role, :permission)
+        """),
         {"role": second_role, "permission": permission_id},
     )
     _assign_global(db_session, user_id, second_role, "clock_timestamp() AT TIME ZONE 'UTC'")
@@ -173,7 +182,10 @@ def test_postgres_decision_is_independent_of_session_timezone(db_session):
     )
     decisions = []
     for timezone in ("UTC", "America/Argentina/Buenos_Aires", "Pacific/Auckland"):
-        db_session.execute(text("SET LOCAL TIME ZONE :timezone"), {"timezone": timezone})
+        db_session.execute(
+            text("SELECT set_config('TimeZone', :timezone, true)"),
+            {"timezone": timezone},
+        )
         decisions.append(_global(db_session, user_id, code))
     assert decisions == [AdministrativeAuthorizationDecision.GRANTED] * 3
 
@@ -192,3 +204,43 @@ def test_postgres_read_only_resolution_does_not_mutate_session_or_outbox(db_sess
         {"id": user_id},
     ).one() == before
     assert db_session.execute(text("SELECT count(*) FROM outbox_event")).scalar_one() == outbox_before
+
+
+def test_postgres_usuario_rol_seguridad_writer_and_evaluator_share_utc(db_session):
+    user_id, role_id, _, code = _insert_chain(db_session, "writer-utc")
+    db_session.execute(
+        text("SELECT set_config('TimeZone', 'America/Argentina/Buenos_Aires', true)")
+    )
+    utc_before_create = db_session.execute(
+        text("SELECT clock_timestamp() AT TIME ZONE 'UTC'")
+    ).scalar_one()
+    repository = UsuarioRolSeguridadRepository(db_session)
+    created = repository.create(
+        user_id,
+        {"id_rol_seguridad": role_id},
+        CoreEFHeaders(uuid4(), user_id, 1, 1),
+    )
+    utc_after_create = db_session.execute(
+        text("SELECT clock_timestamp() AT TIME ZONE 'UTC'")
+    ).scalar_one()
+
+    assert created is not None
+    assert utc_before_create <= created["fecha_desde"] <= utc_after_create
+    assert _global(db_session, user_id, code) is AdministrativeAuthorizationDecision.GRANTED
+
+    utc_before_delete = db_session.execute(
+        text("SELECT clock_timestamp() AT TIME ZONE 'UTC'")
+    ).scalar_one()
+    deleted = repository.baja_logica(
+        user_id,
+        created["id_usuario_rol_seguridad"],
+        core=CoreEFHeaders(uuid4(), user_id, 1, 1),
+        if_match_version=created["version_registro"],
+    )
+    utc_after_delete = db_session.execute(
+        text("SELECT clock_timestamp() AT TIME ZONE 'UTC'")
+    ).scalar_one()
+
+    assert deleted is not None
+    assert utc_before_delete <= deleted["fecha_hasta"] <= utc_after_delete
+    assert _global(db_session, user_id, code) is AdministrativeAuthorizationDecision.DENIED

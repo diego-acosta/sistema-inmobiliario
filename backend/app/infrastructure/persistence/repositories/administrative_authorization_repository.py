@@ -85,7 +85,7 @@ class AdministrativeAuthorizationRepository:
                       AND r.estado_rol = 'ACTIVO'
                       AND p.estado_permiso = 'ACTIVO'
                 ) AS global_granted,
-                CASE WHEN :id_sucursal IS NULL THEN FALSE ELSE EXISTS (
+                CASE WHEN CAST(:id_sucursal AS bigint) IS NULL THEN FALSE ELSE EXISTS (
                     SELECT 1
                     FROM usuario_rol_sucursal urc
                     JOIN rol_seguridad r
@@ -96,7 +96,7 @@ class AdministrativeAuthorizationRepository:
                       ON p.id_permiso = rsp.id_permiso
                     CROSS JOIN reloj
                     WHERE urc.id_usuario = :id_usuario
-                      AND urc.id_sucursal = :id_sucursal
+                      AND urc.id_sucursal = CAST(:id_sucursal AS bigint)
                       AND urc.fecha_desde <= reloj.ahora
                       AND (urc.fecha_hasta IS NULL OR urc.fecha_hasta > reloj.ahora)
                       AND r.estado_rol = 'ACTIVO'
@@ -108,51 +108,55 @@ class AdministrativeAuthorizationRepository:
                     JOIN permiso_objetivo p ON p.id_permiso = d.id_permiso
                     WHERE d.id_usuario = :id_usuario
                 ) AS denied,
-                CASE WHEN :id_sucursal IS NULL THEN FALSE ELSE EXISTS (
-                    SELECT 1 FROM sucursal s WHERE s.id_sucursal = :id_sucursal
-                ) END AS scope_identifiable,
-                CASE WHEN :id_sucursal IS NULL THEN FALSE ELSE EXISTS (
+                CASE WHEN CAST(:id_sucursal AS bigint) IS NULL THEN FALSE ELSE EXISTS (
                     SELECT 1 FROM sucursal s
-                    WHERE s.id_sucursal = :id_sucursal
+                    WHERE s.id_sucursal = CAST(:id_sucursal AS bigint)
+                ) END AS scope_identifiable,
+                CASE WHEN CAST(:id_sucursal AS bigint) IS NULL THEN FALSE ELSE EXISTS (
+                    SELECT 1 FROM sucursal s
+                    WHERE s.id_sucursal = CAST(:id_sucursal AS bigint)
                       AND s.estado_sucursal = 'ACTIVA'
                       AND s.deleted_at IS NULL
                       AND s.fecha_baja IS NULL
                 ) END AS branch_active,
-                CASE WHEN :id_sucursal IS NULL THEN FALSE ELSE EXISTS (
+                CASE WHEN CAST(:id_sucursal AS bigint) IS NULL THEN FALSE ELSE EXISTS (
                     SELECT 1 FROM sucursal s
-                    WHERE s.id_sucursal = :id_sucursal
+                    WHERE s.id_sucursal = CAST(:id_sucursal AS bigint)
                       AND s.permite_operacion IS TRUE
                 ) END AS branch_allows_operation,
-                CASE WHEN :id_sucursal IS NULL THEN FALSE ELSE EXISTS (
+                CASE WHEN CAST(:id_sucursal AS bigint) IS NULL THEN FALSE ELSE EXISTS (
                     SELECT 1
                     FROM usuario_sucursal us
                     CROSS JOIN reloj
                     WHERE us.id_usuario = :id_usuario
-                      AND us.id_sucursal = :id_sucursal
+                      AND us.id_sucursal = CAST(:id_sucursal AS bigint)
                       AND us.estado_vinculo = 'ACTIVO'
                       AND us.deleted_at IS NULL
                       AND us.fecha_desde <= reloj.ahora
                       AND (us.fecha_hasta IS NULL OR us.fecha_hasta > reloj.ahora)
                 ) END AS has_current_assignment,
-                CASE WHEN :id_sucursal IS NULL THEN FALSE ELSE EXISTS (
+                CASE WHEN CAST(:id_sucursal AS bigint) IS NULL THEN FALSE ELSE EXISTS (
                     SELECT 1 FROM usuario_sucursal us CROSS JOIN reloj
-                    WHERE us.id_usuario = :id_usuario AND us.id_sucursal = :id_sucursal
+                    WHERE us.id_usuario = :id_usuario
+                      AND us.id_sucursal = CAST(:id_sucursal AS bigint)
                       AND us.estado_vinculo = 'ACTIVO' AND us.deleted_at IS NULL
                       AND us.fecha_desde <= reloj.ahora
                       AND (us.fecha_hasta IS NULL OR us.fecha_hasta > reloj.ahora)
                       AND us.puede_consultar IS TRUE
                 ) END AS can_query,
-                CASE WHEN :id_sucursal IS NULL THEN FALSE ELSE EXISTS (
+                CASE WHEN CAST(:id_sucursal AS bigint) IS NULL THEN FALSE ELSE EXISTS (
                     SELECT 1 FROM usuario_sucursal us CROSS JOIN reloj
-                    WHERE us.id_usuario = :id_usuario AND us.id_sucursal = :id_sucursal
+                    WHERE us.id_usuario = :id_usuario
+                      AND us.id_sucursal = CAST(:id_sucursal AS bigint)
                       AND us.estado_vinculo = 'ACTIVO' AND us.deleted_at IS NULL
                       AND us.fecha_desde <= reloj.ahora
                       AND (us.fecha_hasta IS NULL OR us.fecha_hasta > reloj.ahora)
                       AND us.puede_operar IS TRUE
                 ) END AS can_operate,
-                CASE WHEN :id_sucursal IS NULL THEN FALSE ELSE EXISTS (
+                CASE WHEN CAST(:id_sucursal AS bigint) IS NULL THEN FALSE ELSE EXISTS (
                     SELECT 1 FROM usuario_sucursal us CROSS JOIN reloj
-                    WHERE us.id_usuario = :id_usuario AND us.id_sucursal = :id_sucursal
+                    WHERE us.id_usuario = :id_usuario
+                      AND us.id_sucursal = CAST(:id_sucursal AS bigint)
                       AND us.estado_vinculo = 'ACTIVO' AND us.deleted_at IS NULL
                       AND us.fecha_desde <= reloj.ahora
                       AND (us.fecha_hasta IS NULL OR us.fecha_hasta > reloj.ahora)
