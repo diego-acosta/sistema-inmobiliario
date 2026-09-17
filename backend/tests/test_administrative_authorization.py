@@ -47,8 +47,11 @@ def _principal(id_usuario: int = 42) -> AuthenticatedPrincipal:
 def _projection(**overrides) -> AdministrativeAuthorizationProjection:
     values = {
         "permission_defined": True,
-        "permission_active": True,
+        "permission_state": "ACTIVO",
+        "principal_state": "ACTIVO",
         "principal_active": True,
+        "invalid_role_state": False,
+        "invalid_assignment_state": False,
         "global_granted": False,
         "contextual_granted": False,
         "denied": False,
@@ -65,8 +68,10 @@ def _projection(**overrides) -> AdministrativeAuthorizationProjection:
 def _resource_projection(**overrides) -> ResourceAuthorizationProjection:
     values = {
         "permission_defined": True,
-        "permission_active": True,
+        "permission_state": "ACTIVO",
+        "principal_state": "ACTIVO",
         "principal_active": True,
+        "invalid_role_state": False,
         "global_granted": False,
         "denied": False,
         "contextual_scope_ids": frozenset(),
@@ -147,7 +152,7 @@ def test_compatible_global_dependency_maps_denial_to_existing_exception():
     [
         (_projection(global_granted=True), AdministrativeAuthorizationDecision.GRANTED),
         (_projection(), AdministrativeAuthorizationDecision.DENIED),
-        (_projection(permission_active=False, global_granted=True), AdministrativeAuthorizationDecision.DENIED),
+        (_projection(permission_state="INACTIVO", global_granted=True), AdministrativeAuthorizationDecision.DENIED),
         (_projection(principal_active=False, global_granted=True), AdministrativeAuthorizationDecision.DENIED),
         (_projection(global_granted=True, denied=True), AdministrativeAuthorizationDecision.DENIED),
     ],
@@ -169,10 +174,28 @@ def test_undefined_permission_is_technical_error():
         "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
     ) as repository:
         repository.return_value.resolve_permission.return_value = _projection(
-            permission_defined=False, permission_active=False
+            permission_defined=False, permission_state=None
         )
         with pytest.raises(AdministrativeAuthorizationTechnicalError):
             AdministrativeAuthorizationService(Mock()).authorize(42, "missing")
+
+
+@pytest.mark.parametrize(
+    "projection",
+    [
+        _projection(permission_state="DESCONOCIDO"),
+        _projection(principal_state="DESCONOCIDO"),
+        _projection(invalid_role_state=True),
+        _projection(invalid_assignment_state=True),
+    ],
+)
+def test_unknown_authorization_states_are_technical_errors(projection):
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        repository.return_value.resolve_permission.return_value = projection
+        with pytest.raises(AdministrativeAuthorizationTechnicalError):
+            AdministrativeAuthorizationService(Mock()).authorize(42, "p")
 
 
 @pytest.mark.parametrize(
@@ -384,7 +407,7 @@ def test_resource_derived_ors_paths_preserves_scope_and_filters_before_paging():
     "projection",
     [
         _resource_projection(denied=True, global_granted=True),
-        _resource_projection(permission_active=False),
+        _resource_projection(permission_state="INACTIVO"),
         _resource_projection(principal_active=False),
     ],
 )
@@ -395,6 +418,22 @@ def test_resource_derived_applies_common_security_before_paths(projection):
     ) as repository:
         repository.return_value.resolve_resource_permission.return_value = projection
         with pytest.raises(InsufficientAdministrativeAuthorization):
+            AdministrativeAuthorizationService(Mock()).authorize_resources(
+                42, "p", [ResourceAuthorizationCandidate("r", None)], [path]
+            )
+
+
+def test_resource_derived_rejects_unknown_permission_state_as_technical():
+    path = ResourceAuthorizationPath(
+        lambda _candidate: True, lambda _candidate, _evidence: True
+    )
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        repository.return_value.resolve_resource_permission.return_value = (
+            _resource_projection(permission_state="DESCONOCIDO")
+        )
+        with pytest.raises(AdministrativeAuthorizationTechnicalError):
             AdministrativeAuthorizationService(Mock()).authorize_resources(
                 42, "p", [ResourceAuthorizationCandidate("r", None)], [path]
             )

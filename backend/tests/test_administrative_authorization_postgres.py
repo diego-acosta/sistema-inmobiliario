@@ -104,6 +104,7 @@ def _assign_user_branch(
     can_query=False,
     can_operate=False,
     can_administer=False,
+    state="ACTIVO",
 ):
     db_session.execute(
         text("""
@@ -112,7 +113,7 @@ def _assign_user_branch(
                  puede_consultar, puede_operar, puede_administrar,
                  fecha_desde, fecha_hasta)
             VALUES
-                (:user_id, :branch_id, 'ACTIVO',
+                (:user_id, :branch_id, :state,
                  :can_query, :can_operate, :can_administer,
                  clock_timestamp() AT TIME ZONE 'UTC' - interval '1 hour',
                  clock_timestamp() AT TIME ZONE 'UTC' + interval '1 hour')
@@ -123,6 +124,7 @@ def _assign_user_branch(
             "can_query": can_query,
             "can_operate": can_operate,
             "can_administer": can_administer,
+            "state": state,
         },
     )
 
@@ -152,6 +154,68 @@ def test_postgres_global_vigency_states_and_half_open_interval(db_session):
 
     with pytest.raises(AdministrativeAuthorizationTechnicalError):
         _global(db_session, user_id, code.swapcase())
+
+
+def test_postgres_unknown_permission_state_is_technical_error(db_session):
+    user_id, role_id, _, code = _insert_chain(
+        db_session, "permission-unknown", permission_state="DESCONOCIDO"
+    )
+    _assign_global(db_session, user_id, role_id, "clock_timestamp() AT TIME ZONE 'UTC'")
+
+    with pytest.raises(AdministrativeAuthorizationTechnicalError):
+        _global(db_session, user_id, code)
+
+
+def test_postgres_unknown_role_state_is_technical_error(db_session):
+    user_id, role_id, _, code = _insert_chain(
+        db_session, "role-unknown", role_state="DESCONOCIDO"
+    )
+    _assign_global(db_session, user_id, role_id, "clock_timestamp() AT TIME ZONE 'UTC'")
+
+    with pytest.raises(AdministrativeAuthorizationTechnicalError):
+        _global(db_session, user_id, code)
+
+
+def test_postgres_unknown_user_state_is_technical_error(db_session):
+    user_id, role_id, _, code = _insert_chain(db_session, "user-unknown")
+    _assign_global(db_session, user_id, role_id, "clock_timestamp() AT TIME ZONE 'UTC'")
+    db_session.execute(
+        text("UPDATE usuario SET estado_usuario = 'DESCONOCIDO' WHERE id_usuario = :id"),
+        {"id": user_id},
+    )
+
+    with pytest.raises(AdministrativeAuthorizationTechnicalError):
+        _global(db_session, user_id, code)
+
+
+def test_postgres_unknown_assignment_state_is_technical_error(db_session):
+    user_id, role_id, _, code = _insert_chain(db_session, "assignment-unknown")
+    branch_id = _insert_branch(db_session, "assignment-unknown")
+    _assign_context(
+        db_session,
+        user_id,
+        role_id,
+        branch_id,
+        "clock_timestamp() AT TIME ZONE 'UTC' - interval '1 hour'",
+    )
+    _assign_user_branch(
+        db_session,
+        user_id,
+        branch_id,
+        can_query=True,
+        state="DESCONOCIDO",
+    )
+
+    with pytest.raises(AdministrativeAuthorizationTechnicalError):
+        _contextual(
+            db_session,
+            user_id,
+            code,
+            branch_id,
+            HOpPredicate(
+                required_capabilities=frozenset({ScopeCapability.QUERY})
+            ),
+        )
 
 
 def test_postgres_multiple_global_roles_and_explicit_deny_precedence(db_session):

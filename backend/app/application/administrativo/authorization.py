@@ -103,6 +103,7 @@ class AuthorizedResourcePage(Generic[ResourceT]):
 
 class AdministrativeAuthorizationService:
     _TECHNICAL_MESSAGE = "No fue posible resolver la autorización administrativa."
+    _KNOWN_STATES = frozenset({"ACTIVO", "INACTIVO"})
 
     def __init__(self, session) -> None:
         self.db = session
@@ -158,7 +159,7 @@ class AdministrativeAuthorizationService:
         self._validate_projection(projection)
         if not projection.principal_active:
             return AdministrativeAuthorizationDecision.DENIED
-        if not projection.permission_active or projection.denied:
+        if projection.permission_state == "INACTIVO" or projection.denied:
             return AdministrativeAuthorizationDecision.DENIED
 
         if mode is AdministrativeAuthorizationMode.GLOBAL:
@@ -220,7 +221,7 @@ class AdministrativeAuthorizationService:
         self._validate_resource_projection(projection)
         if (
             not projection.principal_active
-            or not projection.permission_active
+            or projection.permission_state == "INACTIVO"
             or projection.denied
         ):
             raise InsufficientAdministrativeAuthorization(
@@ -253,9 +254,35 @@ class AdministrativeAuthorizationService:
             raise AdministrativeAuthorizationTechnicalError(self._TECHNICAL_MESSAGE)
         if not projection.permission_defined:
             raise AdministrativeAuthorizationTechnicalError(self._TECHNICAL_MESSAGE)
+        self._validate_authorization_states(
+            projection.permission_state,
+            projection.principal_state,
+            projection.invalid_role_state,
+            projection.invalid_assignment_state,
+        )
 
     def _validate_resource_projection(self, projection: object) -> None:
         if not isinstance(projection, ResourceAuthorizationProjection):
             raise AdministrativeAuthorizationTechnicalError(self._TECHNICAL_MESSAGE)
         if not projection.permission_defined:
+            raise AdministrativeAuthorizationTechnicalError(self._TECHNICAL_MESSAGE)
+        self._validate_authorization_states(
+            projection.permission_state,
+            projection.principal_state,
+            projection.invalid_role_state,
+        )
+
+    def _validate_authorization_states(
+        self,
+        permission_state: str | None,
+        principal_state: str | None,
+        invalid_role_state: bool,
+        invalid_assignment_state: bool = False,
+    ) -> None:
+        if (
+            permission_state not in self._KNOWN_STATES
+            or principal_state not in self._KNOWN_STATES
+            or invalid_role_state
+            or invalid_assignment_state
+        ):
             raise AdministrativeAuthorizationTechnicalError(self._TECHNICAL_MESSAGE)

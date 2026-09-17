@@ -8,8 +8,11 @@ from sqlalchemy import bindparam, text
 @dataclass(frozen=True, slots=True)
 class AdministrativeAuthorizationProjection:
     permission_defined: bool
-    permission_active: bool
+    permission_state: str | None
+    principal_state: str | None
     principal_active: bool
+    invalid_role_state: bool
+    invalid_assignment_state: bool
     global_granted: bool
     contextual_granted: bool
     denied: bool
@@ -23,8 +26,10 @@ class AdministrativeAuthorizationProjection:
 @dataclass(frozen=True, slots=True)
 class ResourceAuthorizationProjection:
     permission_defined: bool
-    permission_active: bool
+    permission_state: str | None
+    principal_state: str | None
     principal_active: bool
+    invalid_role_state: bool
     global_granted: bool
     denied: bool
     contextual_scope_ids: frozenset[int]
@@ -53,22 +58,64 @@ class AdministrativeAuthorizationRepository:
                 FROM permiso p
                 WHERE p.codigo_permiso = :permission_code
             ), principal AS MATERIALIZED (
-                SELECT EXISTS (
-                    SELECT 1
-                    FROM usuario u
-                    WHERE u.id_usuario = :id_usuario
-                      AND u.estado_usuario = 'ACTIVO'
-                      AND u.deleted_at IS NULL
-                      AND u.fecha_baja IS NULL
-                ) AS activo
+                SELECT
+                    u.estado_usuario,
+                    u.estado_usuario = 'ACTIVO'
+                        AND u.deleted_at IS NULL
+                        AND u.fecha_baja IS NULL AS activo
+                FROM usuario u
+                WHERE u.id_usuario = :id_usuario
             )
             SELECT
                 EXISTS (SELECT 1 FROM permiso_objetivo) AS permission_defined,
-                EXISTS (
-                    SELECT 1 FROM permiso_objetivo
-                    WHERE estado_permiso = 'ACTIVO'
-                ) AS permission_active,
-                (SELECT activo FROM principal) AS principal_active,
+                (SELECT estado_permiso FROM permiso_objetivo) AS permission_state,
+                (SELECT estado_usuario FROM principal) AS principal_state,
+                COALESCE((SELECT activo FROM principal), FALSE) AS principal_active,
+                (
+                    EXISTS (
+                        SELECT 1
+                        FROM usuario_rol_seguridad urs
+                        JOIN rol_seguridad r
+                          ON r.id_rol_seguridad = urs.id_rol_seguridad
+                        JOIN rol_seguridad_permiso rsp
+                          ON rsp.id_rol_seguridad = r.id_rol_seguridad
+                        JOIN permiso_objetivo p
+                          ON p.id_permiso = rsp.id_permiso
+                        CROSS JOIN reloj
+                        WHERE urs.id_usuario = :id_usuario
+                          AND urs.deleted_at IS NULL
+                          AND urs.fecha_desde <= reloj.ahora
+                          AND (urs.fecha_hasta IS NULL OR urs.fecha_hasta > reloj.ahora)
+                          AND r.estado_rol NOT IN ('ACTIVO', 'INACTIVO')
+                    )
+                    OR CASE WHEN CAST(:id_sucursal AS bigint) IS NULL THEN FALSE ELSE EXISTS (
+                        SELECT 1
+                        FROM usuario_rol_sucursal urc
+                        JOIN rol_seguridad r
+                          ON r.id_rol_seguridad = urc.id_rol_seguridad
+                        JOIN rol_seguridad_permiso rsp
+                          ON rsp.id_rol_seguridad = r.id_rol_seguridad
+                        JOIN permiso_objetivo p
+                          ON p.id_permiso = rsp.id_permiso
+                        CROSS JOIN reloj
+                        WHERE urc.id_usuario = :id_usuario
+                          AND urc.id_sucursal = CAST(:id_sucursal AS bigint)
+                          AND urc.fecha_desde <= reloj.ahora
+                          AND (urc.fecha_hasta IS NULL OR urc.fecha_hasta > reloj.ahora)
+                          AND r.estado_rol NOT IN ('ACTIVO', 'INACTIVO')
+                    ) END
+                ) AS invalid_role_state,
+                CASE WHEN CAST(:id_sucursal AS bigint) IS NULL THEN FALSE ELSE EXISTS (
+                    SELECT 1
+                    FROM usuario_sucursal us
+                    CROSS JOIN reloj
+                    WHERE us.id_usuario = :id_usuario
+                      AND us.id_sucursal = CAST(:id_sucursal AS bigint)
+                      AND us.deleted_at IS NULL
+                      AND us.fecha_desde <= reloj.ahora
+                      AND (us.fecha_hasta IS NULL OR us.fecha_hasta > reloj.ahora)
+                      AND us.estado_vinculo NOT IN ('ACTIVO', 'INACTIVO')
+                ) END AS invalid_assignment_state,
                 EXISTS (
                     SELECT 1
                     FROM usuario_rol_seguridad urs
@@ -193,14 +240,47 @@ class AdministrativeAuthorizationRepository:
             )
             SELECT
                 EXISTS (SELECT 1 FROM permiso_objetivo) AS permission_defined,
-                EXISTS (SELECT 1 FROM permiso_objetivo WHERE estado_permiso = 'ACTIVO')
-                    AS permission_active,
+                (SELECT estado_permiso FROM permiso_objetivo) AS permission_state,
+                (SELECT u.estado_usuario FROM usuario u WHERE u.id_usuario = :id_usuario)
+                    AS principal_state,
                 EXISTS (
                     SELECT 1 FROM usuario u
                     WHERE u.id_usuario = :id_usuario
                       AND u.estado_usuario = 'ACTIVO'
                       AND u.deleted_at IS NULL AND u.fecha_baja IS NULL
                 ) AS principal_active,
+                (
+                    EXISTS (
+                        SELECT 1
+                        FROM usuario_rol_seguridad urs
+                        JOIN rol_seguridad r
+                          ON r.id_rol_seguridad = urs.id_rol_seguridad
+                        JOIN rol_seguridad_permiso rsp
+                          ON rsp.id_rol_seguridad = r.id_rol_seguridad
+                        JOIN permiso_objetivo p ON p.id_permiso = rsp.id_permiso
+                        CROSS JOIN reloj
+                        WHERE urs.id_usuario = :id_usuario
+                          AND urs.deleted_at IS NULL
+                          AND urs.fecha_desde <= reloj.ahora
+                          AND (urs.fecha_hasta IS NULL OR urs.fecha_hasta > reloj.ahora)
+                          AND r.estado_rol NOT IN ('ACTIVO', 'INACTIVO')
+                    )
+                    OR EXISTS (
+                        SELECT 1
+                        FROM usuario_rol_sucursal urc
+                        JOIN rol_seguridad r
+                          ON r.id_rol_seguridad = urc.id_rol_seguridad
+                        JOIN rol_seguridad_permiso rsp
+                          ON rsp.id_rol_seguridad = r.id_rol_seguridad
+                        JOIN permiso_objetivo p ON p.id_permiso = rsp.id_permiso
+                        CROSS JOIN reloj
+                        WHERE urc.id_usuario = :id_usuario
+                          AND urc.id_sucursal IN :scope_ids
+                          AND urc.fecha_desde <= reloj.ahora
+                          AND (urc.fecha_hasta IS NULL OR urc.fecha_hasta > reloj.ahora)
+                          AND r.estado_rol NOT IN ('ACTIVO', 'INACTIVO')
+                    )
+                ) AS invalid_role_state,
                 EXISTS (
                     SELECT 1
                     FROM usuario_rol_seguridad urs
@@ -245,8 +325,10 @@ class AdministrativeAuthorizationRepository:
         ).mappings().one()
         return ResourceAuthorizationProjection(
             permission_defined=row["permission_defined"],
-            permission_active=row["permission_active"],
+            permission_state=row["permission_state"],
+            principal_state=row["principal_state"],
             principal_active=row["principal_active"],
+            invalid_role_state=row["invalid_role_state"],
             global_granted=row["global_granted"],
             denied=row["denied"],
             contextual_scope_ids=frozenset(row["contextual_scope_ids"]),
