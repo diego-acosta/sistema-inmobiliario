@@ -369,6 +369,68 @@ def test_explicit_context_requires_declared_h_predicate():
 
 
 @pytest.mark.parametrize(
+    "capabilities",
+    [
+        frozenset({"QUERY"}),
+        frozenset({ScopeCapability.QUERY, "ADMINISTER"}),
+        frozenset({object()}),
+    ],
+)
+def test_explicit_context_rejects_invalid_capabilities_before_repository(
+    capabilities,
+):
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        with pytest.raises(AdministrativeAuthorizationTechnicalError):
+            AdministrativeAuthorizationService(Mock()).authorize(
+                42,
+                "p",
+                mode=AdministrativeAuthorizationMode.EXPLICIT_CONTEXT,
+                id_sucursal=7,
+                h_op=HOpPredicate(required_capabilities=capabilities),
+            )
+
+    repository.assert_not_called()
+
+
+def test_explicit_context_accepts_empty_capabilities_before_repository():
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        repository.return_value.resolve_permission.return_value = _projection(
+            scope_identifiable=True,
+            contextual_granted=True,
+        )
+        decision = AdministrativeAuthorizationService(Mock()).authorize(
+            42,
+            "p",
+            mode=AdministrativeAuthorizationMode.EXPLICIT_CONTEXT,
+            id_sucursal=7,
+            h_op=HOpPredicate(required_capabilities=set()),
+        )
+
+    assert decision is AdministrativeAuthorizationDecision.GRANTED
+    repository.return_value.resolve_permission.assert_called_once()
+
+
+def test_explicit_context_rejects_non_callable_h_before_repository():
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        with pytest.raises(AdministrativeAuthorizationTechnicalError):
+            AdministrativeAuthorizationService(Mock()).authorize(
+                42,
+                "p",
+                mode=AdministrativeAuthorizationMode.EXPLICIT_CONTEXT,
+                id_sucursal=7,
+                h_op=HOpPredicate(scope_predicate=None),
+            )
+
+    repository.assert_not_called()
+
+
+@pytest.mark.parametrize(
     ("branch_state", "branch_active", "expected"),
     [
         ("ACTIVA", True, AdministrativeAuthorizationDecision.GRANTED),
@@ -416,6 +478,53 @@ def test_explicit_context_rejects_unknown_branch_state_as_technical():
                 id_sucursal=7,
                 h_op=HOpPredicate(),
             )
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"permission_state": "INACTIVO"},
+        {"denied": True},
+        {"principal_active": False},
+    ],
+)
+def test_unknown_branch_state_precedes_functional_denials(overrides):
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        repository.return_value.resolve_permission.return_value = _projection(
+            scope_identifiable=True,
+            branch_state="DESCONOCIDA",
+            **overrides,
+        )
+        with pytest.raises(AdministrativeAuthorizationTechnicalError):
+            AdministrativeAuthorizationService(Mock()).authorize(
+                42,
+                "p",
+                mode=AdministrativeAuthorizationMode.EXPLICIT_CONTEXT,
+                id_sucursal=7,
+                h_op=HOpPredicate(),
+            )
+
+
+def test_missing_scope_does_not_require_branch_state():
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        repository.return_value.resolve_permission.return_value = _projection(
+            scope_identifiable=False,
+            branch_state=None,
+            contextual_granted=True,
+        )
+        decision = AdministrativeAuthorizationService(Mock()).authorize(
+            42,
+            "p",
+            mode=AdministrativeAuthorizationMode.EXPLICIT_CONTEXT,
+            id_sucursal=7,
+            h_op=HOpPredicate(),
+        )
+
+    assert decision is AdministrativeAuthorizationDecision.DENIED
 
 
 def test_resource_derived_ors_paths_preserves_scope_and_filters_before_paging():

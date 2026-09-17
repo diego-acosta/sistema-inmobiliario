@@ -126,8 +126,7 @@ class AdministrativeAuthorizationService:
                 or id_sucursal <= 0
             ):
                 raise AdministrativeAuthorizationTechnicalError(self._TECHNICAL_MESSAGE)
-            if not isinstance(h_op, HOpPredicate):
-                raise AdministrativeAuthorizationTechnicalError(self._TECHNICAL_MESSAGE)
+            self._validate_h_op(h_op)
 
         try:
             projection = AdministrativeAuthorizationRepository(self.db).resolve_permission(
@@ -158,6 +157,12 @@ class AdministrativeAuthorizationService:
             raise AdministrativeAuthorizationTechnicalError(self._TECHNICAL_MESSAGE) from exc
 
         self._validate_projection(projection)
+        if (
+            mode is AdministrativeAuthorizationMode.EXPLICIT_CONTEXT
+            and projection.scope_identifiable
+            and projection.branch_state not in self._KNOWN_BRANCH_STATES
+        ):
+            raise AdministrativeAuthorizationTechnicalError(self._TECHNICAL_MESSAGE)
         if not projection.principal_active:
             return AdministrativeAuthorizationDecision.DENIED
         if projection.permission_state == "INACTIVO" or projection.denied:
@@ -168,8 +173,6 @@ class AdministrativeAuthorizationService:
         elif mode is AdministrativeAuthorizationMode.EXPLICIT_CONTEXT:
             if not projection.scope_identifiable:
                 return AdministrativeAuthorizationDecision.DENIED
-            if projection.branch_state not in self._KNOWN_BRANCH_STATES:
-                raise AdministrativeAuthorizationTechnicalError(self._TECHNICAL_MESSAGE)
             scope = FunctionalScope(
                 id_sucursal=id_sucursal,
                 branch_active=projection.branch_active,
@@ -250,6 +253,20 @@ class AdministrativeAuthorizationService:
 
     def _validate_permission_code(self, permission_code: str) -> None:
         if not isinstance(permission_code, str) or not permission_code.strip():
+            raise AdministrativeAuthorizationTechnicalError(self._TECHNICAL_MESSAGE)
+
+    def _validate_h_op(self, h_op: HOpPredicate | None) -> None:
+        if not isinstance(h_op, HOpPredicate):
+            raise AdministrativeAuthorizationTechnicalError(self._TECHNICAL_MESSAGE)
+        capabilities = h_op.required_capabilities
+        if (
+            not isinstance(capabilities, (set, frozenset))
+            or any(
+                not isinstance(capability, ScopeCapability)
+                for capability in capabilities
+            )
+            or not callable(h_op.scope_predicate)
+        ):
             raise AdministrativeAuthorizationTechnicalError(self._TECHNICAL_MESSAGE)
 
     def _validate_projection(self, projection: object) -> None:

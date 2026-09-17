@@ -257,9 +257,23 @@ def test_postgres_known_branch_states_remain_identifiable_and_feed_h_op(
     ) is expected
 
 
-def test_postgres_unknown_branch_state_is_technical_error(db_session):
-    user_id, role_id, _, code = _insert_chain(db_session, "branch-unknown")
-    branch_id = _insert_branch(db_session, "branch-unknown", "DESCONOCIDA")
+@pytest.mark.parametrize("security_condition", ["permission-inactive", "deny"])
+def test_postgres_unknown_branch_state_precedes_functional_denial(
+    db_session, security_condition
+):
+    suffix = (
+        "branch-unknown-off"
+        if security_condition == "permission-inactive"
+        else "branch-unknown-deny"
+    )
+    user_id, role_id, permission_id, code = _insert_chain(
+        db_session,
+        suffix,
+        permission_state=(
+            "INACTIVO" if security_condition == "permission-inactive" else "ACTIVO"
+        ),
+    )
+    branch_id = _insert_branch(db_session, suffix, "DESCONOCIDA")
     _assign_context(
         db_session,
         user_id,
@@ -267,6 +281,14 @@ def test_postgres_unknown_branch_state_is_technical_error(db_session):
         branch_id,
         "clock_timestamp() AT TIME ZONE 'UTC' - interval '1 hour'",
     )
+    if security_condition == "deny":
+        db_session.execute(
+            text("""
+                INSERT INTO denegacion_explicita (id_usuario, id_permiso, motivo)
+                VALUES (:user_id, :permission_id, 'precedencia tecnica')
+            """),
+            {"user_id": user_id, "permission_id": permission_id},
+        )
 
     with pytest.raises(AdministrativeAuthorizationTechnicalError):
         _contextual(db_session, user_id, code, branch_id, HOpPredicate())
