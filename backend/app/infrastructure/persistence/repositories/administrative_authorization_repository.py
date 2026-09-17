@@ -17,9 +17,7 @@ class AdministrativeAuthorizationProjection:
     branch_active: bool
     branch_allows_operation: bool
     has_current_assignment: bool
-    can_query: bool
-    can_operate: bool
-    can_administer: bool
+    assignment_capabilities_satisfied: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +40,9 @@ class AdministrativeAuthorizationRepository:
         permission_code: str,
         *,
         id_sucursal: int | None = None,
+        require_can_query: bool = False,
+        require_can_operate: bool = False,
+        require_can_administer: bool = False,
     ) -> AdministrativeAuthorizationProjection:
         """Resuelve P/E/G/C/D y carriers H con un único instante UTC."""
         statement = text("""
@@ -142,26 +143,19 @@ class AdministrativeAuthorizationRepository:
                       AND us.estado_vinculo = 'ACTIVO' AND us.deleted_at IS NULL
                       AND us.fecha_desde <= reloj.ahora
                       AND (us.fecha_hasta IS NULL OR us.fecha_hasta > reloj.ahora)
-                      AND us.puede_consultar IS TRUE
-                ) END AS can_query,
-                CASE WHEN CAST(:id_sucursal AS bigint) IS NULL THEN FALSE ELSE EXISTS (
-                    SELECT 1 FROM usuario_sucursal us CROSS JOIN reloj
-                    WHERE us.id_usuario = :id_usuario
-                      AND us.id_sucursal = CAST(:id_sucursal AS bigint)
-                      AND us.estado_vinculo = 'ACTIVO' AND us.deleted_at IS NULL
-                      AND us.fecha_desde <= reloj.ahora
-                      AND (us.fecha_hasta IS NULL OR us.fecha_hasta > reloj.ahora)
-                      AND us.puede_operar IS TRUE
-                ) END AS can_operate,
-                CASE WHEN CAST(:id_sucursal AS bigint) IS NULL THEN FALSE ELSE EXISTS (
-                    SELECT 1 FROM usuario_sucursal us CROSS JOIN reloj
-                    WHERE us.id_usuario = :id_usuario
-                      AND us.id_sucursal = CAST(:id_sucursal AS bigint)
-                      AND us.estado_vinculo = 'ACTIVO' AND us.deleted_at IS NULL
-                      AND us.fecha_desde <= reloj.ahora
-                      AND (us.fecha_hasta IS NULL OR us.fecha_hasta > reloj.ahora)
-                      AND us.puede_administrar IS TRUE
-                ) END AS can_administer
+                      AND (
+                          :require_can_query IS FALSE
+                          OR us.puede_consultar IS TRUE
+                      )
+                      AND (
+                          :require_can_operate IS FALSE
+                          OR us.puede_operar IS TRUE
+                      )
+                      AND (
+                          :require_can_administer IS FALSE
+                          OR us.puede_administrar IS TRUE
+                      )
+                ) END AS assignment_capabilities_satisfied
         """)
         row = self.db.execute(
             statement,
@@ -169,6 +163,9 @@ class AdministrativeAuthorizationRepository:
                 "id_usuario": id_usuario,
                 "permission_code": permission_code,
                 "id_sucursal": id_sucursal,
+                "require_can_query": require_can_query,
+                "require_can_operate": require_can_operate,
+                "require_can_administer": require_can_administer,
             },
         ).mappings().one()
         return AdministrativeAuthorizationProjection(**dict(row))

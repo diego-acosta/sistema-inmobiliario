@@ -34,18 +34,40 @@ class AdministrativeAuthorizationMode(Enum):
     EXPLICIT_CONTEXT = "EXPLICIT_CONTEXT"
 
 
+class ScopeCapability(Enum):
+    QUERY = "puede_consultar"
+    OPERATE = "puede_operar"
+    ADMINISTER = "puede_administrar"
+
+
 @dataclass(frozen=True, slots=True)
 class FunctionalScope:
     id_sucursal: int
     branch_active: bool
     branch_allows_operation: bool
     has_current_assignment: bool
-    can_query: bool
-    can_operate: bool
-    can_administer: bool
 
 
-HOpPredicate = Callable[[FunctionalScope], bool]
+def _scope_enabled(_scope: FunctionalScope) -> bool:
+    return True
+
+
+@dataclass(frozen=True, slots=True)
+class HOpPredicate:
+    required_capabilities: frozenset[ScopeCapability] = frozenset()
+    scope_predicate: Callable[[FunctionalScope], bool] = _scope_enabled
+
+    def evaluate(
+        self,
+        scope: FunctionalScope,
+        *,
+        assignment_capabilities_satisfied: bool,
+    ) -> bool:
+        capabilities_satisfied = (
+            not self.required_capabilities or assignment_capabilities_satisfied
+        )
+        return capabilities_satisfied and bool(self.scope_predicate(scope))
+
 
 ResourceT = TypeVar("ResourceT")
 
@@ -102,7 +124,7 @@ class AdministrativeAuthorizationService:
                 or id_sucursal <= 0
             ):
                 raise AdministrativeAuthorizationTechnicalError(self._TECHNICAL_MESSAGE)
-            if h_op is None:
+            if not isinstance(h_op, HOpPredicate):
                 raise AdministrativeAuthorizationTechnicalError(self._TECHNICAL_MESSAGE)
 
         try:
@@ -113,6 +135,21 @@ class AdministrativeAuthorizationService:
                     id_sucursal
                     if mode is AdministrativeAuthorizationMode.EXPLICIT_CONTEXT
                     else None
+                ),
+                require_can_query=(
+                    ScopeCapability.QUERY in h_op.required_capabilities
+                    if h_op is not None
+                    else False
+                ),
+                require_can_operate=(
+                    ScopeCapability.OPERATE in h_op.required_capabilities
+                    if h_op is not None
+                    else False
+                ),
+                require_can_administer=(
+                    ScopeCapability.ADMINISTER in h_op.required_capabilities
+                    if h_op is not None
+                    else False
                 ),
             )
         except Exception as exc:
@@ -134,12 +171,14 @@ class AdministrativeAuthorizationService:
                 branch_active=projection.branch_active,
                 branch_allows_operation=projection.branch_allows_operation,
                 has_current_assignment=projection.has_current_assignment,
-                can_query=projection.can_query,
-                can_operate=projection.can_operate,
-                can_administer=projection.can_administer,
             )
             try:
-                functional_enabled = h_op(scope)
+                functional_enabled = h_op.evaluate(
+                    scope,
+                    assignment_capabilities_satisfied=(
+                        projection.assignment_capabilities_satisfied
+                    ),
+                )
             except Exception as exc:
                 raise AdministrativeAuthorizationTechnicalError(self._TECHNICAL_MESSAGE) from exc
             granted = bool(functional_enabled) and (

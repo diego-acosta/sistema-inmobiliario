@@ -9,6 +9,8 @@ from app.application.administrativo.authorization import (
     AdministrativeAuthorizationMode,
     AdministrativeAuthorizationService,
     AdministrativeAuthorizationTechnicalError,
+    HOpPredicate,
+    ScopeCapability,
 )
 from app.infrastructure.persistence.repositories.usuario_rol_seguridad_repository import (
     UsuarioRolSeguridadRepository,
@@ -84,13 +86,44 @@ def _global(db_session, user_id, code):
     return AdministrativeAuthorizationService(db_session).authorize(user_id, code)
 
 
-def _contextual(db_session, user_id, code, branch_id):
+def _contextual(db_session, user_id, code, branch_id, h_op=None):
     return AdministrativeAuthorizationService(db_session).authorize(
         user_id,
         code,
         mode=AdministrativeAuthorizationMode.EXPLICIT_CONTEXT,
         id_sucursal=branch_id,
-        h_op=lambda _scope: True,
+        h_op=h_op or HOpPredicate(),
+    )
+
+
+def _assign_user_branch(
+    db_session,
+    user_id,
+    branch_id,
+    *,
+    can_query=False,
+    can_operate=False,
+    can_administer=False,
+):
+    db_session.execute(
+        text("""
+            INSERT INTO usuario_sucursal
+                (id_usuario, id_sucursal, estado_vinculo,
+                 puede_consultar, puede_operar, puede_administrar,
+                 fecha_desde, fecha_hasta)
+            VALUES
+                (:user_id, :branch_id, 'ACTIVO',
+                 :can_query, :can_operate, :can_administer,
+                 clock_timestamp() AT TIME ZONE 'UTC' - interval '1 hour',
+                 clock_timestamp() AT TIME ZONE 'UTC' + interval '1 hour')
+        """),
+        {
+            "user_id": user_id,
+            "branch_id": branch_id,
+            "can_query": can_query,
+            "can_operate": can_operate,
+            "can_administer": can_administer,
+        },
     )
 
 
@@ -169,6 +202,52 @@ def test_postgres_contextual_grant_is_scoped_and_needs_no_global_grant(db_sessio
         {"u": user_id, "p": permission_id},
     )
     assert _contextual(db_session, user_id, code, branch_a) is AdministrativeAuthorizationDecision.DENIED
+
+
+@pytest.mark.parametrize(
+    ("suffix", "capabilities", "first", "second", "combined"),
+    [
+        (
+            "same-row-query-admin",
+            frozenset({ScopeCapability.QUERY, ScopeCapability.ADMINISTER}),
+            {"can_query": True},
+            {"can_administer": True},
+            {"can_query": True, "can_administer": True},
+        ),
+        (
+            "same-row-operate-admin",
+            frozenset({ScopeCapability.OPERATE, ScopeCapability.ADMINISTER}),
+            {"can_operate": True},
+            {"can_administer": True},
+            {"can_operate": True, "can_administer": True},
+        ),
+    ],
+)
+def test_postgres_contextual_capabilities_must_share_one_current_assignment(
+    db_session, suffix, capabilities, first, second, combined
+):
+    user_id, role_id, _, code = _insert_chain(db_session, suffix)
+    branch_id = _insert_branch(db_session, suffix)
+    _assign_context(
+        db_session,
+        user_id,
+        role_id,
+        branch_id,
+        "clock_timestamp() AT TIME ZONE 'UTC' - interval '1 hour'",
+    )
+    _assign_user_branch(db_session, user_id, branch_id, **first)
+    _assign_user_branch(db_session, user_id, branch_id, **second)
+    h_op = HOpPredicate(required_capabilities=capabilities)
+
+    assert _contextual(
+        db_session, user_id, code, branch_id, h_op
+    ) is AdministrativeAuthorizationDecision.DENIED
+
+    _assign_user_branch(db_session, user_id, branch_id, **combined)
+
+    assert _contextual(
+        db_session, user_id, code, branch_id, h_op
+    ) is AdministrativeAuthorizationDecision.GRANTED
 
 
 def test_postgres_decision_is_independent_of_session_timezone(db_session):

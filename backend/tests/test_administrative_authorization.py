@@ -17,9 +17,11 @@ from app.application.administrativo.authorization import (
     AdministrativeAuthorizationMode,
     AdministrativeAuthorizationService,
     AdministrativeAuthorizationTechnicalError,
+    HOpPredicate,
     InsufficientAdministrativeAuthorization,
     ResourceAuthorizationCandidate,
     ResourceAuthorizationPath,
+    ScopeCapability,
 )
 from app.infrastructure.persistence.repositories.administrative_authorization_repository import (
     AdministrativeAuthorizationProjection,
@@ -54,9 +56,7 @@ def _projection(**overrides) -> AdministrativeAuthorizationProjection:
         "branch_active": False,
         "branch_allows_operation": False,
         "has_current_assignment": False,
-        "can_query": False,
-        "can_operate": False,
-        "can_administer": False,
+        "assignment_capabilities_satisfied": False,
     }
     values.update(overrides)
     return AdministrativeAuthorizationProjection(**values)
@@ -179,23 +179,44 @@ def test_undefined_permission_is_technical_error():
     ("projection", "expected"),
     [
         (
-            _projection(scope_identifiable=True, global_granted=True, can_query=True),
+            _projection(
+                scope_identifiable=True,
+                global_granted=True,
+                assignment_capabilities_satisfied=True,
+            ),
             AdministrativeAuthorizationDecision.GRANTED,
         ),
         (
-            _projection(scope_identifiable=True, contextual_granted=True, can_query=True),
+            _projection(
+                scope_identifiable=True,
+                contextual_granted=True,
+                assignment_capabilities_satisfied=True,
+            ),
             AdministrativeAuthorizationDecision.GRANTED,
         ),
         (
-            _projection(scope_identifiable=True, contextual_granted=True, can_query=False),
+            _projection(
+                scope_identifiable=True,
+                contextual_granted=True,
+                assignment_capabilities_satisfied=False,
+            ),
             AdministrativeAuthorizationDecision.DENIED,
         ),
         (
-            _projection(scope_identifiable=False, global_granted=True, can_query=True),
+            _projection(
+                scope_identifiable=False,
+                global_granted=True,
+                assignment_capabilities_satisfied=True,
+            ),
             AdministrativeAuthorizationDecision.DENIED,
         ),
         (
-            _projection(scope_identifiable=True, contextual_granted=True, can_query=True, denied=True),
+            _projection(
+                scope_identifiable=True,
+                contextual_granted=True,
+                assignment_capabilities_satisfied=True,
+                denied=True,
+            ),
             AdministrativeAuthorizationDecision.DENIED,
         ),
     ],
@@ -210,7 +231,9 @@ def test_explicit_context_evaluates_h_and_global_or_contextual_then_d(projection
             "p",
             mode=AdministrativeAuthorizationMode.EXPLICIT_CONTEXT,
             id_sucursal=7,
-            h_op=lambda scope: scope.can_query,
+            h_op=HOpPredicate(
+                required_capabilities=frozenset({ScopeCapability.QUERY})
+            ),
         )
     assert decision is expected
 
@@ -220,18 +243,95 @@ def test_contextual_permission_is_bound_to_selected_scope():
         "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
     ) as repository:
         repository.return_value.resolve_permission.side_effect = [
-            _projection(scope_identifiable=True, contextual_granted=True, can_query=True),
-            _projection(scope_identifiable=True, contextual_granted=False, can_query=True),
+            _projection(
+                scope_identifiable=True,
+                contextual_granted=True,
+                assignment_capabilities_satisfied=True,
+            ),
+            _projection(
+                scope_identifiable=True,
+                contextual_granted=False,
+                assignment_capabilities_satisfied=True,
+            ),
         ]
         service = AdministrativeAuthorizationService(Mock())
         assert service.authorize(
             42, "p", mode=AdministrativeAuthorizationMode.EXPLICIT_CONTEXT,
-            id_sucursal=1, h_op=lambda scope: scope.can_query,
+            id_sucursal=1,
+            h_op=HOpPredicate(
+                required_capabilities=frozenset({ScopeCapability.QUERY})
+            ),
         ) is AdministrativeAuthorizationDecision.GRANTED
         assert service.authorize(
             42, "p", mode=AdministrativeAuthorizationMode.EXPLICIT_CONTEXT,
-            id_sucursal=2, h_op=lambda scope: scope.can_query,
+            id_sucursal=2,
+            h_op=HOpPredicate(
+                required_capabilities=frozenset({ScopeCapability.QUERY})
+            ),
         ) is AdministrativeAuthorizationDecision.DENIED
+
+
+@pytest.mark.parametrize(
+    ("capabilities", "expected_requirements"),
+    [
+        (
+            frozenset({ScopeCapability.QUERY, ScopeCapability.ADMINISTER}),
+            {
+                "require_can_query": True,
+                "require_can_operate": False,
+                "require_can_administer": True,
+            },
+        ),
+        (
+            frozenset({ScopeCapability.OPERATE, ScopeCapability.ADMINISTER}),
+            {
+                "require_can_query": False,
+                "require_can_operate": True,
+                "require_can_administer": True,
+            },
+        ),
+    ],
+)
+def test_explicit_context_requires_combined_capabilities_on_one_assignment(
+    capabilities, expected_requirements
+):
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        repository.return_value.resolve_permission.side_effect = [
+            _projection(
+                scope_identifiable=True,
+                contextual_granted=True,
+                assignment_capabilities_satisfied=False,
+            ),
+            _projection(
+                scope_identifiable=True,
+                contextual_granted=True,
+                assignment_capabilities_satisfied=True,
+            ),
+        ]
+        service = AdministrativeAuthorizationService(Mock())
+        h_op = HOpPredicate(required_capabilities=capabilities)
+
+        assert service.authorize(
+            42,
+            "p",
+            mode=AdministrativeAuthorizationMode.EXPLICIT_CONTEXT,
+            id_sucursal=7,
+            h_op=h_op,
+        ) is AdministrativeAuthorizationDecision.DENIED
+        assert service.authorize(
+            42,
+            "p",
+            mode=AdministrativeAuthorizationMode.EXPLICIT_CONTEXT,
+            id_sucursal=7,
+            h_op=h_op,
+        ) is AdministrativeAuthorizationDecision.GRANTED
+
+    for call in repository.return_value.resolve_permission.call_args_list:
+        assert {
+            key: call.kwargs[key] for key in expected_requirements
+        } == expected_requirements
 
 
 def test_explicit_context_requires_declared_h_predicate():
