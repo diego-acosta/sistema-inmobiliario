@@ -17,6 +17,7 @@ class AdministrativeAuthorizationProjection:
     contextual_granted: bool
     denied: bool
     scope_identifiable: bool
+    branch_state: str | None
     branch_active: bool
     branch_allows_operation: bool
     has_current_assignment: bool
@@ -160,6 +161,11 @@ class AdministrativeAuthorizationRepository:
                     SELECT 1 FROM sucursal s
                     WHERE s.id_sucursal = CAST(:id_sucursal AS bigint)
                 ) END AS scope_identifiable,
+                CASE WHEN CAST(:id_sucursal AS bigint) IS NULL THEN NULL ELSE (
+                    SELECT s.estado_sucursal
+                    FROM sucursal s
+                    WHERE s.id_sucursal = CAST(:id_sucursal AS bigint)
+                ) END AS branch_state,
                 CASE WHEN CAST(:id_sucursal AS bigint) IS NULL THEN FALSE ELSE EXISTS (
                     SELECT 1 FROM sucursal s
                     WHERE s.id_sucursal = CAST(:id_sucursal AS bigint)

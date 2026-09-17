@@ -56,6 +56,7 @@ def _projection(**overrides) -> AdministrativeAuthorizationProjection:
         "contextual_granted": False,
         "denied": False,
         "scope_identifiable": False,
+        "branch_state": "ACTIVA",
         "branch_active": False,
         "branch_allows_operation": False,
         "has_current_assignment": False,
@@ -365,6 +366,56 @@ def test_explicit_context_requires_declared_h_predicate():
             mode=AdministrativeAuthorizationMode.EXPLICIT_CONTEXT,
             id_sucursal=1,
         )
+
+
+@pytest.mark.parametrize(
+    ("branch_state", "branch_active", "expected"),
+    [
+        ("ACTIVA", True, AdministrativeAuthorizationDecision.GRANTED),
+        ("INACTIVA", False, AdministrativeAuthorizationDecision.DENIED),
+        ("DADA_DE_BAJA", False, AdministrativeAuthorizationDecision.DENIED),
+    ],
+)
+def test_explicit_context_preserves_known_branch_states_for_h_op(
+    branch_state, branch_active, expected
+):
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        repository.return_value.resolve_permission.return_value = _projection(
+            scope_identifiable=True,
+            branch_state=branch_state,
+            branch_active=branch_active,
+            contextual_granted=True,
+        )
+        decision = AdministrativeAuthorizationService(Mock()).authorize(
+            42,
+            "p",
+            mode=AdministrativeAuthorizationMode.EXPLICIT_CONTEXT,
+            id_sucursal=7,
+            h_op=HOpPredicate(scope_predicate=lambda scope: scope.branch_active),
+        )
+
+    assert decision is expected
+
+
+def test_explicit_context_rejects_unknown_branch_state_as_technical():
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        repository.return_value.resolve_permission.return_value = _projection(
+            scope_identifiable=True,
+            branch_state="DESCONOCIDA",
+            contextual_granted=True,
+        )
+        with pytest.raises(AdministrativeAuthorizationTechnicalError):
+            AdministrativeAuthorizationService(Mock()).authorize(
+                42,
+                "p",
+                mode=AdministrativeAuthorizationMode.EXPLICIT_CONTEXT,
+                id_sucursal=7,
+                h_op=HOpPredicate(),
+            )
 
 
 def test_resource_derived_ors_paths_preserves_scope_and_filters_before_paging():

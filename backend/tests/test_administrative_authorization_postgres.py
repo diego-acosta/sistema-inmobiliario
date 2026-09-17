@@ -12,6 +12,9 @@ from app.application.administrativo.authorization import (
     HOpPredicate,
     ScopeCapability,
 )
+from app.infrastructure.persistence.repositories.administrative_authorization_repository import (
+    AdministrativeAuthorizationRepository,
+)
 from app.infrastructure.persistence.repositories.usuario_rol_seguridad_repository import (
     UsuarioRolSeguridadRepository,
 )
@@ -61,13 +64,13 @@ def _assign_global(db_session, user_id, role_id, start_sql, end_sql="NULL", dele
     )
 
 
-def _insert_branch(db_session, suffix: str) -> int:
+def _insert_branch(db_session, suffix: str, state="ACTIVA") -> int:
     return db_session.execute(
         text("""
             INSERT INTO sucursal (codigo_sucursal, nombre_sucursal, estado_sucursal)
-            VALUES (:code, :name, 'ACTIVA') RETURNING id_sucursal
+            VALUES (:code, :name, :state) RETURNING id_sucursal
         """),
-        {"code": f"SUC-{suffix}", "name": suffix},
+        {"code": f"SUC-{suffix}", "name": suffix, "state": state},
     ).scalar_one()
 
 
@@ -216,6 +219,57 @@ def test_postgres_unknown_assignment_state_is_technical_error(db_session):
                 required_capabilities=frozenset({ScopeCapability.QUERY})
             ),
         )
+
+
+@pytest.mark.parametrize(
+    ("state", "expected"),
+    [
+        ("ACTIVA", AdministrativeAuthorizationDecision.GRANTED),
+        ("INACTIVA", AdministrativeAuthorizationDecision.DENIED),
+        ("DADA_DE_BAJA", AdministrativeAuthorizationDecision.DENIED),
+    ],
+)
+def test_postgres_known_branch_states_remain_identifiable_and_feed_h_op(
+    db_session, state, expected
+):
+    suffix = f"branch-{state.lower()}"
+    user_id, role_id, _, code = _insert_chain(db_session, suffix)
+    branch_id = _insert_branch(db_session, suffix, state)
+    _assign_context(
+        db_session,
+        user_id,
+        role_id,
+        branch_id,
+        "clock_timestamp() AT TIME ZONE 'UTC' - interval '1 hour'",
+    )
+
+    projection = AdministrativeAuthorizationRepository(db_session).resolve_permission(
+        user_id, code, id_sucursal=branch_id
+    )
+    assert projection.scope_identifiable is True
+    assert projection.branch_state == state
+    assert _contextual(
+        db_session,
+        user_id,
+        code,
+        branch_id,
+        HOpPredicate(scope_predicate=lambda scope: scope.branch_active),
+    ) is expected
+
+
+def test_postgres_unknown_branch_state_is_technical_error(db_session):
+    user_id, role_id, _, code = _insert_chain(db_session, "branch-unknown")
+    branch_id = _insert_branch(db_session, "branch-unknown", "DESCONOCIDA")
+    _assign_context(
+        db_session,
+        user_id,
+        role_id,
+        branch_id,
+        "clock_timestamp() AT TIME ZONE 'UTC' - interval '1 hour'",
+    )
+
+    with pytest.raises(AdministrativeAuthorizationTechnicalError):
+        _contextual(db_session, user_id, code, branch_id, HOpPredicate())
 
 
 def test_postgres_multiple_global_roles_and_explicit_deny_precedence(db_session):

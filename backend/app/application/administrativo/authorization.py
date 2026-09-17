@@ -104,6 +104,7 @@ class AuthorizedResourcePage(Generic[ResourceT]):
 class AdministrativeAuthorizationService:
     _TECHNICAL_MESSAGE = "No fue posible resolver la autorización administrativa."
     _KNOWN_STATES = frozenset({"ACTIVO", "INACTIVO"})
+    _KNOWN_BRANCH_STATES = frozenset({"ACTIVA", "INACTIVA", "DADA_DE_BAJA"})
 
     def __init__(self, session) -> None:
         self.db = session
@@ -167,6 +168,8 @@ class AdministrativeAuthorizationService:
         elif mode is AdministrativeAuthorizationMode.EXPLICIT_CONTEXT:
             if not projection.scope_identifiable:
                 return AdministrativeAuthorizationDecision.DENIED
+            if projection.branch_state not in self._KNOWN_BRANCH_STATES:
+                raise AdministrativeAuthorizationTechnicalError(self._TECHNICAL_MESSAGE)
             scope = FunctionalScope(
                 id_sucursal=id_sucursal,
                 branch_active=projection.branch_active,
