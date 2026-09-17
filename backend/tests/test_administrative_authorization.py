@@ -76,6 +76,7 @@ def _resource_projection(**overrides) -> ResourceAuthorizationProjection:
         "global_granted": False,
         "denied": False,
         "contextual_scope_ids": frozenset(),
+        "invalid_branch_scope_ids": frozenset(),
     }
     values.update(overrides)
     return ResourceAuthorizationProjection(**values)
@@ -104,6 +105,13 @@ def test_central_selector_accepts_one_positive_bigint(value):
 def test_central_selector_rejects_absent_repeated_or_invalid_values(values):
     with pytest.raises(CentralContextHeaderError):
         parse_central_branch_selector(_request(*values))
+
+
+def test_central_selector_rejects_oversized_numeric_value_as_header_error():
+    with pytest.raises(CentralContextHeaderError) as error:
+        parse_central_branch_selector(_request("9" * 5000))
+
+    assert error.value.reason == "positive_bigint_required"
 
 
 def test_central_selector_http_error_is_contractual_and_sanitized():
@@ -561,6 +569,85 @@ def test_resource_derived_ors_paths_preserves_scope_and_filters_before_paging():
     assert page.total == 2
     assert page.items == (candidates[1],)
     assert candidates[1].persisted_scope == 1
+
+
+@pytest.mark.parametrize("branch_state", ["ACTIVA", "INACTIVA", "DADA_DE_BAJA"])
+def test_resource_derived_accepts_known_contextual_branch_states(branch_state):
+    candidate = ResourceAuthorizationCandidate(branch_state, 10)
+    path = ResourceAuthorizationPath(
+        functional=lambda _candidate: True,
+        authorization=lambda resource, evidence: evidence.contextual_granted(
+            resource.persisted_scope
+        ),
+    )
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        repository.return_value.resolve_resource_permission.return_value = (
+            _resource_projection(contextual_scope_ids=frozenset({10}))
+        )
+        page = AdministrativeAuthorizationService(Mock()).authorize_resources(
+            42, "p", [candidate], [path]
+        )
+
+    assert page.items == (candidate,)
+
+
+@pytest.mark.parametrize(
+    "projection_overrides",
+    [
+        {},
+        {"permission_state": "INACTIVO"},
+        {"denied": True},
+        {"principal_active": False},
+    ],
+)
+def test_resource_derived_rejects_unknown_branch_used_by_contextual_path(
+    projection_overrides,
+):
+    candidate = ResourceAuthorizationCandidate("corrupt", 10)
+    path = ResourceAuthorizationPath(
+        functional=lambda _candidate: True,
+        authorization=lambda resource, evidence: evidence.contextual_granted(
+            resource.persisted_scope
+        ),
+    )
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        repository.return_value.resolve_resource_permission.return_value = (
+            _resource_projection(
+                contextual_scope_ids=frozenset({10}),
+                invalid_branch_scope_ids=frozenset({10}),
+                **projection_overrides,
+            )
+        )
+        with pytest.raises(AdministrativeAuthorizationTechnicalError):
+            AdministrativeAuthorizationService(Mock()).authorize_resources(
+                42, "p", [candidate], [path]
+            )
+
+
+def test_resource_derived_does_not_validate_irrelevant_corrupt_branch():
+    candidate = ResourceAuthorizationCandidate("global", 10)
+    path = ResourceAuthorizationPath(
+        functional=lambda _candidate: True,
+        authorization=lambda _candidate, evidence: evidence.global_granted,
+    )
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        repository.return_value.resolve_resource_permission.return_value = (
+            _resource_projection(
+                global_granted=True,
+                invalid_branch_scope_ids=frozenset({10}),
+            )
+        )
+        page = AdministrativeAuthorizationService(Mock()).authorize_resources(
+            42, "p", [candidate], [path]
+        )
+
+    assert page.items == (candidate,)
 
 
 @pytest.mark.parametrize(

@@ -82,8 +82,13 @@ class ResourceAuthorizationCandidate(Generic[ResourceT]):
 class ResourceAuthorizationEvidence:
     global_granted: bool
     contextual_scope_ids: frozenset[int]
+    invalid_branch_scope_ids: frozenset[int]
 
     def contextual_granted(self, id_sucursal: int | None) -> bool:
+        if id_sucursal is not None and id_sucursal in self.invalid_branch_scope_ids:
+            raise AdministrativeAuthorizationTechnicalError(
+                AdministrativeAuthorizationService._TECHNICAL_MESSAGE
+            )
         return id_sucursal is not None and id_sucursal in self.contextual_scope_ids
 
 
@@ -225,17 +230,10 @@ class AdministrativeAuthorizationService:
         except Exception as exc:
             raise AdministrativeAuthorizationTechnicalError(self._TECHNICAL_MESSAGE) from exc
         self._validate_resource_projection(projection)
-        if (
-            not projection.principal_active
-            or projection.permission_state == "INACTIVO"
-            or projection.denied
-        ):
-            raise InsufficientAdministrativeAuthorization(
-                "La autorización efectiva es insuficiente."
-            )
         evidence = ResourceAuthorizationEvidence(
             global_granted=projection.global_granted,
             contextual_scope_ids=projection.contextual_scope_ids,
+            invalid_branch_scope_ids=projection.invalid_branch_scope_ids,
         )
         authorized: list[ResourceAuthorizationCandidate[ResourceT]] = []
         try:
@@ -246,7 +244,17 @@ class AdministrativeAuthorizationService:
                 ):
                     authorized.append(candidate)
         except Exception as exc:
+            if isinstance(exc, AdministrativeAuthorizationTechnicalError):
+                raise
             raise AdministrativeAuthorizationTechnicalError(self._TECHNICAL_MESSAGE) from exc
+        if (
+            not projection.principal_active
+            or projection.permission_state == "INACTIVO"
+            or projection.denied
+        ):
+            raise InsufficientAdministrativeAuthorization(
+                "La autorización efectiva es insuficiente."
+            )
         total = len(authorized)
         stop = None if limit is None else offset + limit
         return AuthorizedResourcePage(items=tuple(authorized[offset:stop]), total=total)

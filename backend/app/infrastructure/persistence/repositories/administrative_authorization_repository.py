@@ -34,6 +34,7 @@ class ResourceAuthorizationProjection:
     global_granted: bool
     denied: bool
     contextual_scope_ids: frozenset[int]
+    invalid_branch_scope_ids: frozenset[int]
 
 
 class AdministrativeAuthorizationRepository:
@@ -305,6 +306,14 @@ class AdministrativeAuthorizationRepository:
                     JOIN permiso_objetivo p ON p.id_permiso = d.id_permiso
                     WHERE d.id_usuario = :id_usuario
                 ) AS denied,
+                COALESCE(ARRAY(
+                    SELECT s.id_sucursal
+                    FROM sucursal s
+                    WHERE s.id_sucursal IN :scope_ids
+                      AND s.estado_sucursal NOT IN (
+                          'ACTIVA', 'INACTIVA', 'DADA_DE_BAJA'
+                      )
+                ), ARRAY[]::bigint[]) AS invalid_branch_scope_ids,
                 COALESCE(array_agg(DISTINCT urc.id_sucursal)
                     FILTER (WHERE urc.id_sucursal IS NOT NULL), ARRAY[]::bigint[])
                     AS contextual_scope_ids
@@ -338,4 +347,5 @@ class AdministrativeAuthorizationRepository:
             global_granted=row["global_granted"],
             denied=row["denied"],
             contextual_scope_ids=frozenset(row["contextual_scope_ids"]),
+            invalid_branch_scope_ids=frozenset(row["invalid_branch_scope_ids"]),
         )

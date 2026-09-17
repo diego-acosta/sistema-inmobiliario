@@ -10,6 +10,8 @@ from app.application.administrativo.authorization import (
     AdministrativeAuthorizationService,
     AdministrativeAuthorizationTechnicalError,
     HOpPredicate,
+    ResourceAuthorizationCandidate,
+    ResourceAuthorizationPath,
     ScopeCapability,
 )
 from app.infrastructure.persistence.repositories.administrative_authorization_repository import (
@@ -388,6 +390,89 @@ def test_postgres_contextual_capabilities_must_share_one_current_assignment(
     assert _contextual(
         db_session, user_id, code, branch_id, h_op
     ) is AdministrativeAuthorizationDecision.GRANTED
+
+
+@pytest.mark.parametrize("branch_state", ["ACTIVA", "INACTIVA", "DADA_DE_BAJA"])
+def test_postgres_resource_derived_accepts_known_branch_states(
+    db_session, branch_state
+):
+    suffix = f"resource-known-{branch_state.lower()}"
+    user_id, role_id, _, code = _insert_chain(db_session, suffix)
+    branch_id = _insert_branch(db_session, suffix, branch_state)
+    _assign_context(
+        db_session,
+        user_id,
+        role_id,
+        branch_id,
+        "clock_timestamp() AT TIME ZONE 'UTC' - interval '1 hour'",
+    )
+    candidate = ResourceAuthorizationCandidate(suffix, branch_id)
+    path = ResourceAuthorizationPath(
+        functional=lambda _candidate: True,
+        authorization=lambda resource, evidence: evidence.contextual_granted(
+            resource.persisted_scope
+        ),
+    )
+
+    page = AdministrativeAuthorizationService(db_session).authorize_resources(
+        user_id, code, [candidate], [path]
+    )
+
+    assert page.items == (candidate,)
+
+
+@pytest.mark.parametrize(
+    "security_condition", ["active", "permission-inactive", "deny", "principal-inactive"]
+)
+def test_postgres_resource_derived_rejects_unknown_contextual_branch(
+    db_session, security_condition
+):
+    suffix = {
+        "active": "res-unknown-active",
+        "permission-inactive": "res-unknown-perm-off",
+        "deny": "res-unknown-deny",
+        "principal-inactive": "res-unknown-user-off",
+    }[security_condition]
+    user_id, role_id, permission_id, code = _insert_chain(
+        db_session,
+        suffix,
+        permission_state=(
+            "INACTIVO" if security_condition == "permission-inactive" else "ACTIVO"
+        ),
+    )
+    branch_id = _insert_branch(db_session, suffix, "DESCONOCIDA")
+    _assign_context(
+        db_session,
+        user_id,
+        role_id,
+        branch_id,
+        "clock_timestamp() AT TIME ZONE 'UTC' - interval '1 hour'",
+    )
+    if security_condition == "deny":
+        db_session.execute(
+            text("""
+                INSERT INTO denegacion_explicita (id_usuario, id_permiso, motivo)
+                VALUES (:user_id, :permission_id, 'scope derivado corrupto')
+            """),
+            {"user_id": user_id, "permission_id": permission_id},
+        )
+    elif security_condition == "principal-inactive":
+        db_session.execute(
+            text("UPDATE usuario SET estado_usuario = 'INACTIVO' WHERE id_usuario = :id"),
+            {"id": user_id},
+        )
+    candidate = ResourceAuthorizationCandidate(suffix, branch_id)
+    path = ResourceAuthorizationPath(
+        functional=lambda _candidate: True,
+        authorization=lambda resource, evidence: evidence.contextual_granted(
+            resource.persisted_scope
+        ),
+    )
+
+    with pytest.raises(AdministrativeAuthorizationTechnicalError):
+        AdministrativeAuthorizationService(db_session).authorize_resources(
+            user_id, code, [candidate], [path]
+        )
 
 
 def test_postgres_decision_is_independent_of_session_timezone(db_session):

@@ -46,7 +46,10 @@ def parse_central_branch_selector(request: Request) -> int:
     raw_value = values[0]
     if re.fullmatch(r"[0-9]+", raw_value) is None:
         raise CentralContextHeaderError("positive_bigint_required")
-    value = int(raw_value)
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise CentralContextHeaderError("positive_bigint_required") from exc
     if value <= 0 or value > _POSTGRES_BIGINT_MAX:
         raise CentralContextHeaderError("positive_bigint_required")
     return value
