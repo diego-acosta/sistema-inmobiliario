@@ -1,3 +1,4 @@
+from app.api.administrative_authorization import CentralContextHeaderError
 from app.api.local_command_context import LocalCommandHeaderError
 from app.api.routers.administrativo_router import router as administrativo_router
 from app.api.routers.comercial_router import router as comercial_router
@@ -218,6 +219,21 @@ async def administrative_authorization_technical_error_handler(
             error_code="inconsistencia_roles_permisos",
             error_message="No fue posible resolver la autorización administrativa.",
             details={},
+        ).model_dump(),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.exception_handler(CentralContextHeaderError)
+async def central_context_header_error_handler(
+    _request: Request, exc: CentralContextHeaderError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=400,
+        content=ErrorResponse(
+            error_code="CENTRAL_CONTEXT_HEADER_INVALID",
+            error_message="El selector de contexto central es inválido.",
+            details={"header": exc.header, "reason": exc.reason},
         ).model_dump(),
         headers={"Cache-Control": "no-store"},
     )
