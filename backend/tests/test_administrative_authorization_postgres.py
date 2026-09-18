@@ -475,6 +475,88 @@ def test_postgres_resource_derived_rejects_unknown_contextual_branch(
         )
 
 
+@pytest.mark.parametrize("branch_state", ["ACTIVA", "INACTIVA", "DADA_DE_BAJA"])
+def test_postgres_resource_derived_validates_known_scope_before_global_path(
+    db_session, branch_state
+):
+    suffix = f"res-g-{branch_state.lower()}"
+    user_id, role_id, _, code = _insert_chain(db_session, suffix)
+    branch_id = _insert_branch(db_session, suffix, branch_state)
+    _assign_global(
+        db_session,
+        user_id,
+        role_id,
+        "clock_timestamp() AT TIME ZONE 'UTC' - interval '1 hour'",
+    )
+    candidate = ResourceAuthorizationCandidate(suffix, branch_id)
+    paths = [
+        ResourceAuthorizationPath(
+            functional=lambda _candidate: False,
+            authorization=lambda _candidate, _evidence: False,
+        ),
+        ResourceAuthorizationPath(
+            functional=lambda _candidate: True,
+            authorization=lambda _candidate, evidence: evidence.global_granted,
+        ),
+    ]
+
+    page = AdministrativeAuthorizationService(db_session).authorize_resources(
+        user_id, code, [candidate], paths
+    )
+
+    assert page.items == (candidate,)
+
+
+def test_postgres_resource_derived_rejects_unknown_scope_before_global_path(
+    db_session,
+):
+    suffix = "resource-global-unknown"
+    user_id, role_id, _, code = _insert_chain(db_session, suffix)
+    branch_id = _insert_branch(db_session, suffix, "DESCONOCIDA")
+    _assign_global(
+        db_session,
+        user_id,
+        role_id,
+        "clock_timestamp() AT TIME ZONE 'UTC' - interval '1 hour'",
+    )
+    candidate = ResourceAuthorizationCandidate(suffix, branch_id)
+    path = ResourceAuthorizationPath(
+        functional=lambda _candidate: True,
+        authorization=lambda _candidate, evidence: evidence.global_granted,
+    )
+
+    with pytest.raises(AdministrativeAuthorizationTechnicalError):
+        AdministrativeAuthorizationService(db_session).authorize_resources(
+            user_id, code, [candidate], [path]
+        )
+
+
+def test_postgres_resource_derived_rejects_missing_scope_before_global_path(
+    db_session,
+):
+    suffix = "resource-global-missing"
+    user_id, role_id, _, code = _insert_chain(db_session, suffix)
+    _assign_global(
+        db_session,
+        user_id,
+        role_id,
+        "clock_timestamp() AT TIME ZONE 'UTC' - interval '1 hour'",
+    )
+    missing_branch_id = db_session.execute(
+        text("SELECT COALESCE(MAX(id_sucursal), 0) + 1000000 FROM sucursal")
+    ).scalar_one()
+    candidate = ResourceAuthorizationCandidate(suffix, missing_branch_id)
+    path = ResourceAuthorizationPath(
+        functional=lambda _candidate: True,
+        authorization=lambda _candidate, evidence: evidence.global_granted,
+    )
+
+    with pytest.raises(AdministrativeAuthorizationTechnicalError):
+        AdministrativeAuthorizationService(db_session).authorize_resources(
+            user_id, code, [candidate], [path]
+        )
+
+
 def test_postgres_decision_is_independent_of_session_timezone(db_session):
     user_id, role_id, _, code = _insert_chain(db_session, "timezone")
     _assign_global(

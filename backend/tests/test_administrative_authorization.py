@@ -76,6 +76,7 @@ def _resource_projection(**overrides) -> ResourceAuthorizationProjection:
         "global_granted": False,
         "denied": False,
         "contextual_scope_ids": frozenset(),
+        "known_branch_scope_ids": frozenset(),
         "invalid_branch_scope_ids": frozenset(),
     }
     values.update(overrides)
@@ -422,6 +423,60 @@ def test_explicit_context_accepts_empty_capabilities_before_repository():
     repository.return_value.resolve_permission.assert_called_once()
 
 
+@pytest.mark.parametrize("mode", ["GLOBAL", object(), None])
+def test_invalid_mode_is_technical_before_repository(mode):
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        with pytest.raises(AdministrativeAuthorizationTechnicalError):
+            AdministrativeAuthorizationService(Mock()).authorize(
+                42, "p", mode=mode
+            )
+
+    repository.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "latent_projection",
+    [
+        _projection(principal_active=True),
+        _projection(principal_active=False),
+        _projection(permission_state="INACTIVO"),
+        _projection(denied=True),
+    ],
+)
+def test_invalid_mode_precedes_every_functional_decision(latent_projection):
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        repository.return_value.resolve_permission.return_value = latent_projection
+        with pytest.raises(AdministrativeAuthorizationTechnicalError):
+            AdministrativeAuthorizationService(Mock()).authorize(
+                42, "p", mode="INVALID"
+            )
+
+    repository.assert_not_called()
+
+
+@pytest.mark.parametrize("result", ["false", 1, object(), None])
+def test_explicit_context_requires_strict_boolean_h_op_result(result):
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        repository.return_value.resolve_permission.return_value = _projection(
+            scope_identifiable=True,
+            contextual_granted=True,
+        )
+        with pytest.raises(AdministrativeAuthorizationTechnicalError):
+            AdministrativeAuthorizationService(Mock()).authorize(
+                42,
+                "p",
+                mode=AdministrativeAuthorizationMode.EXPLICIT_CONTEXT,
+                id_sucursal=7,
+                h_op=HOpPredicate(scope_predicate=lambda _scope: result),
+            )
+
+
 def test_explicit_context_rejects_non_callable_h_before_repository():
     with patch(
         "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
@@ -561,7 +616,9 @@ def test_resource_derived_ors_paths_preserves_scope_and_filters_before_paging():
         "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
     ) as repository:
         repository.return_value.resolve_resource_permission.return_value = _resource_projection(
-            global_granted=True, contextual_scope_ids=frozenset({1})
+            global_granted=True,
+            contextual_scope_ids=frozenset({1}),
+            known_branch_scope_ids=frozenset({1, 2}),
         )
         page = AdministrativeAuthorizationService(Mock()).authorize_resources(
             42, "p", candidates, paths, offset=1, limit=1
@@ -584,7 +641,10 @@ def test_resource_derived_accepts_known_contextual_branch_states(branch_state):
         "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
     ) as repository:
         repository.return_value.resolve_resource_permission.return_value = (
-            _resource_projection(contextual_scope_ids=frozenset({10}))
+            _resource_projection(
+                contextual_scope_ids=frozenset({10}),
+                known_branch_scope_ids=frozenset({10}),
+            )
         )
         page = AdministrativeAuthorizationService(Mock()).authorize_resources(
             42, "p", [candidate], [path]
@@ -628,7 +688,7 @@ def test_resource_derived_rejects_unknown_branch_used_by_contextual_path(
             )
 
 
-def test_resource_derived_does_not_validate_irrelevant_corrupt_branch():
+def test_resource_derived_validates_persisted_scope_before_global_path():
     candidate = ResourceAuthorizationCandidate("global", 10)
     path = ResourceAuthorizationPath(
         functional=lambda _candidate: True,
@@ -643,8 +703,146 @@ def test_resource_derived_does_not_validate_irrelevant_corrupt_branch():
                 invalid_branch_scope_ids=frozenset({10}),
             )
         )
+        with pytest.raises(AdministrativeAuthorizationTechnicalError):
+            AdministrativeAuthorizationService(Mock()).authorize_resources(
+                42, "p", [candidate], [path]
+            )
+
+
+def test_resource_derived_rejects_missing_persisted_scope_before_global_path():
+    candidate = ResourceAuthorizationCandidate("global", 10)
+    path = ResourceAuthorizationPath(
+        functional=lambda _candidate: True,
+        authorization=lambda _candidate, evidence: evidence.global_granted,
+    )
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        repository.return_value.resolve_resource_permission.return_value = (
+            _resource_projection(global_granted=True)
+        )
+        with pytest.raises(AdministrativeAuthorizationTechnicalError):
+            AdministrativeAuthorizationService(Mock()).authorize_resources(
+                42, "p", [candidate], [path]
+            )
+
+
+@pytest.mark.parametrize("scope", ["1", 1.0, True, 0, -1, 9_223_372_036_854_775_808])
+def test_resource_derived_rejects_invalid_candidate_scope_before_repository(scope):
+    path = ResourceAuthorizationPath(lambda _candidate: True, lambda *_args: True)
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        with pytest.raises(AdministrativeAuthorizationTechnicalError):
+            AdministrativeAuthorizationService(Mock()).authorize_resources(
+                42, "p", [ResourceAuthorizationCandidate("r", scope)], [path]
+            )
+
+    repository.assert_not_called()
+
+
+def test_resource_derived_rejects_malformed_candidate_before_repository():
+    path = ResourceAuthorizationPath(lambda _candidate: True, lambda *_args: True)
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        with pytest.raises(AdministrativeAuthorizationTechnicalError):
+            AdministrativeAuthorizationService(Mock()).authorize_resources(
+                42, "p", [object()], [path]
+            )
+
+    repository.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        object(),
+        ResourceAuthorizationPath(functional=None, authorization=lambda *_args: True),
+        ResourceAuthorizationPath(functional=lambda _candidate: True, authorization=None),
+    ],
+)
+@pytest.mark.parametrize("candidates", [[], [ResourceAuthorizationCandidate("r", None)]])
+def test_resource_derived_rejects_invalid_paths_before_repository(path, candidates):
+    valid_path = ResourceAuthorizationPath(lambda _candidate: True, lambda *_args: True)
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        with pytest.raises(AdministrativeAuthorizationTechnicalError):
+            AdministrativeAuthorizationService(Mock()).authorize_resources(
+                42, "p", candidates, [valid_path, path]
+            )
+
+    repository.assert_not_called()
+
+
+@pytest.mark.parametrize("result", ["false", 1, object(), None])
+def test_resource_derived_requires_strict_boolean_functional_result(result):
+    candidate = ResourceAuthorizationCandidate("r", None)
+    path = ResourceAuthorizationPath(
+        functional=lambda _candidate: result,
+        authorization=lambda *_args: True,
+    )
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        repository.return_value.resolve_resource_permission.return_value = _resource_projection()
+        with pytest.raises(AdministrativeAuthorizationTechnicalError):
+            AdministrativeAuthorizationService(Mock()).authorize_resources(
+                42, "p", [candidate], [path]
+            )
+
+
+@pytest.mark.parametrize("result", ["true", 1, object(), None])
+def test_resource_derived_requires_strict_boolean_authorization_result(result):
+    candidate = ResourceAuthorizationCandidate("r", None)
+    path = ResourceAuthorizationPath(
+        functional=lambda _candidate: True,
+        authorization=lambda *_args: result,
+    )
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        repository.return_value.resolve_resource_permission.return_value = _resource_projection()
+        with pytest.raises(AdministrativeAuthorizationTechnicalError):
+            AdministrativeAuthorizationService(Mock()).authorize_resources(
+                42, "p", [candidate], [path]
+            )
+
+
+def test_resource_derived_does_not_hide_applicable_path_error_after_grant():
+    candidate = ResourceAuthorizationCandidate("r", None)
+    paths = [
+        ResourceAuthorizationPath(lambda _candidate: True, lambda *_args: True),
+        ResourceAuthorizationPath(
+            lambda _candidate: True,
+            lambda *_args: (_ for _ in ()).throw(
+                AdministrativeAuthorizationTechnicalError("path corrupto")
+            ),
+        ),
+    ]
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        repository.return_value.resolve_resource_permission.return_value = _resource_projection()
+        with pytest.raises(AdministrativeAuthorizationTechnicalError):
+            AdministrativeAuthorizationService(Mock()).authorize_resources(
+                42, "p", [candidate], paths
+            )
+
+
+def test_resource_derived_preserves_or_for_valid_mixed_paths():
+    candidate = ResourceAuthorizationCandidate("r", None)
+    paths = [
+        ResourceAuthorizationPath(lambda _candidate: False, lambda *_args: False),
+        ResourceAuthorizationPath(lambda _candidate: True, lambda *_args: True),
+    ]
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        repository.return_value.resolve_resource_permission.return_value = _resource_projection()
         page = AdministrativeAuthorizationService(Mock()).authorize_resources(
-            42, "p", [candidate], [path]
+            42, "p", [candidate], paths
         )
 
     assert page.items == (candidate,)
