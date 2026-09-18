@@ -477,6 +477,122 @@ def test_explicit_context_requires_strict_boolean_h_op_result(result):
             )
 
 
+def test_explicit_context_invalid_h_precedes_inactive_permission():
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        repository.return_value.resolve_permission.return_value = _projection(
+            scope_identifiable=True,
+            permission_state="INACTIVO",
+        )
+        with pytest.raises(AdministrativeAuthorizationTechnicalError):
+            AdministrativeAuthorizationService(Mock()).authorize(
+                42,
+                "p",
+                mode=AdministrativeAuthorizationMode.EXPLICIT_CONTEXT,
+                id_sucursal=7,
+                h_op=HOpPredicate(scope_predicate=lambda _scope: "false"),
+            )
+
+
+def test_explicit_context_h_exception_precedes_deny():
+    def broken_predicate(_scope):
+        raise RuntimeError("predicado roto")
+
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        repository.return_value.resolve_permission.return_value = _projection(
+            scope_identifiable=True,
+            denied=True,
+        )
+        with pytest.raises(AdministrativeAuthorizationTechnicalError):
+            AdministrativeAuthorizationService(Mock()).authorize(
+                42,
+                "p",
+                mode=AdministrativeAuthorizationMode.EXPLICIT_CONTEXT,
+                id_sucursal=7,
+                h_op=HOpPredicate(scope_predicate=broken_predicate),
+            )
+
+
+def test_explicit_context_invalid_h_precedes_inactive_principal():
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        repository.return_value.resolve_permission.return_value = _projection(
+            scope_identifiable=True,
+            principal_active=False,
+        )
+        with pytest.raises(AdministrativeAuthorizationTechnicalError):
+            AdministrativeAuthorizationService(Mock()).authorize(
+                42,
+                "p",
+                mode=AdministrativeAuthorizationMode.EXPLICIT_CONTEXT,
+                id_sucursal=7,
+                h_op=HOpPredicate(scope_predicate=lambda _scope: object()),
+            )
+
+
+def test_explicit_context_valid_false_h_is_functional_denial():
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        repository.return_value.resolve_permission.return_value = _projection(
+            scope_identifiable=True,
+            contextual_granted=True,
+        )
+        decision = AdministrativeAuthorizationService(Mock()).authorize(
+            42,
+            "p",
+            mode=AdministrativeAuthorizationMode.EXPLICIT_CONTEXT,
+            id_sucursal=7,
+            h_op=HOpPredicate(scope_predicate=lambda _scope: False),
+        )
+
+    assert decision is AdministrativeAuthorizationDecision.DENIED
+
+
+def test_explicit_context_valid_true_h_does_not_bypass_deny():
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        repository.return_value.resolve_permission.return_value = _projection(
+            scope_identifiable=True,
+            contextual_granted=True,
+            denied=True,
+        )
+        decision = AdministrativeAuthorizationService(Mock()).authorize(
+            42,
+            "p",
+            mode=AdministrativeAuthorizationMode.EXPLICIT_CONTEXT,
+            id_sucursal=7,
+            h_op=HOpPredicate(scope_predicate=lambda _scope: True),
+        )
+
+    assert decision is AdministrativeAuthorizationDecision.DENIED
+
+
+def test_explicit_context_missing_scope_does_not_evaluate_broken_h():
+    predicate = Mock(side_effect=RuntimeError("no debe ejecutarse"))
+    with patch(
+        "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"
+    ) as repository:
+        repository.return_value.resolve_permission.return_value = _projection(
+            scope_identifiable=False,
+        )
+        decision = AdministrativeAuthorizationService(Mock()).authorize(
+            42,
+            "p",
+            mode=AdministrativeAuthorizationMode.EXPLICIT_CONTEXT,
+            id_sucursal=7,
+            h_op=HOpPredicate(scope_predicate=predicate),
+        )
+
+    assert decision is AdministrativeAuthorizationDecision.DENIED
+    predicate.assert_not_called()
+
+
 def test_explicit_context_rejects_non_callable_h_before_repository():
     with patch(
         "app.application.administrativo.authorization.AdministrativeAuthorizationRepository"

@@ -296,6 +296,32 @@ def test_postgres_unknown_branch_state_precedes_functional_denial(
         _contextual(db_session, user_id, code, branch_id, HOpPredicate())
 
 
+def test_postgres_invalid_h_precedes_inactive_permission(db_session):
+    suffix = "invalid-h-permission-off"
+    user_id, role_id, _, code = _insert_chain(
+        db_session,
+        suffix,
+        permission_state="INACTIVO",
+    )
+    branch_id = _insert_branch(db_session, suffix)
+    _assign_context(
+        db_session,
+        user_id,
+        role_id,
+        branch_id,
+        "clock_timestamp() AT TIME ZONE 'UTC' - interval '1 hour'",
+    )
+
+    with pytest.raises(AdministrativeAuthorizationTechnicalError):
+        _contextual(
+            db_session,
+            user_id,
+            code,
+            branch_id,
+            HOpPredicate(scope_predicate=lambda _scope: "false"),
+        )
+
+
 def test_postgres_multiple_global_roles_and_explicit_deny_precedence(db_session):
     user_id, role_id, permission_id, code = _insert_chain(db_session, "multi-deny")
     _assign_global(db_session, user_id, role_id, "clock_timestamp() AT TIME ZONE 'UTC'")

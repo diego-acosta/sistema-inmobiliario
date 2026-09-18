@@ -175,14 +175,8 @@ class AdministrativeAuthorizationService:
             and projection.branch_state not in self._KNOWN_BRANCH_STATES
         ):
             raise AdministrativeAuthorizationTechnicalError(self._TECHNICAL_MESSAGE)
-        if not projection.principal_active:
-            return AdministrativeAuthorizationDecision.DENIED
-        if projection.permission_state == "INACTIVO" or projection.denied:
-            return AdministrativeAuthorizationDecision.DENIED
-
-        if mode is AdministrativeAuthorizationMode.GLOBAL:
-            granted = projection.global_granted
-        elif mode is AdministrativeAuthorizationMode.EXPLICIT_CONTEXT:
+        functional_enabled = None
+        if mode is AdministrativeAuthorizationMode.EXPLICIT_CONTEXT:
             if not projection.scope_identifiable:
                 return AdministrativeAuthorizationDecision.DENIED
             scope = FunctionalScope(
@@ -199,8 +193,19 @@ class AdministrativeAuthorizationService:
                     ),
                 )
             except Exception as exc:
-                raise AdministrativeAuthorizationTechnicalError(self._TECHNICAL_MESSAGE) from exc
+                raise AdministrativeAuthorizationTechnicalError(
+                    self._TECHNICAL_MESSAGE
+                ) from exc
             self._validate_boolean_result(functional_enabled)
+
+        if not projection.principal_active:
+            return AdministrativeAuthorizationDecision.DENIED
+        if projection.permission_state == "INACTIVO" or projection.denied:
+            return AdministrativeAuthorizationDecision.DENIED
+
+        if mode is AdministrativeAuthorizationMode.GLOBAL:
+            granted = projection.global_granted
+        else:
             granted = functional_enabled and (
                 projection.global_granted or projection.contextual_granted
             )
