@@ -256,9 +256,9 @@ class UsuarioRolSeguridadRepository(BaseRepository[Any]):
                     ) VALUES (
                         :id_usuario,
                         :id_rol_seguridad,
-                        CURRENT_TIMESTAMP,
+                        clock_timestamp() AT TIME ZONE 'UTC',
                         1,
-                        CURRENT_TIMESTAMP,
+                        clock_timestamp() AT TIME ZONE 'UTC',
                         :id_instalacion,
                         :id_instalacion,
                         :op_id,
@@ -315,9 +315,13 @@ class UsuarioRolSeguridadRepository(BaseRepository[Any]):
                 text(
                     """
                     UPDATE usuario_rol_seguridad
-                    SET fecha_hasta = COALESCE(fecha_hasta, CURRENT_TIMESTAMP),
-                        deleted_at = COALESCE(deleted_at, CURRENT_TIMESTAMP),
-                        updated_at = CURRENT_TIMESTAMP,
+                    SET fecha_hasta = COALESCE(
+                            fecha_hasta, clock_timestamp() AT TIME ZONE 'UTC'
+                        ),
+                        deleted_at = COALESCE(
+                            deleted_at, clock_timestamp() AT TIME ZONE 'UTC'
+                        ),
+                        updated_at = clock_timestamp() AT TIME ZONE 'UTC',
                         id_instalacion_ultima_modificacion = :id_instalacion,
                         op_id_ultima_modificacion = :op_id,
                         version_registro = version_registro + 1

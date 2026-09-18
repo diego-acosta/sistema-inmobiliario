@@ -36,9 +36,11 @@ queda fuera del objetivo sin sustituto persistido; LOCAL_INSTALLATION_CODE es
 transicional → retirar. X-Op-Id es condicional por idempotencia material (obligatorio
 en pagos/emisión/orquestación); If-Match-Version por CAS de snapshots existentes;
 version_registro se conserva para concurrencia, no como obligación de réplica.
-PR04 cierra **D1 contractualmente** en GEN-003 §5. El runtime general de autorización
-GLOBAL/contextual y contexto central humano todavía NO está implementado; PR05
-lo materializará. El mecanismo de actores técnicos (D2) sigue DECISIÓN ABIERTA;
+PR04 cierra **D1 contractualmente** en GEN-003 §5. PR05A materializa el evaluator
+humano único para GLOBAL, EXPLICIT_CONTEXT y RESOURCE_DERIVED, junto con el
+selector central de sucursal sin instalación. PR05B (ledger central sin instalación)
+y PR05C (migración de consumers productivos) permanecen pendientes. El mecanismo
+de actores técnicos (D2) sigue DECISIÓN ABIERTA;
 no se declara Gate 2 satisfecho.
 
 **ESTADO REAL DEL RUNTIME ACTUAL:** auth/sesión/bootstrap implementados en esta
@@ -62,6 +64,12 @@ reproducido**, no bug confirmado ni una ejecución siempre verde. El warning de
 PostgreSQL es `StarletteDeprecationWarning` por httpx/starlette.testclient, no fallo
 funcional. Estos resultados fueron aportados por el responsable; no se repitieron
 en este ajuste documental. UTC, TTL 8h y schema permanecen intactos.
+
+**Evidencia PR05A en su rama Draft:** evaluator central y tests unitarios focales:
+**30 passed, 2 warnings** con `--noconftest`; `python -m compileall -q backend/app backend/tests`
+y `git diff --check`: **PASS**. La ejecución PostgreSQL queda pendiente de un
+entorno con `localhost:5432` disponible; el intento local falló antes de recolectar
+casos por conexión rechazada y no se registra como validación funcional.
 
 **Evidencia histórica del fix HTTP UTC, previa al cambio final de semántica local/reset:**
 `2d1ff2f227babd36040c6b0a767465304e7e2d72` — Windows / PostgreSQL 18.0:
@@ -114,6 +122,8 @@ verificado el 2026-09-14. El primer slice runtime parte de ese commit; main sigu
 separado e intacto. #533 fue reverificado abierto/Draft el mismo día.
 #544 está **MERGED** a `transition/central-authority` en
 `5bcefa5a6215557eb9644c67deb7c27de2b1e671`, head base de PR04 verificado en GitHub.
+#545 está **MERGED** a `transition/central-authority` en
+`b7628b32c2dfebcb752f2daa98587875acab2547`, base verificada de PR05A.
 `main` permanece en `e51e1f50cc51b39856a43480d3005a34526808d1`.
 
 **Datos:** el responsable confirmó que la base no contiene datos útiles que deban
@@ -121,9 +131,10 @@ preservarse. Es premisa cerrada de PR04: DEV/TEST se reconstruyen; no se diseña
 migraciones in-place, backfills, dual-read ni compatibilidad para datos inexistentes.
 Si aparecen datos útiles reales en un incremento futuro, se revisará esa premisa.
 
-**Siguiente paso:** PR05 materializará el evaluador D1 y contexto humano de request,
-con la matriz de GEN-003 §5, UTC, errores y regresión de consumidores GLOBAL.
-Después, adopción coordinada de headers/replay por dominios y Flet. D2 requiere
+**Siguiente paso:** PR05B retirará instalación del ledger central y PR05C migrará
+los consumers productivos, sus headers y writes. PR05A no realiza esas migraciones:
+los cuatro consumers GLOBAL existentes sólo delegan al evaluator D1 mediante el
+helper compatible. Después continúa la adopción coordinada por dominios y Flet. D2 requiere
 incremento propio antes de automatización; no eliminar Sync sin migrar consumidores.
 
 **PRs verificados el 2026-09-11:** #540 y #541 cerrados sin merge; sus políticas no
