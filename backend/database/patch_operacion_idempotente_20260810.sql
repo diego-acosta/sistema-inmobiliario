@@ -136,8 +136,8 @@ END;$historical$,'\s','','g') THEN
             response_snapshot jsonb NOT NULL,
             id_usuario bigint NULL,
             id_sucursal bigint NULL,
-            id_instalacion bigint NOT NULL,
-            created_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            id_instalacion bigint NULL,
+            created_at timestamp without time zone NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
             CONSTRAINT operacion_idempotente_pkey PRIMARY KEY (id_operacion_idempotente),
             CONSTRAINT uq_operacion_idempotente_op_id UNIQUE (op_id),
             CONSTRAINT chk_operacion_idempotente_command_code CHECK (btrim(command_code, E' \t\n\r\f\x0B') <> ''),
@@ -297,8 +297,8 @@ BEGIN
       ('result_http_status','integer',NULL,'YES',NULL,NULL), ('result_target_uid','uuid',NULL,'YES',NULL,NULL),
       ('result_version','integer',NULL,'YES',NULL,NULL), ('response_snapshot','jsonb',NULL,'NO',NULL,NULL),
       ('id_usuario','bigint',NULL,'YES',NULL,NULL), ('id_sucursal','bigint',NULL,'YES',NULL,NULL),
-      ('id_instalacion','bigint',NULL,'NO',NULL,NULL),
-      ('created_at','timestamp without time zone',NULL,'NO','CURRENT_TIMESTAMP',NULL)
+      ('id_instalacion','bigint',NULL,'YES',NULL,NULL),
+      ('created_at','timestamp without time zone',NULL,'NO',$default$(CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)$default$,NULL)
     )
     SELECT e.name INTO bad FROM expected e
     LEFT JOIN information_schema.columns c ON c.table_schema='public'
@@ -329,7 +329,7 @@ BEGIN
       (13,'response_snapshot','jsonb'::regtype::oid,-1,true,''::char),
       (14,'id_usuario','bigint'::regtype::oid,-1,false,''::char),
       (15,'id_sucursal','bigint'::regtype::oid,-1,false,''::char),
-      (16,'id_instalacion','bigint'::regtype::oid,-1,true,''::char),
+      (16,'id_instalacion','bigint'::regtype::oid,-1,false,''::char),
       (17,'created_at','timestamp without time zone'::regtype::oid,-1,true,''::char)
     )
     SELECT e.name INTO bad FROM expected e
@@ -612,9 +612,13 @@ END;$src$,'\s','','g')
             ON i.id_instalacion=oi.id_instalacion
          WHERE (oi.id_usuario IS NOT NULL AND u.id_usuario IS NULL)
             OR (oi.id_sucursal IS NOT NULL AND s.id_sucursal IS NULL)
-            OR i.id_instalacion IS NULL
             OR (
-                oi.id_sucursal IS NOT NULL
+                oi.id_instalacion IS NOT NULL
+                AND i.id_instalacion IS NULL
+            )
+            OR (
+                oi.id_instalacion IS NOT NULL
+                AND oi.id_sucursal IS NOT NULL
                 AND i.id_sucursal IS DISTINCT FROM oi.id_sucursal
             )
          LIMIT 1

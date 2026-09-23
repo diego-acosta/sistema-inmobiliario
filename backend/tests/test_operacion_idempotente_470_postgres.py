@@ -73,6 +73,72 @@ def test_claim_complete_replay_jsonb_and_sql_order(db_session):
 
 
 @pytest.mark.parametrize(
+    ("id_sucursal", "id_instalacion"),
+    [(None, None), (1, None), (1, 1)],
+    ids=["central_global", "central_contextual", "legacy"],
+)
+def test_central_y_legacy_claim_complete_commit_replay(
+    id_sucursal, id_instalacion
+):
+    data = values(
+        id_sucursal=id_sucursal,
+        id_instalacion=id_instalacion,
+    )
+    with Session(engine) as writer:
+        assert claim_operation(writer, as_claim(data)).decision is ClaimDecision.EXECUTE
+        complete_operation(writer, OperationCompletion(**data))
+        writer.commit()
+
+    with Session(engine) as reader:
+        replay = claim_operation(reader, as_claim(data))
+        assert replay.decision is ClaimDecision.REPLAY
+        assert replay.replay.response_snapshot == data["response_snapshot"]
+        reader.rollback()
+
+
+def test_central_contextual_mantiene_fk_de_sucursal(db_session):
+    data = values(id_sucursal=999999999, id_instalacion=None)
+    with pytest.raises(UnexpectedOperationReceiptConflict):
+        complete_operation(db_session, OperationCompletion(**data))
+    db_session.rollback()
+
+
+def test_legacy_mismatch_sucursal_instalacion_sigue_rechazado(db_session):
+    installation = db_session.execute(text("""
+        SELECT id_instalacion, id_sucursal
+        FROM public.instalacion
+        ORDER BY id_instalacion
+        LIMIT 1
+    """)).one()
+    other_branch = db_session.execute(text("""
+        INSERT INTO public.sucursal (
+            codigo_sucursal, nombre_sucursal, estado_sucursal
+        ) VALUES (
+            :code, 'Sucursal ajena runtime #470', 'ACTIVA'
+        ) RETURNING id_sucursal
+    """), {"code": f"SUC_470_{uuid4().hex[:12]}"}).scalar_one()
+    assert other_branch != installation.id_sucursal
+    data = values(
+        id_sucursal=other_branch,
+        id_instalacion=installation.id_instalacion,
+    )
+    with pytest.raises(UnexpectedOperationReceiptConflict):
+        complete_operation(db_session, OperationCompletion(**data))
+    db_session.rollback()
+
+
+def test_central_payload_distinto_es_conflicto(db_session):
+    data = values(id_sucursal=None, id_instalacion=None)
+    complete_operation(db_session, OperationCompletion(**data))
+    conflict = claim_operation(
+        db_session,
+        as_claim(data, payload_hash="b" * 64),
+    )
+    assert conflict.decision is ClaimDecision.CONFLICT
+    assert conflict.conflict is ConflictKind.PAYLOAD
+
+
+@pytest.mark.parametrize(
     ("changes", "kind"),
     [
         ({"command_code": "OTHER"}, ConflictKind.COMMAND),
@@ -121,7 +187,7 @@ def test_invalid_context_is_not_semantic_conflict(db_session):
 
 
 def test_external_rollback_removes_business_and_receipt_and_allows_retry(db_session, monkeypatch):
-    data = values()
+    data = values(id_sucursal=None, id_instalacion=None)
     commits = []
     rollbacks = []
     monkeypatch.setattr(db_session, "commit", lambda: commits.append(True))

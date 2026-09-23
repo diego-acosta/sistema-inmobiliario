@@ -157,7 +157,7 @@ class OperationCompletion:
     response_snapshot: JSONValue
     id_usuario: int | None
     id_sucursal: int | None
-    id_instalacion: int
+    id_instalacion: int | None
 
     @property
     def snapshot_json(self) -> str:
