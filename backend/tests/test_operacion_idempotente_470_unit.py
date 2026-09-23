@@ -115,6 +115,20 @@ def test_dtos_are_immutable_and_have_no_fastapi_types():
     assert "fastapi" not in runtime.__dict__
 
 
+def test_completion_accepts_central_context_without_installation():
+    completion = runtime.OperationCompletion(
+        op_id=uuid4(), command_code="TEST.CREATE", target_type="TEST",
+        target_uid=None, target_key=None, payload_hash="a" * 64,
+        canonicalization_version=1, result_code="CREATED",
+        result_http_status=201, result_target_uid=None, result_version=None,
+        response_snapshot={"created": True}, id_usuario=None,
+        id_sucursal=None, id_instalacion=None,
+    )
+
+    assert completion.id_sucursal is None
+    assert completion.id_instalacion is None
+
+
 def test_advisory_keys_use_uuid_high_words_as_signed_int32():
     op_id = uuid4()
     expected = tuple(

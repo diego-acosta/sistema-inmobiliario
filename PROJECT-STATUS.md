@@ -38,8 +38,9 @@ en pagos/emisión/orquestación); If-Match-Version por CAS de snapshots existent
 version_registro se conserva para concurrencia, no como obligación de réplica.
 PR04 cierra **D1 contractualmente** en GEN-003 §5. PR05A materializa el evaluator
 humano único para GLOBAL, EXPLICIT_CONTEXT y RESOURCE_DERIVED, junto con el
-selector central de sucursal sin instalación. PR05B (ledger central sin instalación)
-y PR05C (migración de consumers productivos) permanecen pendientes. El mecanismo
+selector central de sucursal sin instalación. PR05B materializa en su rama Draft
+el ledger central sin instalación, conservando el engine y los consumers legacy;
+PR05C (migración de consumers productivos) permanece pendiente. El mecanismo
 de actores técnicos (D2) sigue DECISIÓN ABIERTA;
 no se declara Gate 2 satisfecho.
 
@@ -131,8 +132,17 @@ preservarse. Es premisa cerrada de PR04: DEV/TEST se reconstruyen; no se diseña
 migraciones in-place, backfills, dual-read ni compatibilidad para datos inexistentes.
 Si aparecen datos útiles reales en un incremento futuro, se revisará esa premisa.
 
-**Siguiente paso:** PR05B retirará instalación del ledger central y PR05C migrará
-los consumers productivos, sus headers y writes. PR05A no realiza esas migraciones:
+**Evidencia PR05B en su rama Draft:** rebuild oficial DEV/TEST **PASS** sobre
+PostgreSQL 16.15; suites focales del ledger **183 passed, 3 skipped, 1 warning**
+(los tres skips requieren PostgreSQL 18+); regresión de los consumers legacy
+**221 passed, 1 warning**. `git diff --check` y
+`python -m compileall -q backend/app backend/tests`: **PASS**. El ledger admite
+contexto central GLOBAL `(NULL, NULL)` y contextual `(id_sucursal, NULL)` sin
+alterar `UNIQUE(op_id)`, advisory lock, fingerprint, replay, conflictos,
+inmutabilidad ni el camino legacy instalación–sucursal.
+
+**Siguiente paso:** PR05C migrará los consumers productivos, sus headers y writes.
+PR05A/PR05B no realizan esas migraciones:
 los cuatro consumers GLOBAL existentes sólo delegan al evaluator D1 mediante el
 helper compatible. Después continúa la adopción coordinada por dominios y Flet. D2 requiere
 incremento propio antes de automatización; no eliminar Sync sin migrar consumidores.

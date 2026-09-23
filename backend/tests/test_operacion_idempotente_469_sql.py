@@ -156,10 +156,15 @@ def test_schema_fisico_exacto(db_session):
     }
     for name, expected in expected_types.items():
         assert (by_name[name]["data_type"], by_name[name]["character_maximum_length"]) == expected
-    nullable = {"target_uid", "target_key", "result_http_status", "result_target_uid", "result_version", "id_usuario", "id_sucursal"}
+    nullable = {
+        "target_uid", "target_key", "result_http_status", "result_target_uid",
+        "result_version", "id_usuario", "id_sucursal", "id_instalacion",
+    }
     assert {name for name, row in by_name.items() if row["is_nullable"] == "YES"} == nullable
     assert by_name["id_operacion_idempotente"]["identity_generation"] == "BY DEFAULT"
-    assert by_name["created_at"]["column_default"] == "CURRENT_TIMESTAMP"
+    assert by_name["created_at"]["column_default"] == (
+        "(CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)"
+    )
     assert all(row["column_default"] is None for name, row in by_name.items() if name not in {"created_at", "id_operacion_idempotente"})
     attributes = db_session.execute(text("""
         SELECT attnum,attname,atttypmod,attidentity,attgenerated,attisdropped
@@ -337,7 +342,7 @@ def test_unicidad_global_op_id_y_target_no_unico(db_session):
     ({"result_http_status": 599}, True), ({"result_http_status": 99}, False),
     ({"result_http_status": 600}, False), ({"result_version": None}, True),
     ({"result_version": 1}, True), ({"result_version": 0}, False), ({"result_version": -1}, False),
-    ({"id_usuario": None, "id_sucursal": None}, True), ({"id_instalacion": None}, False),
+    ({"id_usuario": None, "id_sucursal": None}, True), ({"id_instalacion": None}, True),
     ({"id_usuario": 999999999}, False), ({"id_sucursal": 999999999}, False),
     ({"id_instalacion": 999999999}, False),
 ])
@@ -358,10 +363,43 @@ def test_canonicalization_version_sin_default(db_session):
         """), {"op": uuid4(), "hash": "a" * 64, "installation": _installation(db_session)})
 
 
-def test_contexto_sucursal_instalacion_consistente_y_sucursal_opcional(db_session):
+def test_contextos_central_y_legacy_coexisten(db_session):
     installation_id, branch_id = _installation_context(db_session)
+    _insert(db_session, id_sucursal=None, id_instalacion=None)
+    _insert(db_session, id_sucursal=branch_id, id_instalacion=None)
     _insert(db_session, id_sucursal=branch_id, id_instalacion=installation_id)
     _insert(db_session, id_sucursal=None, id_instalacion=installation_id)
+
+
+def test_contexto_central_mantiene_fk_de_sucursal(db_session):
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        _insert(db_session, id_sucursal=999999999, id_instalacion=None)
+
+
+def test_patch_reejecutable_con_receipts_centrales(db_session):
+    _, branch_id = _installation_context(db_session)
+    global_receipt = _insert(
+        db_session, id_sucursal=None, id_instalacion=None
+    )
+    contextual_receipt = _insert(
+        db_session, id_sucursal=branch_id, id_instalacion=None
+    )
+
+    db_session.execute(text(_patch_body()))
+
+    persisted = db_session.execute(text("""
+        SELECT id_operacion_idempotente, id_sucursal, id_instalacion
+        FROM public.operacion_idempotente
+        WHERE id_operacion_idempotente IN (:global_id, :contextual_id)
+        ORDER BY id_operacion_idempotente
+    """), {
+        "global_id": global_receipt["id_operacion_idempotente"],
+        "contextual_id": contextual_receipt["id_operacion_idempotente"],
+    }).all()
+    assert [tuple(row) for row in persisted] == [
+        (global_receipt["id_operacion_idempotente"], None, None),
+        (contextual_receipt["id_operacion_idempotente"], branch_id, None),
+    ]
 
 
 def test_contexto_sucursal_instalacion_inconsistente_es_rechazado(db_session):
@@ -524,7 +562,12 @@ def test_migracion_helper_y_ledger_son_atomicos(db_session):
 
 def test_jsonb_timestamp_e_inmutabilidad(db_session):
     snapshot = {"nested": {"array": [True, None, "áé漢字"]}}
-    row = _insert(db_session, response_snapshot=json.dumps(snapshot, ensure_ascii=False))
+    row = _insert(
+        db_session,
+        response_snapshot=json.dumps(snapshot, ensure_ascii=False),
+        id_sucursal=None,
+        id_instalacion=None,
+    )
     assert row["response_snapshot"] == snapshot
     assert row["created_at"] is not None
     for statement in (
@@ -537,8 +580,21 @@ def test_jsonb_timestamp_e_inmutabilidad(db_session):
     assert current == "COMPLETED"
 
 
+def test_created_at_es_utc_naive_independiente_del_timezone(db_session):
+    db_session.execute(text("SET LOCAL TIME ZONE 'UTC'"))
+    utc_receipt = _insert(db_session, id_instalacion=None)
+    db_session.execute(text("SET LOCAL TIME ZONE 'America/Argentina/Buenos_Aires'"))
+    argentina_receipt = _insert(db_session, id_instalacion=None)
+
+    assert utc_receipt["created_at"] == argentina_receipt["created_at"]
+    expected_utc = db_session.execute(
+        text("SELECT CURRENT_TIMESTAMP AT TIME ZONE 'UTC'")
+    ).scalar_one()
+    assert utc_receipt["created_at"] == expected_utc
+
+
 def test_truncate_es_rechazado_y_conserva_receipts(db_session):
-    row = _insert(db_session)
+    row = _insert(db_session, id_sucursal=None, id_instalacion=None)
     with pytest.raises(DBAPIError), db_session.begin_nested():
         db_session.execute(text("TRUNCATE TABLE public.operacion_idempotente"))
     assert db_session.execute(text("""

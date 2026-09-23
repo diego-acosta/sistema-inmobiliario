@@ -17,7 +17,7 @@ from app.application.common.idempotency import (
 from app.config.database import engine
 
 
-def concurrent_case(change=None):
+def concurrent_case(change=None, *, id_sucursal=None, id_instalacion=None):
     op_id = uuid4()
     base = {
         "op_id": op_id,
@@ -44,7 +44,7 @@ def concurrent_case(change=None):
                 **base, result_code="OK", result_http_status=200,
                 result_target_uid=None, result_version=None,
                 response_snapshot={"original": True}, id_usuario=None,
-                id_sucursal=1, id_instalacion=1,
+                id_sucursal=id_sucursal, id_instalacion=id_instalacion,
             ))
             session.commit()
 
@@ -71,8 +71,24 @@ def concurrent_case(change=None):
     return outcomes
 
 
-def test_same_claim_executes_once_then_replays():
+def test_same_claim_executes_once_then_replays_central_global():
     assert sorted(result.decision for result in concurrent_case()) == [ClaimDecision.EXECUTE, ClaimDecision.REPLAY]
+
+
+def test_same_claim_executes_once_then_replays_central_contextual():
+    outcomes = concurrent_case(id_sucursal=1, id_instalacion=None)
+    assert sorted(result.decision for result in outcomes) == [
+        ClaimDecision.EXECUTE,
+        ClaimDecision.REPLAY,
+    ]
+
+
+def test_same_claim_executes_once_then_replays_legacy():
+    outcomes = concurrent_case(id_sucursal=1, id_instalacion=1)
+    assert sorted(result.decision for result in outcomes) == [
+        ClaimDecision.EXECUTE,
+        ClaimDecision.REPLAY,
+    ]
 
 
 def test_concurrent_payload_conflict():
