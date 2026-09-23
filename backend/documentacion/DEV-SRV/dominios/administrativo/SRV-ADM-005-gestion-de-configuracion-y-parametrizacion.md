@@ -362,6 +362,12 @@ CORE-EF: clasificación `QUERY_READLIKE`; headers write, `If-Match-Version`, ide
 
 ## Incremento #412 — command de servicio implementado
 
+> **Estado del bloque:** los detalles de contexto instalación+sucursal y
+> `EVT-ADM-060` que siguen en este incremento documentan el producer legacy
+> incorporado por PR #478. Quedaron reemplazados para el endpoint #412 por el
+> contrato central vigente descrito en «Estado vigente post-PR #548 — PR05C1».
+> No son requisitos runtime del PATCH central.
+
 La ruta conceptual PATCH conserva `{codigo_parametro}`, pero el router futuro debe
 declarar `.../parametros/{codigo_parametro:path}/valor-global`. El convertidor interno
 `:path` entrega el identificador decodificado completo, incluidos uno o varios `/`,
@@ -717,19 +723,53 @@ remotos, reconciliación, migración masiva heredada y cleanup global de
 `X-Usuario-Id`. #412 es el primer write administrativo autenticado sin ese header y
 un incremento de #461; cerrarlo no cerrará #461 ni #402.
 
-## Estado vigente post-PR #478 — cierre #413
+## Estado vigente post-PR #548 — PR05C1
 
-El estado operativo vigente de configuración es: #407–#412 **IMPLEMENTADOS** y #412 cerrado/completado mediante PR #478. Las referencias anteriores a un router, tests, permiso, seed, idempotencia u outbox “futuros” describen el diseño incremental previo al merge y no niegan este estado.
+El estado operativo vigente de configuración es: #407–#412 **IMPLEMENTADOS**. PR
+#548 migró #412 al contexto central GLOBAL; las referencias anteriores al contexto
+instalación+sucursal y al producer `EVT-ADM-060` describen el contrato legacy de PR
+#478 y no rigen el PATCH central.
 
 #407 lista definiciones (`QUERY_READLIKE`) y #411 consulta exactamente/case-sensitive el valor GLOBAL marcado vigente (`QUERY_READLIKE`), con 404 indistinguible para inexistente/no exponible/sensible, 409 para definición no GLOBAL, estados `SIN_VALOR`/`CON_VALOR_MARCADO_VIGENTE`, tipado estricto `ENTERO` y `Cache-Control: no-store`. Ninguno muta ni requiere headers write. #411 es administrativo no público por intención, pero hoy no tiene dependency Bearer ni permiso; #461/follow-up deberá resolver esa deuda sin inventarla en este contrato.
 
-#412 es `COMMAND_WRITE_NEGOCIO` update-only, autenticado por Bearer, y requiere el permiso global activo `ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR`. La autorización se concede cuando el principal posee ese permiso mediante cualquier rol activo aplicable. La identidad humana deriva sólo de `AuthenticatedPrincipal.id_usuario`; `X-Usuario-Id` no se requiere, parsea, compara ni usa. `ADMINISTRADOR_SISTEMA` es el receptor canónico sembrado por un prerequisito independiente y #412 crea/valida su vínculo con el permiso, pero el código de rol no forma parte de la condición runtime; no hay rol mágico `ADMIN` ni autoasignación.
+#412 es `COMMAND_WRITE_NEGOCIO` update-only, autenticado por Bearer, y requiere D1
+GLOBAL con el permiso activo `ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR`. La identidad
+humana deriva sólo de `AuthenticatedPrincipal.id_usuario`; `X-Usuario-Id` no se
+requiere, parsea, compara ni usa. `ADMINISTRADOR_SISTEMA` es el receptor canónico
+sembrado por un prerequisito independiente, pero el código de rol no forma parte de
+la condición runtime; no hay rol mágico `ADMIN` ni autoasignación.
 
-Exige `X-Op-Id`, `X-Sucursal-Id`, `X-Instalacion-Id` e `If-Match-Version`. El pre-claim valida sólo estructura; contexto DB sólo se valida en `EXECUTE`, no durante replay. #470 está implementado y #412 es su primer consumidor productivo sin ledger administrativo paralelo: replay usa `response_snapshot` durable, y conflictos se distinguen en `COMMAND`, `TARGET` y `PAYLOAD`.
+Exige `X-Op-Id` e `If-Match-Version`. No requiere ni usa `X-Sucursal-Id` o
+`X-Instalacion-Id`; si llegan como headers legacy adicionales, no influyen en
+autorización, fingerprint, ledger ni negocio. El scope efectivo es GLOBAL con
+`id_sucursal = NULL` y la instalación no participa.
 
-En `EXECUTE`, el target se bloquea `FOR UPDATE` y la versión se valida bajo lock; mismatch devuelve 412 `CONCURRENCY_ERROR`. Igualdad tipada (`"015"`/15, `"-0"`/0, `"000"`/0) produce no-op 200 con receipt durable, sin UPDATE, bump, timestamp ni evento. El cambio material usa CAS por PK `id_valor_parametro` y `version_registro`. Claim, contexto, lock, no-op/CAS, EVT-ADM-060 material, completion y commit exterior comparten Session/transacción; rollback revierte negocio, procedencia, versión, timestamps, outbox y receipt, y retry sin receipt vuelve a `EXECUTE`.
+El orden vigente es: Bearer → D1 GLOBAL → validación estable y visible/editable del
+target → fingerprint central → `claim_operation`/replay → lock `FOR UPDATE` →
+revalidación del target → CAS o no-op → `complete_operation` → commit exterior. D1
+y el preflight del target ocurren antes de exponer replay; la revalidación bajo lock
+cierra TOCTOU.
 
-EVT-ADM-060 está implementado: `valor_parametro_modificado`/`valor_parametro`, aggregate_id local, `PENDING`, envelope metadata/data, `uid_instalacion_origen`, identidad portable `data.uid_global`, hash RFC 8785 + SHA-256 lowercase y UTC aware normalizado a storage naive UTC. Sólo el cambio material emite uno; no-op y replay emiten cero.
+El fingerprint conserva RFC 8785, SHA-256, la versión de canonicalización y la
+precedencia de conflictos `COMMAND` → `TARGET` → `PAYLOAD`. Su intención conceptual
+es `actor = {type: HUMAN, id_usuario: principal.id_usuario}`, `scope = {mode:
+GLOBAL, id_sucursal: null}` y `payload = {codigo_parametro, valor_tipado,
+if_match_version}`. No incluye Bearer, sesión, sucursal legacy ni instalación. El
+ledger completa con `id_usuario = principal.id_usuario`, `id_sucursal = NULL` e
+`id_instalacion = NULL`.
+
+En `EXECUTE`, el target se bloquea `FOR UPDATE` y la versión se valida bajo lock;
+mismatch devuelve 412 `CONCURRENCY_ERROR`. Igualdad tipada (`"015"`/15,
+`"-0"`/0, `"000"`/0) produce no-op 200 con receipt durable, sin UPDATE, bump ni
+timestamp. El cambio material usa CAS por PK `id_valor_parametro` y
+`version_registro`. Claim, lock, no-op/CAS, completion y commit exterior comparten
+Session/transacción; rollback revierte negocio, procedencia, versión, timestamps y
+receipt, y retry sin receipt vuelve a `EXECUTE`.
+
+El PATCH central no produce `EVT-ADM-060` ni otro outbox Sync. El evento permanece
+catalogado como contrato histórico del producer legacy de #412; no se modifica la
+policy de sincronización ni el framework outbox. Tanto el cambio material como el
+no-op y el replay producen cero eventos desde este consumer central.
 
 `PRUEBA_ADMIN_VALOR_GLOBAL_ENTERO` es seed técnico controlado `ENTERO`/`GLOBAL`, exponible, no sensible, editable y con valor inicial `"15"`; soporta reproducibilidad DEV/TEST y no constituye configuración funcional ni #425. #425, #435, #461 y #265 permanecen separados, junto con secretos, CRUD genérico, UI, consumers remotos, reconciliación y resolución temporal general.
 

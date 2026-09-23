@@ -562,7 +562,8 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 - genera_trazabilidad_administrativa: sí
 
 ### EVT-ADM-060 — Valor de parámetro modificado
-- estado_runtime: IMPLEMENTADO por #412 / PR #478.
+- estado_runtime: LEGACY; implementado históricamente por #412 / PR #478, pero el
+  PATCH central migrado por PR #548 no lo produce.
 - codigo: valor_parametro_modificado
 - descripcion: se actualizó un valor de parámetro existente.
 - origen_principal: SRV-ADM-005
@@ -570,7 +571,14 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 - tipo_evento: negocio
 - sincronizable: sí
 - genera_trazabilidad_administrativa: sí
-- contrato #412: se emite exactamente una vez sólo cuando `EXECUTE` produce cambio material mediante CAS; el cambio se determina comparando los enteros tipados tras aplicar al `valor_raw` el parser `-?[0-9]+` + `int(...)` de #411, no comparando representaciones textuales. No se emite para igualdad tipada —incluidos `"015"`/15 y `"-0"`/0—, `REPLAY`, `CONFLICT` ni CAS mismatch. `event_type = valor_parametro_modificado`, `aggregate_type = valor_parametro`, `aggregate_id = valor_parametro.id_valor_parametro` sólo como key local interna. La implementación registra `_p("valor_parametro_modificado", "valor_parametro")` en la `SYNC_EVENT_POLICIES` default-deny, sin campos positivos locales obligatorios. `outbox_event.payload` contiene `{metadata, data}`: `metadata` incluye `uid_instalacion_origen = instalacion.uid_global` y `payload_hash`; `data` incluye `uid_global`, `codigo_parametro`, `valor_anterior = str(valor_actual_tipado)` y `valor_nuevo = str(valor_tipado)`, `version_anterior`, `version_registro` y `op_id`. Ambos valores son decimales ASCII canónicos, no variantes raw locales. El hash es SHA-256 lowercase de RFC 8785 aplicado a `hash_input = {"metadata": {"uid_instalacion_origen": uid_instalacion_origen}, "data": data}`; cubre origen y datos, pero nunca el envelope final autorreferencial, y es distinto del fingerprint de request #470. `data.uid_global` es la identidad portable; ningún ID numérico local se distribuye. El envelope completo se persiste en la misma transacción que CAS y receipt; `processing_metadata` no se usa para identidad/integridad de origen. Inmediatamente antes de `add_event`, una sola captura `occurred_at_utc = datetime.now(UTC)` se normaliza a `occurred_at = occurred_at_utc.replace(tzinfo=None)`; la fuente es aware UTC y el storage es naive UTC independiente del timezone de sesión. No deriva de `valor_parametro.updated_at` ni integra payload/hash. El evento nace `PENDING`.
+- contrato histórico legacy de #412: se emitía exactamente una vez cuando `EXECUTE`
+  producía cambio material mediante CAS; no se emitía para igualdad tipada,
+  `REPLAY`, `CONFLICT` ni CAS mismatch. Conservaba
+  `event_type = valor_parametro_modificado`, `aggregate_type = valor_parametro`,
+  identidad portable `data.uid_global`, origen de instalación y hash RFC 8785 +
+  SHA-256. Este contrato queda sólo como referencia histórica. El PATCH central
+  GLOBAL no emite este evento para cambio material, no-op ni replay. La policy de
+  sincronización y otros producers no se modifican por PR #548.
 
 ### EVT-ADM-061 — Vigencia de valor de parámetro cerrada
 - codigo: valor_parametro_vigencia_cerrada

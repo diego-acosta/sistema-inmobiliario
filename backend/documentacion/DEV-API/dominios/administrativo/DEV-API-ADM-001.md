@@ -884,6 +884,11 @@ No expone `deleted_at`, contexto, op IDs, `exponible_api_administrativa`, `es_se
 
 ## Incremento #412 — update GLOBAL implementado
 
+> **Estado del bloque:** los detalles posteriores de headers
+> instalación+sucursal, procedencia y `EVT-ADM-060` describen el contrato legacy
+> incorporado por PR #478. Para el endpoint #412 fueron reemplazados por el contrato
+> central vigente de «Cierre documental PR05C1 — estado post-PR #548».
+
 `PATCH /api/v1/administrativo/configuracion/parametros/{codigo_parametro}/valor-global`
 queda congelado como `COMMAND_WRITE_NEGOCIO`, update-only de un único
 `valor_parametro` GLOBAL vigente existente. No es `PUT`, creación ni UPSERT.
@@ -1308,11 +1313,41 @@ vacío y `Cache-Control: no-store`, sin código de permiso ni información inter
 `QUERY_READLIKE`; no aplican headers write, idempotencia, outbox, locks, versionado o
 sync. Estado al cierre de este incremento: #461 (migración), #412 (primer command) y #435 (contexto) seguían pendientes. El estado vigente de #412 se documenta a continuación.
 
-## Cierre documental #413 — estado vigente post-PR #478
+## Cierre documental PR05C1 — estado vigente post-PR #548
 
 #407 y #411 son `QUERY_READLIKE` implementados. El inventario `GET /api/v1/administrativo/configuracion/parametros` devuelve definiciones, tipo y alcance en orden estable, sin valores ni metadata interna y sin headers write. El GET individual selecciona el código exacto/case-sensitive, aplica exposición/no sensibilidad, usa 404 indistinguible y 409 para no GLOBAL, devuelve `SIN_VALOR` o `CON_VALOR_MARCADO_VIGENTE` con `ENTERO` raw/tipado, UID, versión y timestamps, y envía `Cache-Control: no-store`; no resuelve tiempo, contexto, overrides ni fallback. Aunque es administrativo no público por intención, el router vigente de #411 no usa Bearer ni permiso; esa deuda pertenece a #461/follow-up.
 
-#412 está **IMPLEMENTADO** por PR #478 como `PATCH /api/v1/administrativo/configuracion/parametros/{codigo_parametro:path}/valor-global`, `COMMAND_WRITE_NEGOCIO` y update-only. Requiere Bearer, permiso `ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR`, `X-Op-Id`, `X-Sucursal-Id`, `X-Instalacion-Id` e `If-Match-Version`. La identidad procede exclusivamente de `AuthenticatedPrincipal.id_usuario`; `X-Usuario-Id` no se requiere, parsea, compara ni usa. La idempotencia #470, replay durable, lock `FOR UPDATE`, versión bajo lock, no-op tipado, CAS por PK+versión, transacción/rollback únicos y EVT-ADM-060 material están implementados según el contrato detallado de esta sección. Replay y no-op no generan eventos nuevos; replay tampoco consulta estado mutable ni incrementa versión.
+#412 está **IMPLEMENTADO** como
+`PATCH /api/v1/administrativo/configuracion/parametros/{codigo_parametro:path}/valor-global`,
+`COMMAND_WRITE_NEGOCIO` y update-only. PR #548 lo migró al contexto central: requiere
+`Authorization: Bearer`, D1 GLOBAL con
+`ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR`, `X-Op-Id` e `If-Match-Version`. No
+requiere ni usa `X-Sucursal-Id`, `X-Instalacion-Id` o `X-Usuario-Id`; si un cliente
+envía esos headers legacy adicionales, se ignoran y no influyen en autenticación,
+fingerprint, ledger ni negocio. La identidad humana procede exclusivamente de
+`AuthenticatedPrincipal.id_usuario`.
+
+El orden runtime es Bearer → D1 GLOBAL → preflight estable del target → fingerprint
+central → claim/replay → lock `FOR UPDATE` → revalidación del target → CAS/no-op →
+completion → commit. Por ello una revocación vigente impide replay y un target que
+ya no es visible/editable no crea ni expone receipt; la revalidación bajo lock cierra
+TOCTOU. CAS mismatch conserva 412, replay usa el snapshot durable y rollback revierte
+atómicamente mutación y receipt.
+
+El fingerprint conserva RFC 8785, SHA-256, la versión de canonicalización y la
+precedencia `COMMAND` → `TARGET` → `PAYLOAD`. Incluye conceptualmente
+`actor = {type: HUMAN, id_usuario}`, `scope = {mode: GLOBAL, id_sucursal: null}` y
+`payload = {codigo_parametro, valor_tipado, if_match_version}`. No incluye Bearer,
+sesión, sucursal legacy ni instalación. La completion persiste
+`id_usuario = principal.id_usuario`, `id_sucursal = NULL` e
+`id_instalacion = NULL`. El PATCH central no produce `EVT-ADM-060` ni otro outbox
+Sync.
+
+El cambio de fingerprint es intencional: actor y scope forman parte de la intención
+idempotente central. Esta transición no soporta rollout ni migración in-place de
+receipts legacy; DEV/TEST se reconstruyen desde cero porque no existen datos útiles
+que preservar. Si aparecieran datos útiles, el despliegue debe detenerse y diseñar
+una migración específica antes de cambiar el contrato.
 
 La autorización runtime exige el permiso activo `ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR`, concedido mediante cualquier rol activo aplicable. El permiso se vincula al rol canónico prerequisito `ADMINISTRADOR_SISTEMA`, pero ese código de rol no es una condición exclusiva; #412 no crea ese rol, un rol `ADMIN` alternativo ni asignaciones de usuarios. El seed técnico `PRUEBA_ADMIN_VALOR_GLOBAL_ENTERO` (`ENTERO`, `GLOBAL`, exponible, no sensible, editable, valor inicial `"15"`) es sólo soporte reproducible DEV/TEST, no configuración funcional.
 
@@ -1323,19 +1358,17 @@ La autorización runtime exige el permiso activo `ADMIN.CONFIG.PARAMETRO_GLOBAL.
 #482 no crea endpoints propios del agregado: aún no existen GET calendario, POST
 bootstrap ni PUT de programación; sus contratos pertenecen a #483–#485. Sí
 modifica el PATCH existente de #412, que conserva clasificación
-`COMMAND_WRITE_NEGOCIO`, Bearer, `X-Op-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`,
-`If-Match-Version`, identidad exclusiva desde `AuthenticatedPrincipal.id_usuario`
-y autorización `ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR`; no usa
-`X-Usuario-Id`. Mantiene idempotencia #470 en `operacion_idempotente`, lock/CAS y
-EVT-ADM-060 para updates materiales genéricos permitidos.
+`COMMAND_WRITE_NEGOCIO`, Bearer, `X-Op-Id`, `If-Match-Version`, identidad exclusiva
+desde `AuthenticatedPrincipal.id_usuario` y D1 GLOBAL con
+`ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR`. No usa `X-Usuario-Id`,
+`X-Sucursal-Id` ni `X-Instalacion-Id`. Mantiene idempotencia #470 en
+`operacion_idempotente` y lock/CAS; el consumer central no emite EVT-ADM-060.
 
 El PATCH individual de #412 no aplica a `DIA_CIERRE_COMERCIAL` ni a
 `DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS`: devuelve el error público existente
 `409 conflicto_parametro` para una operación nueva, sin depender de qué rol originó
-el grant. Antes del boundary consulta el ledger durable #470: un receipt compatible
-se replayea y un uso incompatible conserva el conflicto idempotente. Sólo una decisión
-`EXECUTE` se rechaza, antes de contexto, lookup mutable, lock, CAS, outbox, completion
-o cualquier mutación; no crea receipt ni incrementa versión. Esta exclusión no
+el grant. La reserva se valida en el preflight estable antes del fingerprint y del
+claim; no se expone replay ni se crea receipt para ese target. Esta exclusión no
 implementa un endpoint de calendario; reserva las modificaciones para el futuro
 agregado #425 y no vuelve `NO APLICA` el CORE-EF general de #412.
 
