@@ -38,9 +38,10 @@ en pagos/emisión/orquestación); If-Match-Version por CAS de snapshots existent
 version_registro se conserva para concurrencia, no como obligación de réplica.
 PR04 cierra **D1 contractualmente** en GEN-003 §5. PR05A materializa el evaluator
 humano único para GLOBAL, EXPLICIT_CONTEXT y RESOURCE_DERIVED, junto con el
-selector central de sucursal sin instalación. PR05B materializa en su rama Draft
+selector central de sucursal sin instalación. PR05B está integrado y materializa
 el ledger central sin instalación, conservando el engine y los consumers legacy;
-PR05C (migración de consumers productivos) permanece pendiente. El mecanismo
+PR05C inicia la migración de consumers productivos con el PATCH de parámetro
+GLOBAL, mientras los writes de calendario permanecen pendientes. El mecanismo
 de actores técnicos (D2) sigue DECISIÓN ABIERTA;
 no se declara Gate 2 satisfecho.
 
@@ -141,11 +142,16 @@ contexto central GLOBAL `(NULL, NULL)` y contextual `(id_sucursal, NULL)` sin
 alterar `UNIQUE(op_id)`, advisory lock, fingerprint, replay, conflictos,
 inmutabilidad ni el camino legacy instalación–sucursal.
 
-**Siguiente paso:** PR05C migrará los consumers productivos, sus headers y writes.
-PR05A/PR05B no realizan esas migraciones:
-los cuatro consumers GLOBAL existentes sólo delegan al evaluator D1 mediante el
-helper compatible. Después continúa la adopción coordinada por dominios y Flet. D2 requiere
-incremento propio antes de automatización; no eliminar Sync sin migrar consumidores.
+**Adopción productiva central:** PR05C1 migra el PATCH administrativo de valor de
+parámetro GLOBAL: Bearer/principal y D1 preceden target/claim/replay; el fingerprint
+incluye actor humano y scope GLOBAL NULL; receipt y procedencia no requieren
+sucursal ni instalación; el command conserva CAS, replay, rollback y no-op, sin
+emitir el outbox legacy `valor_parametro_modificado`. El GET de calendario ya era
+GLOBAL central y queda cubierto por regresión. POST/PUT de calendario conservan
+headers, procedencia y outbox legacy por su frontera activa con Sync; PR05C2 queda
+pendiente y no se declara calendario write migrado. Después continúa la adopción
+coordinada por dominios y Flet. D2 requiere incremento propio antes de
+automatización; no eliminar Sync sin migrar consumidores.
 
 **PRs verificados el 2026-09-11:** #540 y #541 cerrados sin merge; sus políticas no
 se reincorporan automáticamente. #533 abierto/Draft e intacto; se reconciliará

@@ -1,5 +1,42 @@
 import pytest
-from app.api.core_ef_headers import CoreEFHeaderValidationError, parse_core_ef_headers
+from app.api.core_ef_headers import (
+    CoreEFHeaderValidationError,
+    parse_central_command_metadata,
+    parse_core_ef_headers,
+)
+
+
+def test_parse_central_command_metadata_sin_contexto_legacy() -> None:
+    metadata = parse_central_command_metadata(
+        "550e8400-e29b-41d4-a716-446655440000",
+        "7",
+        require_if_match_version=True,
+    )
+
+    assert str(metadata.op_id) == "550e8400-e29b-41d4-a716-446655440000"
+    assert metadata.expected_version == 7
+
+
+@pytest.mark.parametrize(
+    ("op_id", "version", "header"),
+    [
+        (None, "7", "X-Op-Id"),
+        ("invalid", "7", "X-Op-Id"),
+        ("550e8400-e29b-41d4-a716-446655440000", None, "If-Match-Version"),
+        ("550e8400-e29b-41d4-a716-446655440000", "0", "If-Match-Version"),
+    ],
+)
+def test_parse_central_command_metadata_rechaza_headers_invalidos(
+    op_id, version, header
+) -> None:
+    with pytest.raises(CoreEFHeaderValidationError) as exc_info:
+        parse_central_command_metadata(
+            op_id,
+            version,
+            require_if_match_version=True,
+        )
+
+    assert exc_info.value.header_name == header
 
 
 def test_parse_core_ef_headers_validos() -> None:

@@ -1,4 +1,3 @@
-from copy import deepcopy
 from datetime import UTC, datetime
 from unittest.mock import patch
 from urllib.parse import quote
@@ -30,9 +29,9 @@ ENDPOINT_TEMPLATE = "/api/v1/administrativo/configuracion/parametros/{}/valor-gl
 ENDPOINT = ENDPOINT_TEMPLATE.format(CODE)
 
 
-def _principal():
+def _principal(id_usuario=1):
     return AuthenticatedPrincipal(
-        id_usuario=1,
+        id_usuario=id_usuario,
         codigo_usuario="USR-TEST",
         login="test",
         id_sesion=uuid4(),
@@ -44,8 +43,6 @@ def _principal():
 def _headers(op_id=None, version=1, **overrides):
     headers = {
         "X-Op-Id": str(op_id or uuid4()),
-        "X-Sucursal-Id": "1",
-        "X-Instalacion-Id": "1",
         "If-Match-Version": str(version),
     }
     headers.update(overrides)
@@ -137,7 +134,21 @@ def _assert_header_error(response, header):
     assert body["details"]["header"] == header
 
 
-def _complete_legacy_calendar_receipt(
+def _central_fingerprint(*, code, value, version, id_usuario=1):
+    return canonical_payload_hash(
+        {
+            "actor": {"type": "HUMAN", "id_usuario": id_usuario},
+            "scope": {"mode": "GLOBAL", "id_sucursal": None},
+            "payload": {
+                "codigo_parametro": code,
+                "valor": str(value),
+                "if_match_version": version,
+            },
+        }
+    )
+
+
+def _complete_calendar_receipt(
     db_session, *, op_id, code, value, version, snapshot
 ):
     complete_operation(
@@ -148,12 +159,8 @@ def _complete_legacy_calendar_receipt(
             target_type="VALOR_PARAMETRO",
             target_uid=None,
             target_key=code,
-            payload_hash=canonical_payload_hash(
-                {
-                    "codigo_parametro": code,
-                    "valor_tipado": str(value),
-                    "if_match_version": version,
-                }
+            payload_hash=_central_fingerprint(
+                code=code, value=value, version=version
             ),
             canonicalization_version=1,
             result_code="PARAMETRO_GLOBAL_MODIFICADO",
@@ -162,8 +169,8 @@ def _complete_legacy_calendar_receipt(
             result_version=version + 1,
             response_snapshot=snapshot,
             id_usuario=1,
-            id_sucursal=1,
-            id_instalacion=1,
+            id_sucursal=None,
+            id_instalacion=None,
         ),
     )
     db_session.commit()
@@ -192,10 +199,14 @@ def test_command_generico_excluye_agregado_calendario_para_toda_autorizacion(
     op_id = uuid4()
     endpoint = ENDPOINT_TEMPLATE.format(calendar_code)
     with (
-        patch.object(ValorParametroGlobalCommandRepository, "validate_context") as context,
-        patch.object(ValorParametroGlobalCommandRepository, "find_target") as find_target,
+        patch.object(
+            ValorParametroGlobalCommandRepository, "preflight_target"
+        ) as preflight_target,
         patch.object(ValorParametroGlobalCommandRepository, "lock_target") as lock_target,
         patch.object(ValorParametroGlobalCommandRepository, "cas_update") as cas_update,
+        patch(
+            "app.application.administrativo.services.actualizar_valor_parametro_global_service.claim_operation"
+        ) as claim,
         patch.object(db_session, "rollback"),
         patch(
             "app.application.administrativo.services.actualizar_valor_parametro_global_service.complete_operation"
@@ -211,10 +222,10 @@ def test_command_generico_excluye_agregado_calendario_para_toda_autorizacion(
     assert response.json()["error_code"] == "conflicto_parametro"
     assert dict(_row(db_session, calendar_code)) == before
     assert _effects(db_session, op_id) == (0, 0)
-    context.assert_not_called()
-    find_target.assert_not_called()
+    preflight_target.assert_not_called()
     lock_target.assert_not_called()
     cas_update.assert_not_called()
+    claim.assert_not_called()
     complete.assert_not_called()
 
 
@@ -222,7 +233,7 @@ def test_command_generico_excluye_agregado_calendario_para_toda_autorizacion(
     "calendar_code",
     ["DIA_CIERRE_COMERCIAL", "DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS"],
 )
-def test_replay_legacy_calendario_precede_boundary_sin_consultar_negocio(
+def test_receipt_no_permite_replay_de_parametro_reservado_calendario(
     client, db_session, calendar_code
 ):
     op_id = uuid4()
@@ -236,7 +247,7 @@ def test_replay_legacy_calendario_precede_boundary_sin_consultar_negocio(
             "updated_at": "2026-08-14T12:00:00",
         },
     }
-    _complete_legacy_calendar_receipt(
+    _complete_calendar_receipt(
         db_session,
         op_id=op_id,
         code=calendar_code,
@@ -244,29 +255,25 @@ def test_replay_legacy_calendario_precede_boundary_sin_consultar_negocio(
         version=1,
         snapshot=snapshot,
     )
-    with (
-        patch.object(ValorParametroGlobalCommandRepository, "validate_context") as context,
-        patch(
-            "app.application.administrativo.services.actualizar_valor_parametro_global_service.complete_operation"
-        ) as complete,
-    ):
+    with patch(
+        "app.application.administrativo.services.actualizar_valor_parametro_global_service.claim_operation"
+    ) as claim:
         response = _request(
             client,
             16,
             headers=_headers(op_id, 1),
             endpoint=ENDPOINT_TEMPLATE.format(calendar_code),
         )
-    assert response.status_code == 200
-    assert response.json() == snapshot
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "conflicto_parametro"
     assert _effects(db_session, op_id) == (0, 1)
-    context.assert_not_called()
-    complete.assert_not_called()
+    claim.assert_not_called()
 
 
-def test_conflicto_payload_legacy_calendario_precede_boundary(client, db_session):
+def test_parametro_reservado_precede_conflicto_payload(client, db_session):
     code = "DIA_CIERRE_COMERCIAL"
     op_id = uuid4()
-    _complete_legacy_calendar_receipt(
+    _complete_calendar_receipt(
         db_session,
         op_id=op_id,
         code=code,
@@ -274,9 +281,9 @@ def test_conflicto_payload_legacy_calendario_precede_boundary(client, db_session
         version=1,
         snapshot={"ok": True},
     )
-    with patch.object(
-        ValorParametroGlobalCommandRepository, "validate_context"
-    ) as context:
+    with patch(
+        "app.application.administrativo.services.actualizar_valor_parametro_global_service.claim_operation"
+    ) as claim:
         response = _request(
             client,
             16,
@@ -284,9 +291,9 @@ def test_conflicto_payload_legacy_calendario_precede_boundary(client, db_session
             endpoint=ENDPOINT_TEMPLATE.format(code),
         )
     assert response.status_code == 409
-    assert response.json()["error_code"] == "IDEMPOTENCY_PAYLOAD_CONFLICT"
+    assert response.json()["error_code"] == "conflicto_parametro"
     assert _effects(db_session, op_id) == (0, 1)
-    context.assert_not_called()
+    claim.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -312,14 +319,6 @@ def test_x_op_id_failure_paths_before_claim(client, db_session, value, missing):
 @pytest.mark.parametrize(
     ("header", "value"),
     [
-        ("X-Sucursal-Id", None),
-        ("X-Sucursal-Id", "0"),
-        ("X-Sucursal-Id", "-1"),
-        ("X-Sucursal-Id", "abc"),
-        ("X-Instalacion-Id", None),
-        ("X-Instalacion-Id", "0"),
-        ("X-Instalacion-Id", "-1"),
-        ("X-Instalacion-Id", "abc"),
         ("If-Match-Version", None),
         ("If-Match-Version", "0"),
         ("If-Match-Version", "-1"),
@@ -340,6 +339,99 @@ def test_each_required_technical_header_failure_is_identifiable(
     ) as claim:
         response = _request(client, 16, headers=headers)
     _assert_header_error(response, header)
+    claim.assert_not_called()
+    assert _effects(db_session) == (0, 0)
+
+
+def test_headers_legacy_extra_no_influyen_en_negocio_fingerprint_ni_ledger(
+    client, db_session
+):
+    before = dict(_row(db_session))
+    op_id = uuid4()
+    headers = _headers(
+        op_id,
+        before["version_registro"],
+        **{
+            "X-Sucursal-Id": "999999",
+            "X-Instalacion-Id": "999999",
+            "X-Usuario-Id": "999999",
+        },
+    )
+    response = _request(client, 16, headers=headers)
+    assert response.status_code == 200
+    receipt = db_session.execute(
+        text(
+            "SELECT id_usuario,id_sucursal,id_instalacion,payload_hash "
+            "FROM operacion_idempotente WHERE op_id=:op"
+        ),
+        {"op": op_id},
+    ).one()
+    assert receipt[:3] == (1, None, None)
+    assert receipt.payload_hash == _central_fingerprint(
+        code=CODE,
+        value=16,
+        version=before["version_registro"],
+    )
+
+
+def test_openapi_patch_expone_solo_headers_centrales(client):
+    operation = client.get("/openapi.json").json()["paths"][
+        ENDPOINT_TEMPLATE.format("{codigo_parametro}")
+    ]["patch"]
+    headers = {
+        parameter["name"]: parameter
+        for parameter in operation["parameters"]
+        if parameter["in"] == "header"
+    }
+    assert set(headers) == {"X-Op-Id", "If-Match-Version"}
+    assert all(parameter["required"] for parameter in headers.values())
+
+
+def test_sin_permiso_d1_no_reclama_operacion(client, db_session):
+    client.app.dependency_overrides[get_authenticated_principal] = _principal
+    with (
+        patch(
+            "app.api.administrative_authorization.AdministrativeAuthorizationService.authorize",
+            return_value=AdministrativeAuthorizationDecision.DENIED,
+        ),
+        patch(
+            "app.application.administrativo.services.actualizar_valor_parametro_global_service.claim_operation"
+        ) as claim,
+    ):
+        response = client.patch(
+            ENDPOINT,
+            json={"valor_tipado": 16},
+            headers=_headers(),
+        )
+    assert response.status_code == 403
+    assert response.json()["error_code"] == "autorizacion_insuficiente"
+    claim.assert_not_called()
+    assert _effects(db_session) == (0, 0)
+
+
+@pytest.mark.parametrize(
+    ("eligibility", "target_id", "status", "code"),
+    [
+        ("NOT_FOUND", None, 404, "parametro_no_encontrado"),
+        ("CONFLICT", None, 409, "conflicto_parametro"),
+    ],
+)
+def test_target_invalido_se_rechaza_antes_del_claim(
+    client, db_session, eligibility, target_id, status, code
+):
+    with (
+        patch.object(
+            ValorParametroGlobalCommandRepository,
+            "preflight_target",
+            return_value=(eligibility, target_id),
+        ),
+        patch(
+            "app.application.administrativo.services.actualizar_valor_parametro_global_service.claim_operation"
+        ) as claim,
+    ):
+        response = _request(client, 16, headers=_headers())
+    assert response.status_code == status
+    assert response.json()["error_code"] == code
     claim.assert_not_called()
     assert _effects(db_session) == (0, 0)
 
@@ -395,6 +487,50 @@ def test_complete_semantic_noop_and_replay(client, db_session, raw, requested):
     assert receipt == "PARAMETRO_GLOBAL_SIN_CAMBIOS"
 
 
+def test_actor_distinto_no_reutiliza_receipt(client, db_session):
+    version = _row(db_session)["version_registro"]
+    op_id = uuid4()
+    assert _request(client, 15, headers=_headers(op_id, version)).status_code == 200
+    client.app.dependency_overrides[get_authenticated_principal] = lambda: _principal(2)
+    with patch(
+        "app.api.administrative_authorization.AdministrativeAuthorizationService.authorize",
+        return_value=AdministrativeAuthorizationDecision.GRANTED,
+    ):
+        response = client.patch(
+            ENDPOINT,
+            json={"valor_tipado": 15},
+            headers=_headers(op_id, version),
+        )
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "IDEMPOTENCY_PAYLOAD_CONFLICT"
+
+
+def test_expected_version_distinta_no_reutiliza_receipt(client, db_session):
+    version = _row(db_session)["version_registro"]
+    op_id = uuid4()
+    assert _request(client, 15, headers=_headers(op_id, version)).status_code == 200
+    response = _request(client, 15, headers=_headers(op_id, version + 1))
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "IDEMPOTENCY_PAYLOAD_CONFLICT"
+
+
+def test_permiso_revocado_precede_replay(client, db_session):
+    version = _row(db_session)["version_registro"]
+    op_id = uuid4()
+    assert _request(client, 15, headers=_headers(op_id, version)).status_code == 200
+    with patch(
+        "app.api.administrative_authorization.AdministrativeAuthorizationService.authorize",
+        return_value=AdministrativeAuthorizationDecision.DENIED,
+    ):
+        response = client.patch(
+            ENDPOINT,
+            json={"valor_tipado": 15},
+            headers=_headers(op_id, version),
+        )
+    assert response.status_code == 403
+    assert response.json()["error_code"] == "autorizacion_insuficiente"
+
+
 @pytest.mark.parametrize("raw", ["15.0", "+15", " 15 ", ""])
 def test_invalid_persisted_integer_rolls_back_without_receipt(client, db_session, raw):
     target = _row(db_session)
@@ -414,11 +550,46 @@ def test_invalid_persisted_integer_rolls_back_without_receipt(client, db_session
     assert _effects(db_session, op_id) == (0, 0)
 
 
+def test_target_se_revalida_bajo_lock_antes_de_cas(client, db_session):
+    target = dict(_row(db_session))
+    locked = {
+        **target,
+        "valor_raw": target["valor_parametro"],
+        "id_sucursal": None,
+        "id_instalacion": None,
+        "es_valor_vigente": True,
+        "deleted_at": None,
+        "exponible_api_administrativa": True,
+        "es_sensible": False,
+        "editable_administrativamente": False,
+        "codigo_tipo_dato": "ENTERO",
+        "codigo_alcance": "GLOBAL",
+    }
+    op_id = uuid4()
+    with (
+        patch.object(
+            ValorParametroGlobalCommandRepository,
+            "lock_target",
+            return_value=locked,
+        ),
+        patch.object(ValorParametroGlobalCommandRepository, "cas_update") as cas,
+    ):
+        response = _request(
+            client,
+            16,
+            headers=_headers(op_id, target["version_registro"]),
+        )
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "conflicto_parametro"
+    cas.assert_not_called()
+    assert _effects(db_session, op_id) == (0, 0)
+
+
 @pytest.mark.parametrize(
     "failure_target",
     [
-        "app.application.administrativo.services.actualizar_valor_parametro_global_service.OutboxRepository.add_event",
         "app.application.administrativo.services.actualizar_valor_parametro_global_service.complete_operation",
+        "app.infrastructure.persistence.repositories.valor_parametro_global_command_repository.ValorParametroGlobalCommandRepository.cas_update",
     ],
 )
 def test_post_cas_failures_rollback_and_same_op_retry_executes(
@@ -464,7 +635,7 @@ def test_idempotency_runtime_failures_are_sanitized(
     assert _effects(db_session, op_id) == (0, 0)
 
 
-def test_completion_idempotency_error_rolls_back_cas_and_outbox(client, db_session):
+def test_completion_idempotency_error_rolls_back_cas(client, db_session):
     before = dict(_row(db_session))
     op_id = uuid4()
     with patch(
@@ -481,9 +652,7 @@ def test_completion_idempotency_error_rolls_back_cas_and_outbox(client, db_sessi
     assert _effects(db_session, op_id) == (0, 0)
 
 
-def test_command_target_and_payload_conflicts_precede_mutable_lookups(
-    client, db_session
-):
+def test_command_target_and_payload_conflicts_preserve_precedence(client, db_session):
     version = _row(db_session)["version_registro"]
     command_op = uuid4()
     complete_operation(
@@ -494,13 +663,7 @@ def test_command_target_and_payload_conflicts_precede_mutable_lookups(
             target_type="VALOR_PARAMETRO",
             target_uid=None,
             target_key=CODE,
-            payload_hash=canonical_payload_hash(
-                {
-                    "codigo_parametro": CODE,
-                    "valor_tipado": "15",
-                    "if_match_version": version,
-                }
-            ),
+            payload_hash=_central_fingerprint(code=CODE, value=15, version=version),
             canonicalization_version=1,
             result_code="OK",
             result_http_status=200,
@@ -508,17 +671,13 @@ def test_command_target_and_payload_conflicts_precede_mutable_lookups(
             result_version=None,
             response_snapshot={"ok": True},
             id_usuario=1,
-            id_sucursal=1,
-            id_instalacion=1,
+            id_sucursal=None,
+            id_instalacion=None,
         ),
     )
     db_session.commit()
-    with patch.object(
-        ValorParametroGlobalCommandRepository, "validate_context"
-    ) as context:
-        command = _request(client, 15, headers=_headers(command_op, version))
+    command = _request(client, 15, headers=_headers(command_op, version))
     assert command.json()["error_code"] == "IDEMPOTENCY_COMMAND_CONFLICT"
-    context.assert_not_called()
 
     first_op = uuid4()
     assert _request(client, 15, headers=_headers(first_op, version)).status_code == 200
@@ -535,7 +694,7 @@ def test_command_target_and_payload_conflicts_precede_mutable_lookups(
     assert payload.json()["error_code"] == "IDEMPOTENCY_PAYLOAD_CONFLICT"
 
 
-def test_replay_is_snapshot_only_after_mutable_state_and_context_change(
+def test_target_inoperable_is_rejected_before_replay(
     client, db_session
 ):
     op_id = uuid4()
@@ -553,69 +712,21 @@ def test_replay_is_snapshot_only_after_mutable_state_and_context_change(
         ),
         {"id": _row(db_session)["id_valor_parametro"]},
     )
-    other_branch = db_session.execute(
-        text(
-            "INSERT INTO sucursal(codigo_sucursal,nombre_sucursal,estado_sucursal) "
-            "VALUES ('REPLAY-412','Replay','ACTIVA') RETURNING id_sucursal"
-        )
-    ).scalar_one()
-    db_session.execute(
-        text("UPDATE instalacion SET id_sucursal=:branch WHERE id_instalacion=1"),
-        {"branch": other_branch},
-    )
     with (
-        patch.object(
-            ValorParametroGlobalCommandRepository, "validate_context"
-        ) as context,
-        patch.object(ValorParametroGlobalCommandRepository, "find_target") as lookup,
+        patch(
+            "app.application.administrativo.services.actualizar_valor_parametro_global_service.claim_operation"
+        ) as claim,
         patch.object(ValorParametroGlobalCommandRepository, "lock_target") as lock,
     ):
         replay = _request(client, 15, headers=_headers(op_id, version))
-    assert replay.status_code == 200 and replay.json() == original.json()
-    context.assert_not_called()
-    lookup.assert_not_called()
+    assert original.status_code == 200
+    assert replay.status_code == 404
+    assert replay.json()["error_code"] == "parametro_no_encontrado"
+    claim.assert_not_called()
     lock.assert_not_called()
 
 
-@pytest.mark.parametrize(("sucursal", "instalacion"), [(999999, 1), (1, 999999)])
-def test_invalid_technical_context_has_no_effects(
-    client, db_session, sucursal, instalacion
-):
-    op_id = uuid4()
-    before = dict(_row(db_session))
-    response = _request(
-        client,
-        16,
-        headers=_headers(
-            op_id,
-            **{"X-Sucursal-Id": str(sucursal), "X-Instalacion-Id": str(instalacion)},
-        ),
-    )
-    assert response.status_code == 400
-    assert response.json()["error_code"] == "inconsistencia_contexto_tecnico"
-    assert dict(_row(db_session)) == before and _effects(db_session, op_id) == (0, 0)
-
-
-def test_installation_from_other_branch_is_invalid_context(client, db_session):
-    branch = db_session.execute(
-        text(
-            "INSERT INTO sucursal(codigo_sucursal,nombre_sucursal,estado_sucursal) VALUES ('OTRA-412','Otra','ACTIVA') RETURNING id_sucursal"
-        )
-    ).scalar_one()
-    db_session.execute(
-        text("UPDATE instalacion SET id_sucursal=:branch WHERE id_instalacion=1"),
-        {"branch": branch},
-    )
-    op_id = uuid4()
-    response = _request(client, 16, headers=_headers(op_id))
-    assert (
-        response.status_code == 400
-        and response.json()["error_code"] == "inconsistencia_contexto_tecnico"
-    )
-    assert _effects(db_session, op_id) == (0, 0)
-
-
-def test_material_outbox_provenance_hash_and_large_integer(client, db_session):
+def test_material_central_provenance_ledger_y_sin_outbox(client, db_session):
     target = _row(db_session)
     db_session.execute(
         text(
@@ -636,61 +747,35 @@ def test_material_outbox_provenance_hash_and_large_integer(client, db_session):
     after = _row(db_session)
     assert after["valor_parametro"] == str(large)
     assert after["op_id_ultima_modificacion"] == op_id
-    assert after["id_instalacion_ultima_modificacion"] == 1
+    assert after["id_instalacion_ultima_modificacion"] is None
     assert (
         after["op_id_alta"] == before["op_id_alta"]
         and after["id_instalacion_origen"] == before["id_instalacion_origen"]
     )
-    event = (
+    receipt = (
         db_session.execute(
             text(
-                "SELECT * FROM outbox_event WHERE event_type='valor_parametro_modificado'"
-            )
+                "SELECT id_usuario,id_sucursal,id_instalacion,payload_hash "
+                "FROM operacion_idempotente WHERE op_id=:op"
+            ),
+            {"op": op_id},
         )
-        .mappings()
         .one()
     )
-    assert (event["aggregate_type"], event["aggregate_id"], event["status"]) == (
-        "valor_parametro",
-        target["id_valor_parametro"],
-        "PENDING",
+    assert receipt[:3] == (1, None, None)
+    assert receipt.payload_hash == _central_fingerprint(
+        code=CODE,
+        value=large,
+        version=before["version_registro"],
     )
-    data = event["payload"]["data"]
-    metadata = event["payload"]["metadata"]
-    assert data == {
-        "uid_global": str(target["uid_global"]),
-        "codigo_parametro": CODE,
-        "valor_anterior": "15",
-        "valor_nuevo": str(large),
-        "version_anterior": before["version_registro"],
-        "version_registro": after["version_registro"],
-        "op_id": str(op_id),
-    }
-    expected = canonical_payload_hash(
-        {
-            "metadata": {"uid_instalacion_origen": metadata["uid_instalacion_origen"]},
-            "data": data,
-        }
-    )
-    assert metadata["payload_hash"] == expected
-    assert len(expected) == 64 and expected == expected.lower()
-    reordered = {
-        "data": dict(reversed(list(data.items()))),
-        "metadata": {"uid_instalacion_origen": metadata["uid_instalacion_origen"]},
-    }
-    assert canonical_payload_hash(reordered) == expected
-    changed = deepcopy(data)
-    changed["valor_nuevo"] = "1"
     assert (
-        canonical_payload_hash(
-            {
-                "metadata": {
-                    "uid_instalacion_origen": metadata["uid_instalacion_origen"]
-                },
-                "data": changed,
-            }
-        )
-        != expected
+        db_session.execute(
+            text(
+                "SELECT count(*) FROM outbox_event "
+                "WHERE event_type='valor_parametro_modificado'"
+            )
+        ).scalar_one()
+        == 0
     )
 
 
@@ -707,14 +792,11 @@ def test_cas_updates_only_exact_pk_when_versions_match(client, db_session):
         _row(db_session)["valor_parametro"] == "16"
         and dict(_row(db_session, "FILA_B_412")) == before_b
     )
-    event = db_session.execute(
-        text("SELECT aggregate_id FROM outbox_event")
-    ).scalar_one()
     receipt_uid = db_session.execute(
         text("SELECT result_target_uid FROM operacion_idempotente WHERE op_id=:op"),
         {"op": op_id},
     ).scalar_one()
-    assert event == a["id_valor_parametro"] and receipt_uid == a["uid_global"]
+    assert receipt_uid == a["uid_global"]
     assert other["version_registro"] == a["version_registro"]
 
 
@@ -760,37 +842,6 @@ def test_unicode_whitespace_is_not_ascii_ledger_whitespace(client):
     )
 
 
-def test_occurred_at_uses_naive_utc_wall_clock_independent_of_session_timezone(
-    db_session,
-):
-    from app.api.core_ef_headers import AuthenticatedCoreEFHeaders
-    from app.application.administrativo.services.actualizar_valor_parametro_global_service import (
-        ActualizarValorParametroGlobalService,
-    )
-
-    frozen = datetime(2026, 8, 14, 15, 30, 45, 123456, tzinfo=UTC)
-    db_session.execute(text("SET LOCAL TIME ZONE 'America/Argentina/Buenos_Aires'"))
-    before = _row(db_session)
-    op_id = uuid4()
-    result = ActualizarValorParametroGlobalService(
-        db_session, clock=lambda: frozen
-    ).execute(
-        codigo_parametro=CODE,
-        valor_tipado=int(before["valor_parametro"]) + 1,
-        headers=AuthenticatedCoreEFHeaders(op_id, 1, 1, before["version_registro"]),
-        id_usuario=1,
-    )
-    assert result["ok"] is True
-    occurred_at = db_session.execute(
-        text(
-            "SELECT occurred_at FROM outbox_event WHERE payload->'data'->>'op_id'=:op"
-        ),
-        {"op": str(op_id)},
-    ).scalar_one()
-    assert occurred_at == frozen.replace(tzinfo=None)
-    assert occurred_at.tzinfo is None
-
-
 def test_decoded_path_is_preserved_in_target_key_and_fingerprint(client, db_session):
     logical = " A/B "
     seeded = _seed_parameter(db_session, logical, "15")
@@ -810,10 +861,8 @@ def test_decoded_path_is_preserved_in_target_key_and_fingerprint(client, db_sess
         {"op": op_id},
     ).one()
     assert receipt.target_key == logical
-    assert receipt.payload_hash == canonical_payload_hash(
-        {
-            "codigo_parametro": logical,
-            "valor_tipado": "15",
-            "if_match_version": seeded["version_registro"],
-        }
+    assert receipt.payload_hash == _central_fingerprint(
+        code=logical,
+        value=15,
+        version=seeded["version_registro"],
     )

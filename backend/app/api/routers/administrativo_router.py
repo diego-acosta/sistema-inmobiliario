@@ -12,6 +12,7 @@ from app.api.core_ef_headers import (
     get_authenticated_core_ef_headers_write,
     get_core_ef_headers_technical_write,
     parse_authenticated_core_ef_headers,
+    parse_central_command_metadata,
     parse_core_ef_headers,
 )
 from app.api.dependencies import get_db
@@ -961,15 +962,15 @@ def actualizar_parametro_global(
     ],
     db: Session = Depends(get_db),
     x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
-    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
-    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> ActualizarValorParametroGlobalResponse | JSONResponse:
     # CORE-EF: COMMAND_WRITE_NEGOCIO. La identidad humana es sólo el principal.
     _validate_command_codigo(codigo_parametro)
     try:
-        core = parse_authenticated_core_ef_headers(
-            x_op_id, x_sucursal_id, x_instalacion_id, if_match_version
+        metadata = parse_central_command_metadata(
+            x_op_id,
+            if_match_version,
+            require_if_match_version=True,
         )
     except CoreEFHeaderValidationError as exc:
         return _parametro_global_error(
@@ -982,14 +983,13 @@ def actualizar_parametro_global(
         snapshot = ActualizarValorParametroGlobalService(db).execute(
             codigo_parametro=codigo_parametro,
             valor_tipado=request.valor_tipado,
-            headers=core,
+            metadata=metadata,
             id_usuario=principal.id_usuario,
         )
         db.commit()
     except ParametroCommandError as exc:
         db.rollback()
         messages = {
-            "inconsistencia_contexto_tecnico": "El contexto técnico declarado es inconsistente.",
             "parametro_no_encontrado": "No existe un parámetro del sistema para el criterio indicado.",
             "conflicto_parametro": "Existe un conflicto con el parámetro solicitado.",
             "CONCURRENCY_ERROR": "La versión del recurso no coincide.",

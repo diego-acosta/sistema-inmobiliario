@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.api.core_ef_headers import AuthenticatedCoreEFHeaders
+from app.application.common.central_command import CentralCommandMetadata
 from app.application.administrativo.services.actualizar_valor_parametro_global_service import (
     ActualizarValorParametroGlobalService,
     ParametroCommandError,
@@ -175,7 +175,14 @@ def _prepare_v3(target_id):
                 )
 
 
-def _run_concurrent(monkeypatch, concurrency_state_guard, *, holder_value, waiter_value):
+def _run_concurrent(
+    monkeypatch,
+    concurrency_state_guard,
+    *,
+    holder_value,
+    waiter_value,
+    same_op=False,
+):
     target_id = concurrency_state_guard["snapshot"]["id_valor_parametro"]
     _prepare_v3(target_id)
     holder_locked = threading.Event()
@@ -183,6 +190,8 @@ def _run_concurrent(monkeypatch, concurrency_state_guard, *, holder_value, waite
     outcomes = {}
     pids = {}
     op_ids = {"holder": uuid4(), "waiter": uuid4()}
+    if same_op:
+        op_ids["waiter"] = op_ids["holder"]
     concurrency_state_guard["op_ids"].extend(op_ids.values())
     original = ValorParametroGlobalCommandRepository.lock_target
 
@@ -205,7 +214,7 @@ def _run_concurrent(monkeypatch, concurrency_state_guard, *, holder_value, waite
                 outcomes[name] = ActualizarValorParametroGlobalService(session).execute(
                     codigo_parametro=CODE,
                     valor_tipado=value,
-                    headers=AuthenticatedCoreEFHeaders(op_id, 1, 1, 3),
+                    metadata=CentralCommandMetadata(op_id, 3),
                     id_usuario=1,
                 )
                 session.commit()
@@ -277,7 +286,7 @@ def test_noop_holder_commits_then_waiter_materializes(
     )
     assert outcomes["holder"]["data"]["version_registro"] == 3
     assert outcomes["waiter"]["data"]["version_registro"] == 4
-    assert state == ("16", 4) and receipts == 2 and events == 1
+    assert state == ("16", 4) and receipts == 2 and events == 0
 
 
 def test_material_holder_makes_waiting_noop_stale(
@@ -295,4 +304,18 @@ def test_material_holder_makes_waiting_noop_stale(
         412,
         "CONCURRENCY_ERROR",
     )
-    assert state == ("16", 4) and receipts == 1 and events == 1
+    assert state == ("16", 4) and receipts == 1 and events == 0
+
+
+def test_same_op_id_serializa_una_ejecucion_y_un_replay(
+    monkeypatch, concurrency_state_guard
+):
+    outcomes, state, receipts, events = _run_concurrent(
+        monkeypatch,
+        concurrency_state_guard,
+        holder_value=16,
+        waiter_value=16,
+        same_op=True,
+    )
+    assert outcomes["holder"] == outcomes["waiter"]
+    assert state == ("16", 4) and receipts == 1 and events == 0
