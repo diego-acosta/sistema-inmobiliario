@@ -185,6 +185,18 @@ _CALENDARIO_PROGRAMAR_HEADERS_OPENAPI = {
     ]
 }
 
+_PARAMETRO_GLOBAL_HEADERS_OPENAPI = {
+    "parameters": [
+        {
+            "name": name,
+            "in": "header",
+            "required": True,
+            "schema": {"type": "string"},
+        }
+        for name in ("X-Op-Id", "If-Match-Version")
+    ]
+}
+
 
 @router.get(
     "/api/v1/administrativo/seguridad/me",
@@ -941,6 +953,7 @@ def _validate_command_codigo(codigo: str) -> None:
 @router.patch(
     "/api/v1/administrativo/configuracion/parametros/{codigo_parametro:path}/valor-global",
     response_model=ActualizarValorParametroGlobalResponse,
+    openapi_extra=_PARAMETRO_GLOBAL_HEADERS_OPENAPI,
     responses={
         400: {"model": ErrorResponse},
         401: {"model": ErrorResponse},
@@ -961,8 +974,12 @@ def actualizar_parametro_global(
         ),
     ],
     db: Session = Depends(get_db),
-    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
-    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
+    x_op_id: str | None = Header(
+        default=None, alias="X-Op-Id", include_in_schema=False
+    ),
+    if_match_version: str | None = Header(
+        default=None, alias="If-Match-Version", include_in_schema=False
+    ),
 ) -> ActualizarValorParametroGlobalResponse | JSONResponse:
     # CORE-EF: COMMAND_WRITE_NEGOCIO. La identidad humana es sólo el principal.
     _validate_command_codigo(codigo_parametro)

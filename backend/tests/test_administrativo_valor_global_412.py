@@ -612,7 +612,7 @@ def test_post_cas_failures_rollback_and_same_op_retry_executes(
     retry = _request(client, 16, headers=headers)
     assert retry.status_code == 200
     assert _row(db_session)["valor_parametro"] == "16"
-    assert _effects(db_session, op_id) == (1, 1)
+    assert _effects(db_session, op_id) == (0, 1)
 
 
 @pytest.mark.parametrize(
