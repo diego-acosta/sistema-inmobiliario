@@ -108,3 +108,5 @@ def test_openapi_headers_centrales(client):
     for params in (put, baja):
         assert {p["name"] for p in params if p.get("required")} >= {"X-Op-Id", "If-Match-Version"}
     assert not {"X-Usuario-Id", "X-Sucursal-Id", "X-Instalacion-Id"} & {p["name"] for p in post + put + baja}
+    assert "412" in paths[f"{ENDPOINT}/{{id_catalogo_maestro}}"]["put"]["responses"]
+    assert "412" in paths[f"{ENDPOINT}/{{id_catalogo_maestro}}/baja"]["patch"]["responses"]

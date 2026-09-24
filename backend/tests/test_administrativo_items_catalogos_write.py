@@ -58,4 +58,6 @@ def test_item_openapi_headers_centrales(client):
     item = base + "/{id_item_catalogo}"
     assert {p["name"] for p in paths[base]["post"]["parameters"] if p.get("required")} >= {"X-Op-Id"}
     for path, method in ((item, "put"), (item + "/estado", "patch"), (item + "/baja", "patch")):
-        assert {p["name"] for p in paths[path][method]["parameters"] if p.get("required")} >= {"X-Op-Id", "If-Match-Version"}
+        operation = paths[path][method]
+        assert {p["name"] for p in operation["parameters"] if p.get("required")} >= {"X-Op-Id", "If-Match-Version"}
+        assert "412" in operation["responses"]
