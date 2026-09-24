@@ -1,12 +1,9 @@
-from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.infrastructure.persistence.base_repository import BaseRepository
-from app.api.core_ef_headers import CoreEFHeaders
-from app.infrastructure.persistence.repositories.outbox_repository import OutboxRepository
 
 _CATALOGO_COLUMNS = """
     id_catalogo_maestro,
@@ -124,62 +121,13 @@ class CatalogoMaestroRepository(BaseRepository[Any]):
         """), {"id_catalogo_maestro": id_catalogo_maestro}).mappings().one_or_none()
         return self._map(row) if row is not None else None
 
-    def get_by_op_id_alta(self, op_id: str) -> dict[str, Any] | None:
-        row = self.db.execute(text(f"""
-            SELECT {_CATALOGO_WRITE_COLUMNS}
-            FROM catalogo_maestro
-            WHERE op_id_alta = CAST(:op_id AS uuid)
-        """), {"op_id": op_id}).mappings().one_or_none()
-        return self._map(row) if row is not None else None
-
-    @staticmethod
-    def _payload_matches(row: dict[str, Any], payload: dict[str, Any]) -> bool:
-        return all(row.get(field) == payload.get(field) for field in (
-            "codigo_catalogo_maestro", "nombre_catalogo_maestro", "descripcion"
-        ))
-
     @staticmethod
     def _constraint_name(exc: IntegrityError) -> str | None:
         orig = getattr(exc, "orig", None)
         diag = getattr(orig, "diag", None)
         return getattr(diag, "constraint_name", None)
 
-    def _raise_or_return_idempotent_replay(
-        self, *, op_id: str, payload: dict[str, Any], original_error: IntegrityError
-    ) -> dict[str, Any]:
-        existing = self.get_by_op_id_alta(op_id)
-        if existing is None:
-            raise original_error
-        if not self._payload_matches(existing, payload):
-            raise CatalogoMaestroIdempotencyConflictError(
-                "El X-Op-Id ya fue usado con un payload incompatible."
-            )
-        return existing
-
-    @staticmethod
-    def _outbox_payload(row: dict[str, Any], *, op_id: str) -> dict[str, Any]:
-        return {
-            "id_catalogo_maestro": row["id_catalogo_maestro"],
-            "uid_global": row["uid_global"],
-            "codigo_catalogo_maestro": row["codigo_catalogo_maestro"],
-            "nombre_catalogo_maestro": row["nombre_catalogo_maestro"],
-            "descripcion": row["descripcion"],
-            "version_registro": row["version_registro"],
-            "deleted_at": row["deleted_at"],
-            "id_instalacion_origen": row["id_instalacion_origen"],
-            "id_instalacion_ultima_modificacion": row["id_instalacion_ultima_modificacion"],
-            "op_id": op_id,
-        }
-
-    def create(self, payload: dict[str, Any], core: CoreEFHeaders) -> dict[str, Any]:
-        op_id = str(core.x_op_id)
-        existing = self.get_by_op_id_alta(op_id)
-        if existing is not None:
-            if not self._payload_matches(existing, payload):
-                raise CatalogoMaestroIdempotencyConflictError(
-                    "El X-Op-Id ya fue usado con un payload incompatible."
-                )
-            return existing
+    def create(self, payload: dict[str, Any], *, op_id: str) -> dict[str, Any]:
         try:
             catalogo_id = self.db.execute(text("""
                 INSERT INTO catalogo_maestro (
@@ -188,44 +136,29 @@ class CatalogoMaestroRepository(BaseRepository[Any]):
                     op_id_alta, op_id_ultima_modificacion
                 ) VALUES (
                     :codigo_catalogo_maestro, :nombre_catalogo_maestro, :descripcion,
-                    :id_instalacion, :id_instalacion, CAST(:op_id AS uuid), CAST(:op_id AS uuid)
+                    NULL, NULL, CAST(:op_id AS uuid), CAST(:op_id AS uuid)
                 ) RETURNING id_catalogo_maestro
-            """), {**payload, "id_instalacion": core.x_instalacion_id, "op_id": op_id}).scalar_one()
-            created = self.get_write(catalogo_id)
-            OutboxRepository(self.db).add_event(
-                event_type="catalogo_maestro_creado", aggregate_type="catalogo_maestro",
-                aggregate_id=catalogo_id, payload=self._outbox_payload(created, op_id=op_id),
-                occurred_at=datetime.now(UTC),
-            )
-            self.db.commit()
-            return created
+            """), {**payload, "op_id": op_id}).scalar_one()
+            return self.get_write(catalogo_id)
         except IntegrityError as exc:
-            self.db.rollback()
             constraint_name = self._constraint_name(exc)
-            if constraint_name == "ux_catalogo_maestro_op_id_alta":
-                return self._raise_or_return_idempotent_replay(
-                    op_id=op_id, payload=payload, original_error=exc
-                )
             if constraint_name == "uq_catalogo_maestro_codigo":
                 raise CatalogoMaestroDuplicateCodeError(
                     "Ya existe un catálogo maestro con ese código."
-                )
-            raise
-        except Exception:
-            self.db.rollback()
+                ) from exc
             raise
 
-    def update(self, id_catalogo_maestro: int, payload: dict[str, Any], *, core: CoreEFHeaders, if_match_version: int) -> dict[str, Any] | None:
-        actual = self.get_write(id_catalogo_maestro)
+    def lock_write(self, id_catalogo_maestro: int) -> dict[str, Any] | None:
+        row = self.db.execute(text(f"""
+            SELECT {_CATALOGO_WRITE_COLUMNS} FROM catalogo_maestro
+             WHERE id_catalogo_maestro=:id FOR UPDATE
+        """), {"id": id_catalogo_maestro}).mappings().one_or_none()
+        return self._map(row) if row is not None else None
+
+    def update(self, id_catalogo_maestro: int, payload: dict[str, Any], *, op_id: str, if_match_version: int) -> dict[str, Any] | None:
+        actual = self.lock_write(id_catalogo_maestro)
         if actual is None or actual["deleted_at"] is not None:
             return None
-        op_id = str(core.x_op_id)
-        if str(actual.get("op_id_ultima_modificacion")) == op_id:
-            if self._payload_matches(actual, payload):
-                return actual
-            raise CatalogoMaestroIdempotencyConflictError(
-                "El X-Op-Id ya fue usado con un payload incompatible."
-            )
         if actual["version_registro"] != if_match_version:
             raise CatalogoMaestroConcurrencyError("La versión del catálogo maestro no coincide.")
         try:
@@ -234,75 +167,48 @@ class CatalogoMaestroRepository(BaseRepository[Any]):
                 SET codigo_catalogo_maestro = :codigo_catalogo_maestro,
                     nombre_catalogo_maestro = :nombre_catalogo_maestro,
                     descripcion = :descripcion,
-                    id_instalacion_ultima_modificacion = :id_instalacion,
+                    id_instalacion_ultima_modificacion = NULL,
                     op_id_ultima_modificacion = CAST(:op_id AS uuid)
                 WHERE id_catalogo_maestro = :id_catalogo_maestro
                   AND deleted_at IS NULL
                   AND version_registro = :if_match_version
                 RETURNING id_catalogo_maestro
             """), {**payload, "id_catalogo_maestro": id_catalogo_maestro,
-                    "id_instalacion": core.x_instalacion_id, "op_id": op_id,
+                    "op_id": op_id,
                     "if_match_version": if_match_version}).scalar_one_or_none()
             if updated_id is None:
-                self.db.rollback()
                 raise CatalogoMaestroConcurrencyError("La versión del catálogo maestro no coincide.")
-            updated = self.get_write(updated_id)
-            OutboxRepository(self.db).add_event(
-                event_type="catalogo_maestro_modificado", aggregate_type="catalogo_maestro",
-                aggregate_id=updated_id, payload=self._outbox_payload(updated, op_id=op_id),
-                occurred_at=datetime.now(UTC),
-            )
-            self.db.commit()
-            return updated
+            return self.get_write(updated_id)
         except IntegrityError as exc:
-            self.db.rollback()
             if self._constraint_name(exc) == "uq_catalogo_maestro_codigo":
                 raise CatalogoMaestroDuplicateCodeError(
                     "Ya existe un catálogo maestro con ese código."
-                )
-            raise
-        except Exception:
-            self.db.rollback()
+                ) from exc
             raise
 
-    def baja_logica(self, id_catalogo_maestro: int, *, core: CoreEFHeaders, if_match_version: int) -> dict[str, Any] | None:
-        actual = self.get_write(id_catalogo_maestro)
+    def baja_logica(self, id_catalogo_maestro: int, *, op_id: str, if_match_version: int) -> dict[str, Any] | None:
+        actual = self.lock_write(id_catalogo_maestro)
         if actual is None:
             return None
-        op_id = str(core.x_op_id)
         if actual["deleted_at"] is not None:
-            if str(actual.get("op_id_ultima_modificacion")) == op_id:
-                return actual
             return None
         if actual["version_registro"] != if_match_version:
             raise CatalogoMaestroConcurrencyError("La versión del catálogo maestro no coincide.")
-        try:
-            updated_id = self.db.execute(text("""
-                UPDATE catalogo_maestro
-                SET deleted_at = CURRENT_TIMESTAMP,
-                    id_instalacion_ultima_modificacion = :id_instalacion,
-                    op_id_ultima_modificacion = CAST(:op_id AS uuid)
-                WHERE id_catalogo_maestro = :id_catalogo_maestro
-                  AND deleted_at IS NULL
-                  AND version_registro = :if_match_version
-                RETURNING id_catalogo_maestro
-            """), {"id_catalogo_maestro": id_catalogo_maestro,
-                    "id_instalacion": core.x_instalacion_id, "op_id": op_id,
-                    "if_match_version": if_match_version}).scalar_one_or_none()
-            if updated_id is None:
-                self.db.rollback()
-                raise CatalogoMaestroConcurrencyError("La versión del catálogo maestro no coincide.")
-            updated = self.get_write(updated_id)
-            OutboxRepository(self.db).add_event(
-                event_type="catalogo_maestro_desactivado", aggregate_type="catalogo_maestro",
-                aggregate_id=updated_id, payload=self._outbox_payload(updated, op_id=op_id),
-                occurred_at=datetime.now(UTC),
-            )
-            self.db.commit()
-            return updated
-        except Exception:
-            self.db.rollback()
-            raise
+        updated_id = self.db.execute(text("""
+            UPDATE catalogo_maestro
+            SET deleted_at = CURRENT_TIMESTAMP,
+                id_instalacion_ultima_modificacion = NULL,
+                op_id_ultima_modificacion = CAST(:op_id AS uuid)
+            WHERE id_catalogo_maestro = :id_catalogo_maestro
+              AND deleted_at IS NULL
+              AND version_registro = :if_match_version
+            RETURNING id_catalogo_maestro
+        """), {"id_catalogo_maestro": id_catalogo_maestro,
+                "op_id": op_id,
+                "if_match_version": if_match_version}).scalar_one_or_none()
+        if updated_id is None:
+            raise CatalogoMaestroConcurrencyError("La versión del catálogo maestro no coincide.")
+        return self.get_write(updated_id)
 
     def list_items(
         self,

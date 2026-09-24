@@ -1445,3 +1445,15 @@ absolutos UTC y se serializan en ISO-8601 con offset explícito `Z` o `+00:00`.
 La frontera API adjunta UTC al datetime interno UTC-naive sin sumar/restar horas.
 Persistencia y aplicación conservan UTC-naive; TTL absoluto de ocho horas intacto.
 OpenAPI conserva `type: string`, `format: date-time` en ambos campos.
+
+## Contrato central vigente de writes de catálogos
+
+Los siete commands de `catalogo_maestro` e `item_catalogo` son `GLOBAL`, requieren
+Bearer y `ADMIN.CONFIG.CATALOGO.ADMINISTRAR`. CREATE exige `X-Op-Id`; UPDATE,
+ESTADO y BAJA exigen además `If-Match-Version`. Los headers legacy de usuario,
+sucursal e instalación no se consumen. El actor es el principal autenticado.
+El fingerprint contiene actor humano, scope GLOBAL con `id_sucursal: null` y el
+payload funcional; el ledger y la provenance usan sucursal/instalación `NULL`.
+D1 precede a claim/replay, replay precede a CAS y CAS stale retorna `412`.
+Mutation y completion comparten transacción. Estos commands no producen outbox;
+los eventos anteriores quedan como contratos legacy/históricos. Los GET no cambian.

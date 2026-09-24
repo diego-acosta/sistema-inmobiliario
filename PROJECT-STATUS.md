@@ -3,6 +3,13 @@
 Actualización arquitectónica: 2026-09-11. Se conservan los cortes funcionales anteriores; no se reauditaron todos los frentes en PR 01.
 **Repositorio:** `diego-acosta/sistema-inmobiliario`
 
+## Migración central de catálogos (2026-09-24)
+
+Los siete writes de catálogo maestro e ítems usan Bearer + D1 `GLOBAL`, permiso
+`ADMIN.CONFIG.CATALOGO.ADMINISTRAR` y ledger central NULL/NULL. CAS central usa
+`412`; provenance de instalación queda `NULL`; los siete producers outbox legacy
+se retiran. Sync general y los reads de catálogos permanecen sin cambios.
+
 ## 1. Propósito
 
 Este documento resume el estado operativo verificable del proyecto para retomar trabajo desde un chat nuevo, Codex Web u otro agente sin depender de memoria conversacional. No reemplaza la arquitectura formal ni los issues/PRs de GitHub: orienta qué revisar primero y qué no asumir.
