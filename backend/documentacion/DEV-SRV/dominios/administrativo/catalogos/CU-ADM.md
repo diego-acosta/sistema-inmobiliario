@@ -1274,3 +1274,12 @@ Este dominio cubre gestión de usuarios y acceso, seguridad y autorización, aud
 - No reemplaza al catálogo maestro global de casos de uso del sistema.
 - Los casos aquí listados se usan como apoyo a implementación y trazabilidad de servicios.
 - Debe mantenerse alineado con SRV-ADM-001 a SRV-ADM-006 y con el DER administrativo.
+
+## Autorización central vigente de catálogos
+
+CU-ADM-076 a CU-ADM-081 ejecutan sus writes con D1 `GLOBAL` y el permiso
+`ADMIN.CONFIG.CATALOGO.ADMINISTRAR`. El cambio de estado de ítem implementado por
+el endpoint correspondiente utiliza el mismo permiso y perfil de autorización.
+CU-ADM-082 (gestión de jerarquía) permanece fuera de alcance y no está
+implementado por este incremento. La identidad humana es el principal Bearer;
+sucursal e instalación no participan. Las consultas asociadas no cambian.

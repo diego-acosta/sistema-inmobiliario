@@ -1,318 +1,112 @@
+from datetime import UTC, datetime
+from unittest.mock import patch
 from uuid import uuid4
 
 from sqlalchemy import text
 
+from app.api.authentication import get_authenticated_principal
+from app.application.administrativo.authentication import AuthenticatedPrincipal
+from app.application.administrativo.authorization import AdministrativeAuthorizationDecision
 
-def _headers(op_id: str | None = None, version: int | None = None) -> dict[str, str]:
-    headers = {
-        "X-Op-Id": op_id or str(uuid4()),
-        "X-Usuario-Id": "1",
-        "X-Sucursal-Id": "1",
-        "X-Instalacion-Id": "1",
-    }
+ENDPOINT = "/api/v1/administrativo/catalogos"
+
+
+def _principal(id_usuario=1):
+    return AuthenticatedPrincipal(id_usuario=id_usuario, codigo_usuario="TEST", login="test",
+        id_sesion=uuid4(), mecanismo_autenticacion="SESION_SERVIDOR",
+        autenticado_en=datetime.now(UTC).replace(tzinfo=None))
+
+
+def _request(client, method, url, *, json=None, headers=None, user=1, granted=True):
+    client.app.dependency_overrides[get_authenticated_principal] = lambda: _principal(user)
+    decision = AdministrativeAuthorizationDecision.GRANTED if granted else AdministrativeAuthorizationDecision.DENIED
+    with patch("app.api.administrative_authorization.AdministrativeAuthorizationService.authorize", return_value=decision):
+        return client.request(method, url, json=json, headers=headers or {})
+
+
+def _payload(code=None):
+    return {"codigo_catalogo_maestro": code or f"CAT_{uuid4().hex[:8]}",
+            "nombre_catalogo_maestro": "Catálogo", "descripcion": "Descripción"}
+
+
+def _headers(op=None, version=None, legacy=False):
+    value = {"X-Op-Id": str(op or uuid4())}
     if version is not None:
-        headers["If-Match-Version"] = str(version)
-    return headers
+        value["If-Match-Version"] = str(version)
+    if legacy:
+        value |= {"X-Usuario-Id": "999", "X-Sucursal-Id": "999", "X-Instalacion-Id": "999"}
+    return value
 
 
-def _payload(suffix: str, descripcion: str | None = "Descripción") -> dict:
-    return {
-        "codigo_catalogo_maestro": f"ADM368_{suffix}_{uuid4().hex[:8]}",
-        "nombre_catalogo_maestro": f"Catálogo {suffix}",
-        "descripcion": descripcion,
-    }
+def _create(client, payload=None, op=None, user=1, legacy=False):
+    return _request(client, "POST", ENDPOINT, json=payload or _payload(),
+                    headers=_headers(op, legacy=legacy), user=user)
 
 
-def _events(db_session, event_type: str, aggregate_id: int) -> list:
-    return db_session.execute(text("""
-        SELECT event_type, aggregate_type, aggregate_id, payload
-        FROM outbox_event
-        WHERE event_type = :event_type AND aggregate_id = :aggregate_id
-        ORDER BY id
-    """), {"event_type": event_type, "aggregate_id": aggregate_id}).mappings().all()
+def test_create_central_receipt_provenance_replay_y_sin_outbox(client, db_session):
+    op = uuid4(); payload = _payload()
+    first = _create(client, payload, op, legacy=True); replay = _create(client, payload, op)
+    assert first.status_code == replay.status_code == 201 and replay.json() == first.json()
+    row = db_session.execute(text("SELECT id_instalacion_origen,id_instalacion_ultima_modificacion FROM catalogo_maestro WHERE id_catalogo_maestro=:id"), {"id": first.json()["data"]["id_catalogo_maestro"]}).one()
+    assert row == (None, None)
+    assert db_session.execute(text("SELECT id_usuario,id_sucursal,id_instalacion FROM operacion_idempotente WHERE op_id=:op"), {"op": op}).one() == (1, None, None)
+    assert db_session.execute(text("SELECT count(*) FROM outbox_event WHERE aggregate_type='catalogo_maestro'")).scalar_one() == 0
 
 
-def _create(client, suffix="CREATE", *, op_id=None, payload=None):
-    return client.post("/api/v1/administrativo/catalogos", json=payload or _payload(suffix), headers=_headers(op_id))
+def test_create_conflicts_duplicate_headers_and_authorization(client):
+    payload = _payload(); op = uuid4()
+    assert _create(client, payload, op).status_code == 201
+    assert _create(client, {**payload, "nombre_catalogo_maestro": "Otro"}, op).json()["error_code"] == "IDEMPOTENCY_PAYLOAD_CONFLICT"
+    assert _create(client, payload).json()["error_code"] == "DUPLICATE_CODE"
+    missing = _request(client, "POST", ENDPOINT, json=_payload())
+    assert missing.status_code == 400 and missing.json()["details"]["header"] == "X-Op-Id"
+    assert _request(client, "POST", ENDPOINT, json=_payload(), headers=_headers(), granted=False).status_code == 403
 
 
-def test_alta_catalogo_persiste_core_ef_y_outbox(client, db_session):
-    response = _create(client, "ALTA", payload=_payload("ALTA", None))
-
-    assert response.status_code == 201
-    data = response.json()["data"]
-    assert data["version_registro"] == 1
-    assert data["uid_global"]
-    assert data["descripcion"] is None
-    assert data["deleted_at"] is None
-    row = db_session.execute(text("""
-        SELECT id_instalacion_origen, id_instalacion_ultima_modificacion,
-               op_id_alta, op_id_ultima_modificacion
-        FROM catalogo_maestro WHERE id_catalogo_maestro = :id
-    """), {"id": data["id_catalogo_maestro"]}).mappings().one()
-    assert row["id_instalacion_origen"] == row["id_instalacion_ultima_modificacion"] == 1
-    assert row["op_id_alta"] == row["op_id_ultima_modificacion"]
-    assert len(_events(db_session, "catalogo_maestro_creado", data["id_catalogo_maestro"])) == 1
-
-
-def test_alta_idempotente_y_payload_incompatible(client, db_session):
-    payload = _payload("IDEMP")
-    op_id = str(uuid4())
-    first = _create(client, op_id=op_id, payload=payload)
-    replay = _create(client, op_id=op_id, payload=payload)
-    incompatible = _create(client, op_id=op_id, payload={**payload, "nombre_catalogo_maestro": "Otro"})
-
-    assert first.status_code == replay.status_code == 201
-    assert replay.json()["data"] == first.json()["data"]
-    assert incompatible.status_code == 409
-    assert incompatible.json()["error_code"] == "IDEMPOTENT_DUPLICATE"
-    data = first.json()["data"]
-    assert db_session.execute(text("SELECT COUNT(*) FROM catalogo_maestro WHERE op_id_alta = CAST(:op AS uuid)"), {"op": op_id}).scalar_one() == 1
-    assert len(_events(db_session, "catalogo_maestro_creado", data["id_catalogo_maestro"])) == 1
-
-
-def test_alta_rechaza_headers_y_codigo_duplicado(client):
-    missing = client.post("/api/v1/administrativo/catalogos", json=_payload("MISSING"))
-    assert missing.status_code == 400
-    assert missing.json()["details"]["header"] == "X-Op-Id"
-    invalid = client.post("/api/v1/administrativo/catalogos", json=_payload("INVALID"), headers={**_headers(), "X-Instalacion-Id": "x"})
-    assert invalid.status_code == 400
-    payload = _payload("DUP")
-    assert _create(client, payload=payload).status_code == 201
-    duplicate = _create(client, payload=payload)
-    assert duplicate.status_code == 409
-    assert duplicate.json()["error_code"] == "DUPLICATE_CODE"
-
-
-def test_update_versionado_idempotencia_y_metadata(client, db_session):
-    created = _create(client, "UPDATE").json()["data"]
-    original = db_session.execute(text("SELECT uid_global, created_at, id_instalacion_origen, op_id_alta FROM catalogo_maestro WHERE id_catalogo_maestro = :id"), {"id": created["id_catalogo_maestro"]}).mappings().one()
-    payload = _payload("UPDATED")
-    op_id = str(uuid4())
-    first = client.put(f"/api/v1/administrativo/catalogos/{created['id_catalogo_maestro']}", json=payload, headers=_headers(op_id, created["version_registro"]))
-    replay = client.put(f"/api/v1/administrativo/catalogos/{created['id_catalogo_maestro']}", json=payload, headers=_headers(op_id, created["version_registro"]))
-
-    assert first.status_code == replay.status_code == 200
-    updated = first.json()["data"]
-    assert replay.json()["data"] == updated
-    assert updated["version_registro"] == created["version_registro"] + 1
-    persisted = db_session.execute(text("SELECT uid_global, created_at, id_instalacion_origen, op_id_alta, id_instalacion_ultima_modificacion FROM catalogo_maestro WHERE id_catalogo_maestro = :id"), {"id": created["id_catalogo_maestro"]}).mappings().one()
-    assert {key: persisted[key] for key in original} == dict(original)
-    assert persisted["id_instalacion_ultima_modificacion"] == 1
-    assert len(_events(db_session, "catalogo_maestro_modificado", created["id_catalogo_maestro"])) == 1
-
-
-def test_update_conflictos_y_headers(client):
-    created = _create(client, "UPDATE-CONFLICT").json()["data"]
-    payload = _payload("UPDATE-CONFLICT-NEW")
-    missing = client.put(f"/api/v1/administrativo/catalogos/{created['id_catalogo_maestro']}", json=payload, headers=_headers())
-    stale = client.put(f"/api/v1/administrativo/catalogos/{created['id_catalogo_maestro']}", json=payload, headers=_headers(version=99))
-    assert missing.status_code == 400
-    assert missing.json()["details"]["header"] == "If-Match-Version"
-    assert stale.status_code == 409
-    assert stale.json()["error_code"] == "CONCURRENCY_ERROR"
-
-
-def test_baja_es_replay_unico_y_oculta_catalogo(client, db_session):
-    created = _create(client, "BAJA").json()["data"]
-    op_id = str(uuid4())
-    first = client.patch(f"/api/v1/administrativo/catalogos/{created['id_catalogo_maestro']}/baja", headers=_headers(op_id, created["version_registro"]))
-    replay = client.patch(f"/api/v1/administrativo/catalogos/{created['id_catalogo_maestro']}/baja", headers=_headers(op_id, created["version_registro"]))
-
-    assert first.status_code == replay.status_code == 200
-    baja = first.json()["data"]
-    assert baja["deleted_at"] is not None
-    assert baja["version_registro"] == created["version_registro"] + 1
-    assert replay.json()["data"] == baja
-    assert len(_events(db_session, "catalogo_maestro_desactivado", created["id_catalogo_maestro"])) == 1
-    assert client.get(f"/api/v1/administrativo/catalogos/{created['id_catalogo_maestro']}").status_code == 404
-    assert client.get("/api/v1/administrativo/catalogos", params={"q": created["codigo_catalogo_maestro"]}).json()["data"]["items"] == []
-    assert db_session.execute(text("SELECT COUNT(*) FROM catalogo_maestro WHERE id_catalogo_maestro = :id"), {"id": created["id_catalogo_maestro"]}).scalar_one() == 1
-
-
-def test_baja_repetida_con_otro_op_y_outbox_fallido_revierte(client, db_session, monkeypatch):
-    created = _create(client, "BAJA-CONFLICT").json()["data"]
-    first = client.patch(f"/api/v1/administrativo/catalogos/{created['id_catalogo_maestro']}/baja", headers=_headers(version=created["version_registro"]))
-    repeated = client.patch(f"/api/v1/administrativo/catalogos/{created['id_catalogo_maestro']}/baja", headers=_headers(version=first.json()["data"]["version_registro"]))
-    assert repeated.status_code == 404
-
-    other = _create(client, "OUTBOX-FAIL").json()["data"]
-    from app.infrastructure.persistence.repositories.outbox_repository import OutboxRepository
-    monkeypatch.setattr(OutboxRepository, "add_event", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("outbox falló")))
-    failed = client.patch(f"/api/v1/administrativo/catalogos/{other['id_catalogo_maestro']}/baja", headers=_headers(version=other["version_registro"]))
-    assert failed.status_code == 500
-    row = db_session.execute(text("SELECT deleted_at, version_registro FROM catalogo_maestro WHERE id_catalogo_maestro = :id"), {"id": other["id_catalogo_maestro"]}).mappings().one()
-    assert row["deleted_at"] is None and row["version_registro"] == other["version_registro"]
-
-
-def test_update_rechaza_codigo_duplicado_y_catalogo_dado_de_baja(client):
-    first = _create(client, "UPDATE-DUP-A").json()["data"]
-    second = _create(client, "UPDATE-DUP-B").json()["data"]
-    duplicate = client.put(
-        f"/api/v1/administrativo/catalogos/{second['id_catalogo_maestro']}",
-        json={
-            "codigo_catalogo_maestro": first["codigo_catalogo_maestro"],
-            "nombre_catalogo_maestro": "Duplicado",
-            "descripcion": None,
-        },
-        headers=_headers(version=second["version_registro"]),
-    )
-    assert duplicate.status_code == 409
-    assert duplicate.json()["error_code"] == "DUPLICATE_CODE"
-    baja = client.patch(
-        f"/api/v1/administrativo/catalogos/{first['id_catalogo_maestro']}/baja",
-        headers=_headers(version=first["version_registro"]),
-    )
-    update_deleted = client.put(
-        f"/api/v1/administrativo/catalogos/{first['id_catalogo_maestro']}",
-        json=_payload("UPDATE-DELETED"),
+def test_update_cas_replay_actor_conflict_y_baja(client, db_session):
+    created = _create(client).json()["data"]; url = f'{ENDPOINT}/{created["id_catalogo_maestro"]}'
+    op = uuid4(); payload = _payload()
+    first = _request(client, "PUT", url, json=payload, headers=_headers(op, created["version_registro"]))
+    replay = _request(client, "PUT", url, json=payload, headers=_headers(op, created["version_registro"]))
+    assert first.status_code == replay.status_code == 200 and first.json() == replay.json()
+    cross = _request(client, "PUT", url, json=payload, headers=_headers(op, created["version_registro"]), user=2)
+    assert cross.status_code == 409 and cross.json()["error_code"] == "IDEMPOTENCY_PAYLOAD_CONFLICT"
+    stale_op = uuid4()
+    assert _request(client, "PUT", url, json=_payload(), headers=_headers(stale_op, 1)).status_code == 412
+    assert db_session.execute(
+        text("SELECT count(*) FROM operacion_idempotente WHERE op_id=:op"),
+        {"op": stale_op},
+    ).scalar_one() == 0
+    current = first.json()["data"]
+    baja_op = uuid4()
+    baja_headers = _headers(baja_op, current["version_registro"])
+    baja = _request(client, "PATCH", f"{url}/baja", headers=baja_headers)
+    assert baja.status_code == 200 and baja.json()["data"]["deleted_at"] is not None
+    replay_baja = _request(client, "PATCH", f"{url}/baja", headers=baja_headers)
+    assert replay_baja.status_code == 200 and replay_baja.json() == baja.json()
+    receipt = db_session.execute(
+        text("SELECT id_usuario,id_sucursal,id_instalacion FROM operacion_idempotente WHERE op_id=:op"),
+        {"op": baja_op},
+    ).one()
+    assert receipt == (1, None, None)
+    nueva_baja = _request(
+        client,
+        "PATCH",
+        f"{url}/baja",
         headers=_headers(version=baja.json()["data"]["version_registro"]),
     )
-    assert update_deleted.status_code == 404
+    assert nueva_baja.status_code == 404
+    assert db_session.execute(text("SELECT count(*) FROM outbox_event WHERE aggregate_type='catalogo_maestro'")).scalar_one() == 0
 
 
-def test_falla_outbox_en_update_revierte_cambio(client, db_session, monkeypatch):
-    created = _create(client, "UPDATE-OUTBOX-FAIL").json()["data"]
-    original = db_session.execute(text("""
-        SELECT codigo_catalogo_maestro, nombre_catalogo_maestro, descripcion, version_registro
-        FROM catalogo_maestro WHERE id_catalogo_maestro = :id
-    """), {"id": created["id_catalogo_maestro"]}).mappings().one()
-    from app.infrastructure.persistence.repositories.outbox_repository import OutboxRepository
-    monkeypatch.setattr(OutboxRepository, "add_event", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("outbox falló")))
-    failed = client.put(
-        f"/api/v1/administrativo/catalogos/{created['id_catalogo_maestro']}",
-        json=_payload("UPDATE-OUTBOX-FAIL-NEW"),
-        headers=_headers(version=created["version_registro"]),
-    )
-    assert failed.status_code == 500
-    persisted = db_session.execute(text("""
-        SELECT codigo_catalogo_maestro, nombre_catalogo_maestro, descripcion, version_registro
-        FROM catalogo_maestro WHERE id_catalogo_maestro = :id
-    """), {"id": created["id_catalogo_maestro"]}).mappings().one()
-    assert dict(persisted) == dict(original)
-
-
-def test_alta_colision_op_id_despues_de_integrity_error_devuelve_replay(
-    client, db_session, monkeypatch
-):
-    payload = _payload("RACE-REPLAY")
-    op_id = str(uuid4())
-    created = _create(client, op_id=op_id, payload=payload)
-    assert created.status_code == 201
-    first = created.json()["data"]
-
-    from app.infrastructure.persistence.repositories.catalogo_maestro_repository import (
-        CatalogoMaestroRepository,
-    )
-
-    original = CatalogoMaestroRepository.get_by_op_id_alta
-    calls = 0
-
-    def _miss_first_lookup(self, requested_op_id):
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            return None
-        return original(self, requested_op_id)
-
-    monkeypatch.setattr(
-        CatalogoMaestroRepository, "get_by_op_id_alta", _miss_first_lookup
-    )
-    monkeypatch.setattr(
-        CatalogoMaestroRepository,
-        "_constraint_name",
-        staticmethod(lambda exc: "ux_catalogo_maestro_op_id_alta"),
-    )
-    replay = _create(client, op_id=op_id, payload=payload)
-
-    assert calls == 2
-    assert replay.status_code == 201
-    assert replay.json()["data"] == first
-    assert db_session.execute(
-        text("SELECT COUNT(*) FROM catalogo_maestro WHERE op_id_alta = CAST(:op AS uuid)"),
-        {"op": op_id},
-    ).scalar_one() == 1
-    assert len(_events(db_session, "catalogo_maestro_creado", first["id_catalogo_maestro"])) == 1
-    assert replay.json()["data"]["version_registro"] == 1
-
-
-def test_alta_colision_op_id_despues_de_integrity_error_rechaza_payload_incompatible(
-    client, db_session, monkeypatch
-):
-    payload = _payload("RACE-CONFLICT")
-    op_id = str(uuid4())
-    created = _create(client, op_id=op_id, payload=payload)
-    assert created.status_code == 201
-    first = created.json()["data"]
-
-    from app.infrastructure.persistence.repositories.catalogo_maestro_repository import (
-        CatalogoMaestroRepository,
-    )
-
-    original = CatalogoMaestroRepository.get_by_op_id_alta
-    calls = 0
-
-    def _miss_first_lookup(self, requested_op_id):
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            return None
-        return original(self, requested_op_id)
-
-    monkeypatch.setattr(
-        CatalogoMaestroRepository, "get_by_op_id_alta", _miss_first_lookup
-    )
-    monkeypatch.setattr(
-        CatalogoMaestroRepository,
-        "_constraint_name",
-        staticmethod(lambda exc: "ux_catalogo_maestro_op_id_alta"),
-    )
-    conflict = _create(
-        client,
-        op_id=op_id,
-        payload={**payload, "nombre_catalogo_maestro": "Payload incompatible"},
-    )
-
-    assert calls == 2
-    assert conflict.status_code == 409
-    assert conflict.json()["error_code"] == "IDEMPOTENT_DUPLICATE"
-    row = db_session.execute(
-        text("""
-            SELECT nombre_catalogo_maestro, version_registro
-            FROM catalogo_maestro WHERE id_catalogo_maestro = :id
-        """),
-        {"id": first["id_catalogo_maestro"]},
-    ).mappings().one()
-    assert row["nombre_catalogo_maestro"] == payload["nombre_catalogo_maestro"]
-    assert row["version_registro"] == 1
-    assert len(_events(db_session, "catalogo_maestro_creado", first["id_catalogo_maestro"])) == 1
-
-
-def test_falla_outbox_en_alta_revierte_catalogo_y_permite_reutilizar_codigo(
-    client, db_session, monkeypatch
-):
-    payload = _payload("CREATE-OUTBOX-FAIL")
-    op_id = str(uuid4())
-    from app.infrastructure.persistence.repositories.outbox_repository import OutboxRepository
-
-    with monkeypatch.context() as context:
-        context.setattr(
-            OutboxRepository,
-            "add_event",
-            lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("outbox falló")),
-        )
-        failed = _create(client, op_id=op_id, payload=payload)
-
-    assert failed.status_code == 500
-    assert db_session.execute(
-        text("SELECT COUNT(*) FROM catalogo_maestro WHERE codigo_catalogo_maestro = :codigo"),
-        {"codigo": payload["codigo_catalogo_maestro"]},
-    ).scalar_one() == 0
-    assert db_session.execute(
-        text("SELECT COUNT(*) FROM catalogo_maestro WHERE op_id_alta = CAST(:op AS uuid)"),
-        {"op": op_id},
-    ).scalar_one() == 0
-    assert db_session.execute(text("SELECT COUNT(*) FROM outbox_event")).scalar_one() == 0
-
-    retry = _create(client, payload=payload)
-    assert retry.status_code == 201
+def test_openapi_headers_centrales(client):
+    paths = client.get("/openapi.json").json()["paths"]
+    post = paths[ENDPOINT]["post"]["parameters"]
+    put = paths[f"{ENDPOINT}/{{id_catalogo_maestro}}"]["put"]["parameters"]
+    baja = paths[f"{ENDPOINT}/{{id_catalogo_maestro}}/baja"]["patch"]["parameters"]
+    assert {p["name"] for p in post if p.get("required")} >= {"X-Op-Id"}
+    for params in (put, baja):
+        assert {p["name"] for p in params if p.get("required")} >= {"X-Op-Id", "If-Match-Version"}
+    assert not {"X-Usuario-Id", "X-Sucursal-Id", "X-Instalacion-Id"} & {p["name"] for p in post + put + baja}
+    assert "412" in paths[f"{ENDPOINT}/{{id_catalogo_maestro}}"]["put"]["responses"]
+    assert "412" in paths[f"{ENDPOINT}/{{id_catalogo_maestro}}/baja"]["patch"]["responses"]

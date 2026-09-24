@@ -881,3 +881,13 @@ historia por (código, fecha_desde, id)`. La raíz es singleton físico absoluto
 una raíz soft-deleted adicional es conflicto. Sólo constraints `UNIQUE` conocidas
 habilitan relectura convergente tras `IntegrityError`; las demás fallas SQL se
 propagan al retry técnico de #512.
+
+## Migración central de commands de catálogos
+
+Los tres writes de catálogo maestro y los cuatro de ítems usan Bearer, D1
+`GLOBAL`, metadata y ledger centrales. CREATE requiere `X-Op-Id`; las mutaciones
+existentes requieren también `If-Match-Version` y CAS stale retorna `412`.
+Actor, scope global y payload forman el fingerprint. Receipt y provenance usan
+sucursal/instalación `NULL`. Los repositories preservan locks funcionales, CAS,
+pertenencia padre–ítem y lifecycle, pero no controlan transacción ni replay.
+Los siete producers outbox legacy se retiran; el framework Sync permanece.

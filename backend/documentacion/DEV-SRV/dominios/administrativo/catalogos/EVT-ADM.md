@@ -613,8 +613,13 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 
 ## E. Eventos de catálogos maestros
 
+`item_catalogo_estado_cambiado` pertenece al mismo conjunto legacy/histórico:
+existió como producer del command anterior y no es producido por los commands
+centrales vigentes. No se introduce un evento nuevo ni se amplía la taxonomía.
+
 ### EVT-ADM-064 — Catálogo maestro creado
 - codigo: catalogo_maestro_creado
+- estado_runtime: LEGACY / NO PRODUCIDO POR COMMANDS CENTRALES
 - descripcion: se registró un nuevo catálogo maestro.
 - origen_principal: SRV-ADM-005
 - entidad_principal: catalogo_maestro
@@ -624,6 +629,7 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 
 ### EVT-ADM-065 — Catálogo maestro modificado
 - codigo: catalogo_maestro_modificado
+- estado_runtime: LEGACY / NO PRODUCIDO POR COMMANDS CENTRALES
 - descripcion: se actualizó un catálogo maestro existente.
 - origen_principal: SRV-ADM-005
 - entidad_principal: catalogo_maestro
@@ -633,6 +639,7 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 
 ### EVT-ADM-066 — Catálogo maestro desactivado
 - codigo: catalogo_maestro_desactivado
+- estado_runtime: LEGACY / NO PRODUCIDO POR COMMANDS CENTRALES
 - descripcion: se desactivó un catálogo maestro.
 - origen_principal: SRV-ADM-005
 - entidad_principal: catalogo_maestro
@@ -642,6 +649,7 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 
 ### EVT-ADM-067 — Ítem de catálogo creado
 - codigo: item_catalogo_creado
+- estado_runtime: LEGACY / NO PRODUCIDO POR COMMANDS CENTRALES
 - descripcion: se registró un nuevo ítem de catálogo.
 - origen_principal: SRV-ADM-005
 - entidad_principal: catalogo_item
@@ -651,6 +659,7 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 
 ### EVT-ADM-068 — Ítem de catálogo modificado
 - codigo: item_catalogo_modificado
+- estado_runtime: LEGACY / NO PRODUCIDO POR COMMANDS CENTRALES
 - descripcion: se actualizó un ítem de catálogo existente.
 - origen_principal: SRV-ADM-005
 - entidad_principal: catalogo_item
@@ -660,6 +669,7 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 
 ### EVT-ADM-069 — Ítem de catálogo desactivado
 - codigo: item_catalogo_desactivado
+- estado_runtime: LEGACY / NO PRODUCIDO POR COMMANDS CENTRALES
 - descripcion: se desactivó un ítem de catálogo.
 - origen_principal: SRV-ADM-005
 - entidad_principal: catalogo_item
