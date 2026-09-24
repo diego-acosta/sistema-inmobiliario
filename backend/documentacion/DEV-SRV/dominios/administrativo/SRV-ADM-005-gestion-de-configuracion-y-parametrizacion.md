@@ -815,28 +815,32 @@ raíz, pareja, intervalo o valor incompatible usa un error técnico diferenciado
 sync, fecha operativa o cálculo de vencimientos.
 ## Incremento #484 — BootstrapCalendarioComercialService
 
-`BootstrapCalendarioComercialService` orquesta `claim → contexto técnico → lock
-GLOBAL → precondición vacía → raíz → pareja de valores →
-calendario_comercial_creado → complete`. No realiza
-commits internos. `CalendarioComercialCommandRepository` concentra el SQL y usa
-un advisory lock transaccional específico del agregado. Sólo `EXECUTE` valida
-sucursal/instalación y consulta persistencia; `REPLAY` retorna inmediatamente el
-snapshot durable. Todo error previo al commit exterior revierte negocio, outbox y
-receipt. La policy del producer es mínima y específica. #485 emite
-`calendario_comercial_programado` en su propia transacción. Consumer, inbox,
-reentrega y aplicación remota se integran en #486.
+`BootstrapCalendarioComercialService` es un command central `GLOBAL` y orquesta
+`claim → lock GLOBAL → precondición vacía → raíz → pareja de valores → complete`.
+Requiere Bearer y `X-Op-Id`; la identidad humana procede exclusivamente de
+`AuthenticatedPrincipal`. No requiere sucursal ni instalación, completa el ledger
+con ambas columnas en `NULL` y escribe provenance de instalación `NULL`. El
+fingerprint contiene `actor = {type: HUMAN, id_usuario}`, `scope = {mode: GLOBAL,
+id_sucursal: null}` y el payload funcional exacto. No realiza commits internos ni
+emite `calendario_comercial_creado`. Todo error previo al commit exterior revierte
+negocio y receipt. El evento y su consumer #486 permanecen sólo como compatibilidad
+legacy para envelopes históricos.
 
 ## Incremento #485 — ProgramarCalendarioComercialService
 
-El servicio ejecuta `claim → contexto → advisory GLOBAL → raíz total → CAS →
-definiciones → historia → cierre e inserción de pareja → incremento raíz →
-outbox → completion`.
+El servicio es un command central `GLOBAL` y ejecuta `claim → advisory GLOBAL →
+raíz total → CAS → definiciones → historia → cierre e inserción de pareja →
+incremento raíz → completion`.
 El target idempotente singleton es `CALENDARIO_COMERCIAL / NULL / GLOBAL` y el
-fingerprint incluye ambos días, `vigente_desde` e `if_match_version`. La fecha
+fingerprint agrega actor humano y scope `GLOBAL/null` a ambos días,
+`vigente_desde` e `if_match_version`. Requiere Bearer, `X-Op-Id` e
+`If-Match-Version`; no requiere sucursal ni instalación. Ledger y provenance de
+instalación quedan en `NULL`. La fecha
 debe ser estrictamente posterior al inicio de la última vigencia, sin consultar
 el reloj. Los locks de valores usan orden estable por código. El replay no
-consulta contexto ni agregado y el rollback revierte todas las etapas. El único
-evento material es `calendario_comercial_programado`; #486 no se implementa aquí.
+revalida el estado mutable ni repite CAS, y el rollback revierte todas las etapas.
+No emite `calendario_comercial_programado`; #486 conserva su consumo exclusivamente
+como compatibilidad legacy.
 
 ## Incremento #486 — CalendarioComercialSyncApplicator
 

@@ -750,7 +750,7 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 - tipo_evento: negocio
 - sincronizable: sí
 - genera_trazabilidad_administrativa: sí
-- observaciones: #484 implementa producer y policy mínima; #486 los integra con el consumer portable `administrativo.calendario_comercial` sobre #512.
+- observaciones: evento legacy/histórico de #484. El POST central vigente no lo produce; #486 conserva el consumer portable `administrativo.calendario_comercial` sobre #512 para compatibilidad con envelopes legacy.
 
 ### EVT-ADM-079 — Calendario comercial programado
 - codigo: calendario_comercial_programado
@@ -760,7 +760,7 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 - tipo_evento: negocio
 - sincronizable: sí
 - genera_trazabilidad_administrativa: sí
-- observaciones: #485 implementa producer y policy default-deny; #486 los integra con el consumer portable `administrativo.calendario_comercial` sobre #512.
+- observaciones: evento legacy/histórico de #485. El PUT central vigente no lo produce; #486 conserva el consumer portable `administrativo.calendario_comercial` sobre #512 para compatibilidad con envelopes legacy.
 
 ## F. Notas de compatibilidad transversal
 

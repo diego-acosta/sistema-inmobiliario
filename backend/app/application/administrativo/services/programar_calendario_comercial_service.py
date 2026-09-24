@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from itertools import pairwise
 from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.api.core_ef_headers import AuthenticatedCoreEFHeaders
 from app.application.administrativo.parametro_entero import parse_parametro_entero
+from app.application.common.central_command import CentralCommandMetadata
 from app.application.common.idempotency import (
     CANONICALIZATION_VERSION,
     ClaimDecision,
@@ -23,9 +22,6 @@ from app.application.common.idempotency import (
 from app.infrastructure.persistence.repositories.calendario_comercial_command_repository import (
     CODIGOS,
     CalendarioComercialCommandRepository,
-)
-from app.infrastructure.persistence.repositories.outbox_repository import (
-    OutboxRepository,
 )
 
 COMMAND_CODE = "ADMIN.CONFIG.CALENDARIO_COMERCIAL.PROGRAMAR"
@@ -41,7 +37,6 @@ class ProgramarCalendarioComercialError(Exception):
 @dataclass
 class ProgramarCalendarioComercialService:
     session: Session
-    clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 
     def execute(
         self,
@@ -49,19 +44,27 @@ class ProgramarCalendarioComercialService:
         dia_cierre_comercial: int,
         dia_vencimiento_predeterminado_cuotas: int,
         vigente_desde: date,
-        headers: AuthenticatedCoreEFHeaders,
+        metadata: CentralCommandMetadata,
         id_usuario: int,
     ) -> dict[str, Any]:
+        if metadata.expected_version is None:
+            raise ProgramarCalendarioComercialError(500, "TECHNICAL_INCONSISTENCY")
         request_hash = canonical_payload_hash(
             {
-                "dia_cierre_comercial": dia_cierre_comercial,
-                "dia_vencimiento_predeterminado_cuotas": dia_vencimiento_predeterminado_cuotas,
-                "vigente_desde": vigente_desde.isoformat(),
-                "if_match_version": headers.if_match_version,
+                "actor": {"type": "HUMAN", "id_usuario": id_usuario},
+                "scope": {"mode": "GLOBAL", "id_sucursal": None},
+                "payload": {
+                    "dia_cierre_comercial": dia_cierre_comercial,
+                    "dia_vencimiento_predeterminado_cuotas": (
+                        dia_vencimiento_predeterminado_cuotas
+                    ),
+                    "vigente_desde": vigente_desde.isoformat(),
+                    "if_match_version": metadata.expected_version,
+                },
             }
         )
         claim = OperationClaim(
-            headers.x_op_id, COMMAND_CODE, TARGET_TYPE, None, TARGET_KEY, request_hash
+            metadata.op_id, COMMAND_CODE, TARGET_TYPE, None, TARGET_KEY, request_hash
         )
         decision = claim_operation(self.session, claim)
         if decision.decision is ClaimDecision.REPLAY:
@@ -80,13 +83,6 @@ class ProgramarCalendarioComercialService:
             raise ProgramarCalendarioComercialError(409, codes[decision.conflict])
 
         repository = CalendarioComercialCommandRepository(self.session)
-        origin = repository.validate_context(
-            headers.x_sucursal_id, headers.x_instalacion_id
-        )
-        if origin is None:
-            raise ProgramarCalendarioComercialError(
-                400, "inconsistencia_contexto_tecnico"
-            )
         # Jerarquía única de todos los writers del singleton calendario:
         # advisory aggregate → raíz total → definiciones → historia.
         repository.lock_global()
@@ -96,7 +92,7 @@ class ProgramarCalendarioComercialService:
                 409, "CONFIGURACION_CALENDARIO_COMERCIAL_INCONSISTENTE"
             )
         previous_version = root["version_registro"]
-        if headers.if_match_version != previous_version:
+        if metadata.expected_version != previous_version:
             raise ProgramarCalendarioComercialError(412, "CONCURRENCY_ERROR")
         definitions, history = repository.lock_and_inspect_history()
         previous = self._validate_history(definitions, history)
@@ -116,21 +112,11 @@ class ProgramarCalendarioComercialService:
             previous=previous,
             values=values,
             vigente_desde=vigente_desde,
-            op_id=headers.x_op_id,
-            id_instalacion=headers.x_instalacion_id,
+            op_id=metadata.op_id,
         )
         new_version = changed["root"]["version_registro"]
         if new_version != previous_version + 1:
             raise ProgramarCalendarioComercialError(500, "TECHNICAL_INCONSISTENCY")
-        self._add_outbox(
-            changed,
-            values,
-            vigente_desde,
-            previous_start,
-            headers.x_op_id,
-            origin,
-            previous_version,
-        )
         snapshot = {
             "ok": True,
             "data": {
@@ -159,8 +145,8 @@ class ProgramarCalendarioComercialService:
                 result_version=new_version,
                 response_snapshot=snapshot,
                 id_usuario=id_usuario,
-                id_sucursal=headers.x_sucursal_id,
-                id_instalacion=headers.x_instalacion_id,
+                id_sucursal=None,
+                id_instalacion=None,
             ),
         )
         return snapshot
@@ -214,76 +200,3 @@ class ProgramarCalendarioComercialService:
                 409, "CONFIGURACION_CALENDARIO_COMERCIAL_INCONSISTENTE"
             )
         return [intervals[ordered[-1]][code] for code in CODIGOS]
-
-    def _add_outbox(
-        self,
-        changed: dict[str, Any],
-        values: dict[str, int],
-        vigente_desde: date,
-        previous_start: datetime,
-        op_id: Any,
-        origin: Any,
-        previous_version: int,
-    ) -> None:
-        root, created, previous = (
-            changed["root"],
-            changed["values"],
-            changed["previous"],
-        )
-        data = {
-            "uid_global": str(root["uid_global"]),
-            "version_agregada": root["version_registro"],
-            "version_agregada_anterior": previous_version,
-            "vigente_desde": vigente_desde.isoformat(),
-            "fecha_desde_vigencia_anterior": previous_start.date().isoformat(),
-            "fecha_hasta_vigencia_anterior": vigente_desde.isoformat(),
-            "dia_cierre_comercial": values[CODIGOS[0]],
-            "dia_vencimiento_predeterminado_cuotas": values[CODIGOS[1]],
-            "valor_dia_cierre_comercial": self._portable(created[CODIGOS[0]]),
-            "valor_dia_vencimiento_predeterminado_cuotas": self._portable(
-                created[CODIGOS[1]]
-            ),
-            "valor_anterior_dia_cierre_comercial": self._portable_previous(
-                previous[CODIGOS[0]]
-            ),
-            "valor_anterior_dia_vencimiento_predeterminado_cuotas": self._portable_previous(
-                previous[CODIGOS[1]]
-            ),
-            "op_id": str(op_id),
-        }
-        origin_text = str(origin)
-        hash_input = {"metadata": {"uid_instalacion_origen": origin_text}, "data": data}
-        payload = {
-            "metadata": {
-                "uid_instalacion_origen": origin_text,
-                "payload_hash": canonical_payload_hash(hash_input),
-            },
-            "data": data,
-        }
-        occurred_at = self.clock()
-        if occurred_at.tzinfo is None or occurred_at.utcoffset() != UTC.utcoffset(
-            occurred_at
-        ):
-            raise ProgramarCalendarioComercialError(500, "TECHNICAL_INCONSISTENCY")
-        OutboxRepository(self.session).add_event(
-            event_type="calendario_comercial_programado",
-            aggregate_type="calendario_comercial",
-            aggregate_id=root["id_configuracion_calendario_comercial"],
-            payload=payload,
-            occurred_at=occurred_at.replace(tzinfo=None),
-            status="PENDING",
-        )
-
-    @staticmethod
-    def _portable(row: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "uid_global": str(row["uid_global"]),
-            "version_registro": row["version_registro"],
-        }
-
-    @staticmethod
-    def _portable_previous(row: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "uid_global": str(row["uid_global"]),
-            "version_registro": row["version_registro"] + 1,
-        }
