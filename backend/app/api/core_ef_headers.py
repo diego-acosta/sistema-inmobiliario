@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from uuid import UUID
 
+from app.application.common.central_command import CentralCommandMetadata
 from app.application.common.local_command_headers import LocalCommandCoreEFHeaders
 from fastapi import Header, Request
 
@@ -166,6 +167,28 @@ def parse_technical_core_ef_headers(
         x_instalacion_id=_parse_required_positive_int(
             "X-Instalacion-Id", x_instalacion_id
         ),
+    )
+
+
+def parse_central_command_metadata(
+    x_op_id: str | None,
+    if_match_version: str | None = None,
+    *,
+    require_if_match_version: bool = False,
+) -> CentralCommandMetadata:
+    """Parsea sólo identidad idempotente y CAS; no acepta contexto legacy."""
+    if x_op_id is None:
+        raise _missing_header_error("X-Op-Id")
+    try:
+        parsed_op_id = UUID(x_op_id)
+    except (TypeError, ValueError) as exc:
+        raise _invalid_header_error("X-Op-Id") from exc
+    version = _parse_if_match(if_match_version, require_if_match_version)
+    if version is not None and version < 1:
+        raise _invalid_header_error("If-Match-Version")
+    return CentralCommandMetadata(
+        op_id=parsed_op_id,
+        expected_version=version,
     )
 
 

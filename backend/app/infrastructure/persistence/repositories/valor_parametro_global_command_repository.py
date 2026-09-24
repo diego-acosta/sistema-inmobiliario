@@ -10,24 +10,7 @@ class ValorParametroGlobalCommandRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def validate_context(self, id_sucursal: int, id_instalacion: int) -> dict | None:
-        row = (
-            self.session.execute(
-                text("""
-            SELECT i.uid_global
-              FROM public.sucursal s
-              JOIN public.instalacion i ON i.id_sucursal = s.id_sucursal
-             WHERE s.id_sucursal = :id_sucursal
-               AND i.id_instalacion = :id_instalacion
-        """),
-                {"id_sucursal": id_sucursal, "id_instalacion": id_instalacion},
-            )
-            .mappings()
-            .one_or_none()
-        )
-        return dict(row) if row is not None else None
-
-    def find_target(self, codigo_parametro: str) -> tuple[str, int | None]:
+    def preflight_target(self, codigo_parametro: str) -> tuple[str, int | None]:
         rows = (
             self.session.execute(
                 text("""
@@ -106,7 +89,6 @@ class ValorParametroGlobalCommandRepository:
         id_valor_parametro: int,
         valor_parametro: str,
         op_id,
-        id_instalacion: int,
         if_match_version: int,
     ) -> dict | None:
         row = (
@@ -115,7 +97,7 @@ class ValorParametroGlobalCommandRepository:
             UPDATE public.valor_parametro
                SET valor_parametro = :valor_parametro,
                    op_id_ultima_modificacion = :op_id,
-                   id_instalacion_ultima_modificacion = :id_instalacion
+                   id_instalacion_ultima_modificacion = NULL
              WHERE id_valor_parametro = :id_valor_parametro
                AND version_registro = :if_match_version
              RETURNING id_valor_parametro, uid_global,
@@ -127,7 +109,6 @@ class ValorParametroGlobalCommandRepository:
                     "id_valor_parametro": id_valor_parametro,
                     "valor_parametro": valor_parametro,
                     "op_id": op_id,
-                    "id_instalacion": id_instalacion,
                     "if_match_version": if_match_version,
                 },
             )

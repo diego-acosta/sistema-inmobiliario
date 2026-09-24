@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from typing import Any, Callable
+from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.api.core_ef_headers import AuthenticatedCoreEFHeaders
 from app.application.administrativo.parametro_entero import parse_parametro_entero
+from app.application.common.central_command import CentralCommandMetadata
 from app.application.common.idempotency import (
     CANONICALIZATION_VERSION,
     ClaimDecision,
@@ -17,9 +16,6 @@ from app.application.common.idempotency import (
     canonical_payload_hash,
     claim_operation,
     complete_operation,
-)
-from app.infrastructure.persistence.repositories.outbox_repository import (
-    OutboxRepository,
 )
 from app.infrastructure.persistence.repositories.valor_parametro_global_command_repository import (
     ValorParametroGlobalCommandRepository,
@@ -44,25 +40,40 @@ class ParametroCommandError(Exception):
 @dataclass
 class ActualizarValorParametroGlobalService:
     session: Session
-    clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 
     def execute(
         self,
         *,
         codigo_parametro: str,
         valor_tipado: int,
-        headers: AuthenticatedCoreEFHeaders,
+        metadata: CentralCommandMetadata,
         id_usuario: int,
     ) -> dict[str, Any]:
+        if metadata.expected_version is None:
+            raise ParametroCommandError(500, "TECHNICAL_INCONSISTENCY")
+        if codigo_parametro in CALENDARIO_COMERCIAL_PARAMETER_CODES:
+            raise ParametroCommandError(409, "conflicto_parametro")
+
+        repository = ValorParametroGlobalCommandRepository(self.session)
+        eligibility, target_id = repository.preflight_target(codigo_parametro)
+        if eligibility == "NOT_FOUND":
+            raise ParametroCommandError(404, "parametro_no_encontrado")
+        if eligibility != "OK" or target_id is None:
+            raise ParametroCommandError(409, "conflicto_parametro")
+
         payload_hash = canonical_payload_hash(
             {
-                "codigo_parametro": codigo_parametro,
-                "valor_tipado": str(valor_tipado),
-                "if_match_version": headers.if_match_version,
+                "actor": {"type": "HUMAN", "id_usuario": id_usuario},
+                "scope": {"mode": "GLOBAL", "id_sucursal": None},
+                "payload": {
+                    "codigo_parametro": codigo_parametro,
+                    "valor": str(valor_tipado),
+                    "if_match_version": metadata.expected_version,
+                },
             }
         )
         claim = OperationClaim(
-            op_id=headers.x_op_id,
+            op_id=metadata.op_id,
             command_code=COMMAND_CODE,
             target_type=TARGET_TYPE,
             target_uid=None,
@@ -84,26 +95,10 @@ class ActualizarValorParametroGlobalService:
             }
             raise ParametroCommandError(409, codes[decision.conflict])
 
-        # Un receipt durable previo conserva REPLAY/CONFLICT. Sólo una operación
-        # nueva (EXECUTE) se bloquea antes de consultar o mutar negocio.
-        if codigo_parametro in CALENDARIO_COMERCIAL_PARAMETER_CODES:
-            raise ParametroCommandError(409, "conflicto_parametro")
-
-        repository = ValorParametroGlobalCommandRepository(self.session)
-        context = repository.validate_context(
-            headers.x_sucursal_id, headers.x_instalacion_id
-        )
-        if context is None:
-            raise ParametroCommandError(400, "inconsistencia_contexto_tecnico")
-        eligibility, target_id = repository.find_target(codigo_parametro)
-        if eligibility == "NOT_FOUND":
-            raise ParametroCommandError(404, "parametro_no_encontrado")
-        if eligibility != "OK" or target_id is None:
-            raise ParametroCommandError(409, "conflicto_parametro")
         locked = repository.lock_target(target_id)
         if locked is None or not self._operable(locked):
             raise ParametroCommandError(409, "conflicto_parametro")
-        if locked["version_registro"] != headers.if_match_version:
+        if locked["version_registro"] != metadata.expected_version:
             raise ParametroCommandError(412, "CONCURRENCY_ERROR")
         try:
             current = parse_parametro_entero(locked["valor_raw"])
@@ -116,20 +111,11 @@ class ActualizarValorParametroGlobalService:
             result = repository.cas_update(
                 id_valor_parametro=target_id,
                 valor_parametro=str(valor_tipado),
-                op_id=headers.x_op_id,
-                id_instalacion=headers.x_instalacion_id,
-                if_match_version=headers.if_match_version,
+                op_id=metadata.op_id,
+                if_match_version=metadata.expected_version,
             )
             if result is None:
                 raise ParametroCommandError(412, "CONCURRENCY_ERROR")
-            self._add_outbox(
-                context,
-                result,
-                codigo_parametro,
-                current,
-                valor_tipado,
-                headers,
-            )
 
         snapshot = {
             "ok": True,
@@ -161,8 +147,8 @@ class ActualizarValorParametroGlobalService:
                 result_version=result["version_registro"],
                 response_snapshot=snapshot,
                 id_usuario=id_usuario,
-                id_sucursal=headers.x_sucursal_id,
-                id_instalacion=headers.x_instalacion_id,
+                id_sucursal=None,
+                id_instalacion=None,
             ),
         )
         return snapshot
@@ -180,38 +166,4 @@ class ActualizarValorParametroGlobalService:
             and row["editable_administrativamente"] is True
             and row["codigo_tipo_dato"] == "ENTERO"
             and row["codigo_alcance"] == "GLOBAL"
-        )
-
-    def _add_outbox(self, context, result, codigo, previous, new, headers):
-        data = {
-            "uid_global": str(result["uid_global"]),
-            "codigo_parametro": codigo,
-            "valor_anterior": str(previous),
-            "valor_nuevo": str(new),
-            "version_anterior": headers.if_match_version,
-            "version_registro": result["version_registro"],
-            "op_id": str(headers.x_op_id),
-        }
-        origin = str(context["uid_global"])
-        hash_input = {"metadata": {"uid_instalacion_origen": origin}, "data": data}
-        payload = {
-            "metadata": {
-                "uid_instalacion_origen": origin,
-                "payload_hash": canonical_payload_hash(hash_input),
-            },
-            "data": data,
-        }
-        occurred_at_utc = self.clock()
-        if (
-            occurred_at_utc.tzinfo is None
-            or occurred_at_utc.utcoffset() != UTC.utcoffset(occurred_at_utc)
-        ):
-            raise ParametroCommandError(500, "TECHNICAL_INCONSISTENCY")
-        OutboxRepository(self.session).add_event(
-            event_type="valor_parametro_modificado",
-            aggregate_type="valor_parametro",
-            aggregate_id=result["id_valor_parametro"],
-            payload=payload,
-            occurred_at=occurred_at_utc.replace(tzinfo=None),
-            status="PENDING",
         )
