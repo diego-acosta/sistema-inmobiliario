@@ -753,8 +753,9 @@ cierra TOCTOU.
 El fingerprint conserva RFC 8785, SHA-256, la versión de canonicalización y la
 precedencia de conflictos `COMMAND` → `TARGET` → `PAYLOAD`. Su intención conceptual
 es `actor = {type: HUMAN, id_usuario: principal.id_usuario}`, `scope = {mode:
-GLOBAL, id_sucursal: null}` y `payload = {codigo_parametro, valor_tipado,
-if_match_version}`. No incluye Bearer, sesión, sucursal legacy ni instalación. El
+GLOBAL, id_sucursal: null}` y `payload = {codigo_parametro, valor,
+if_match_version}`, donde `valor = str(valor_tipado)`. No incluye Bearer, sesión,
+sucursal legacy ni instalación. El
 ledger completa con `id_usuario = principal.id_usuario`, `id_sucursal = NULL` e
 `id_instalacion = NULL`.
 

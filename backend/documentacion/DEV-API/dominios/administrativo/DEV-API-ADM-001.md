@@ -1337,7 +1337,8 @@ atómicamente mutación y receipt.
 El fingerprint conserva RFC 8785, SHA-256, la versión de canonicalización y la
 precedencia `COMMAND` → `TARGET` → `PAYLOAD`. Incluye conceptualmente
 `actor = {type: HUMAN, id_usuario}`, `scope = {mode: GLOBAL, id_sucursal: null}` y
-`payload = {codigo_parametro, valor_tipado, if_match_version}`. No incluye Bearer,
+`payload = {codigo_parametro, valor, if_match_version}`, donde
+`valor = str(valor_tipado)`. No incluye Bearer,
 sesión, sucursal legacy ni instalación. La completion persiste
 `id_usuario = principal.id_usuario`, `id_sucursal = NULL` e
 `id_instalacion = NULL`. El PATCH central no produce `EVT-ADM-060` ni otro outbox
