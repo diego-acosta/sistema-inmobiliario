@@ -71,10 +71,31 @@ def test_update_cas_replay_actor_conflict_y_baja(client, db_session):
     assert first.status_code == replay.status_code == 200 and first.json() == replay.json()
     cross = _request(client, "PUT", url, json=payload, headers=_headers(op, created["version_registro"]), user=2)
     assert cross.status_code == 409 and cross.json()["error_code"] == "IDEMPOTENCY_PAYLOAD_CONFLICT"
-    assert _request(client, "PUT", url, json=_payload(), headers=_headers(version=1)).status_code == 412
+    stale_op = uuid4()
+    assert _request(client, "PUT", url, json=_payload(), headers=_headers(stale_op, 1)).status_code == 412
+    assert db_session.execute(
+        text("SELECT count(*) FROM operacion_idempotente WHERE op_id=:op"),
+        {"op": stale_op},
+    ).scalar_one() == 0
     current = first.json()["data"]
-    baja = _request(client, "PATCH", f"{url}/baja", headers=_headers(version=current["version_registro"]))
+    baja_op = uuid4()
+    baja_headers = _headers(baja_op, current["version_registro"])
+    baja = _request(client, "PATCH", f"{url}/baja", headers=baja_headers)
     assert baja.status_code == 200 and baja.json()["data"]["deleted_at"] is not None
+    replay_baja = _request(client, "PATCH", f"{url}/baja", headers=baja_headers)
+    assert replay_baja.status_code == 200 and replay_baja.json() == baja.json()
+    receipt = db_session.execute(
+        text("SELECT id_usuario,id_sucursal,id_instalacion FROM operacion_idempotente WHERE op_id=:op"),
+        {"op": baja_op},
+    ).one()
+    assert receipt == (1, None, None)
+    nueva_baja = _request(
+        client,
+        "PATCH",
+        f"{url}/baja",
+        headers=_headers(version=baja.json()["data"]["version_registro"]),
+    )
+    assert nueva_baja.status_code == 404
     assert db_session.execute(text("SELECT count(*) FROM outbox_event WHERE aggregate_type='catalogo_maestro'")).scalar_one() == 0
 
 

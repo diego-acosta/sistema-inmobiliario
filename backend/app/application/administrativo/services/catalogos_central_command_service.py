@@ -144,13 +144,19 @@ class CatalogosCentralCommandService:
         fp = {"id_catalogo_maestro": catalogo_id, **payload,
               "if_match_version": metadata.expected_version}
         command = "UPDATE" if action == "update" else "DELETE"
-        execute = (
-            lambda: repo.update(catalogo_id, payload, op_id=str(metadata.op_id),
-                                if_match_version=metadata.expected_version)
-            if action == "update" else
-            lambda: repo.baja_logica(catalogo_id, op_id=str(metadata.op_id),
-                                     if_match_version=metadata.expected_version)
-        )
+        if action == "update":
+            execute = lambda: repo.update(
+                catalogo_id,
+                payload,
+                op_id=str(metadata.op_id),
+                if_match_version=metadata.expected_version,
+            )
+        else:
+            execute = lambda: repo.baja_logica(
+                catalogo_id,
+                op_id=str(metadata.op_id),
+                if_match_version=metadata.expected_version,
+            )
         return self._run(
             metadata=metadata, id_usuario=id_usuario,
             command_code=f"ADMIN.CONFIG.CATALOGO.{command}", target_type=TARGET_CATALOGO,
