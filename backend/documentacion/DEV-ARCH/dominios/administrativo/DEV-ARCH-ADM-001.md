@@ -91,6 +91,21 @@ rollback, preflight e idempotencia SQL fail-fast.
 
 Los parámetros no son catálogos. `catalogo_maestro`/`item_catalogo` conservan su modelo administrativo propio y no participan en la resolución de configuración.
 
+### Permiso central de administración de catálogos
+
+El permiso D1 `ADMIN.CONFIG.CATALOGO.ADMINISTRAR` es una capacidad `GLOBAL`
+única para crear, modificar, cambiar estado y dar de baja catálogos maestros y
+sus ítems configurables. Su nombre contractual es `Administrar catálogos` y su
+receptor canónico inicial es el rol activo `ADMINISTRADOR_SISTEMA`; el código del
+rol no forma parte de la decisión runtime, que continúa siendo permission-based.
+El permiso no crea asignaciones de usuarios, scope de sucursal ni dependencia de
+instalación.
+
+Este incremento materializa únicamente permiso y grant. Los siete endpoints write
+de `catalogo_maestro` e `item_catalogo` conservan todavía el contexto CORE-EF
+legacy; Bearer, D1 productivo y ledger central se incorporarán en el siguiente
+incremento de migración.
+
 ## 3. Modelo canónico
 
 `parametro_sistema` define identidad y referencia físicamente a `alcance_parametro`; `valor_parametro` conserva el valor y posee campos opcionales `id_sucursal` e `id_instalacion`. Esas columnas prueban capacidad física de contexto, pero no congelan por sí solas su semántica de resolución.

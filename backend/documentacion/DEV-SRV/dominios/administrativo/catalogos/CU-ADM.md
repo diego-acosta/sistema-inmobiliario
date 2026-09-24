@@ -1003,6 +1003,7 @@ Este dominio cubre gestión de usuarios y acceso, seguridad y autorización, aud
 
 ### CU-ADM-076 — Alta de catálogo maestro
 - servicio_origen: SRV-ADM-005
+- permiso_contractual: ADMIN.CONFIG.CATALOGO.ADMINISTRAR (GLOBAL; adopción runtime pendiente)
 - tipo: write
 - objetivo: registrar un catálogo maestro global del sistema.
 - entidades: catalogo_maestro
@@ -1016,6 +1017,7 @@ Este dominio cubre gestión de usuarios y acceso, seguridad y autorización, aud
 
 ### CU-ADM-077 — Modificación de catálogo maestro
 - servicio_origen: SRV-ADM-005
+- permiso_contractual: ADMIN.CONFIG.CATALOGO.ADMINISTRAR (GLOBAL; adopción runtime pendiente)
 - tipo: write
 - objetivo: actualizar definición o estado de un catálogo maestro.
 - entidades: catalogo_maestro
@@ -1029,6 +1031,7 @@ Este dominio cubre gestión de usuarios y acceso, seguridad y autorización, aud
 
 ### CU-ADM-078 — Baja lógica de catálogo maestro
 - servicio_origen: SRV-ADM-005
+- permiso_contractual: ADMIN.CONFIG.CATALOGO.ADMINISTRAR (GLOBAL; adopción runtime pendiente)
 - tipo: write
 - objetivo: invalidar un catálogo maestro sin eliminarlo físicamente.
 - entidades: catalogo_maestro
@@ -1042,6 +1045,7 @@ Este dominio cubre gestión de usuarios y acceso, seguridad y autorización, aud
 
 ### CU-ADM-079 — Alta de ítem de catálogo
 - servicio_origen: SRV-ADM-005
+- permiso_contractual: ADMIN.CONFIG.CATALOGO.ADMINISTRAR (GLOBAL; adopción runtime pendiente)
 - tipo: write
 - objetivo: registrar un ítem dentro de un catálogo maestro.
 - entidades: catalogo_item, catalogo_maestro
@@ -1055,6 +1059,7 @@ Este dominio cubre gestión de usuarios y acceso, seguridad y autorización, aud
 
 ### CU-ADM-080 — Modificación de ítem de catálogo
 - servicio_origen: SRV-ADM-005
+- permiso_contractual: ADMIN.CONFIG.CATALOGO.ADMINISTRAR (GLOBAL; adopción runtime pendiente)
 - tipo: write
 - objetivo: actualizar un ítem existente de catálogo.
 - entidades: catalogo_item, catalogo_maestro
@@ -1068,6 +1073,7 @@ Este dominio cubre gestión de usuarios y acceso, seguridad y autorización, aud
 
 ### CU-ADM-081 — Baja lógica de ítem de catálogo
 - servicio_origen: SRV-ADM-005
+- permiso_contractual: ADMIN.CONFIG.CATALOGO.ADMINISTRAR (GLOBAL; adopción runtime pendiente)
 - tipo: write
 - objetivo: invalidar un ítem de catálogo sin eliminarlo físicamente.
 - entidades: catalogo_item, catalogo_maestro
