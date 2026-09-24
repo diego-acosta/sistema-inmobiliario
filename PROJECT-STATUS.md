@@ -552,7 +552,7 @@ Sub-issues con estado verificable:
 - #409 incorpora sólo el tipo estructural `ENTERO` y el alcance estructural
   `GLOBAL`, con descripciones contractuales, reset DEV/TEST y tests PostgreSQL.
   No crea claves ni valores funcionales de #425.
-- Estado histórico al cierre de #410: quedó preparada exclusivamente la infraestructura SQL CORE-EF. Estado vigente: #482/PR #487 dejó materializadas las dos definiciones y la raíz física; #483 agregó el GET y la resolución temporal; #484/PR #504 implementó bootstrap y `calendario_comercial_creado`; #485/PR #506 implementó programación append-only y `calendario_comercial_programado`; #486/PR #526 completó el consumer y sync portable.
+- Estado histórico al cierre de #410: quedó preparada exclusivamente la infraestructura SQL CORE-EF. Estado vigente: #482/PR #487 dejó materializadas las dos definiciones y la raíz física; #483 agregó el GET y la resolución temporal; #484/PR #504 y #485/PR #506 implementaron bootstrap/programación append-only y sus producers legacy. PR05C2 migra POST/PUT a commands centrales GLOBAL con ledger y provenance de instalación `NULL`, sin nuevos eventos Sync. #486/PR #526 conserva el consumer portable exclusivamente para compatibilidad con eventos legacy.
 - #469 y #470 completaron el ledger y runtime transversal de idempotencia durable; #412 es su primer consumidor productivo. PR #478 implementó endpoint, permiso, vínculo, seed técnico controlado y EVT-ADM-060. #402 está cerrado/completado.
 - #438 agrega a `parametro_sistema` la metadata física `exponible_api_administrativa` y `es_sensible`, con política default-deny (`false`/`true`) y constraint que impide exposición en claro de definiciones sensibles. #411 implementa únicamente el GET individual del valor GLOBAL marcado vigente para definiciones exponibles y no sensibles, con 404 indistinguible para inexistente/no exponible/sensible, 409 para no GLOBAL, estado `SIN_VALOR` y tipado estricto `ENTERO`. #441 agrega `editable_administrativamente` como metadata física independiente, default-deny (`false`), no editable por API y habilitable sólo por migración versionada. Estado vigente: #412 está implementado, #482 habilita explícitamente la metadata de sus dos definiciones calendario, #484 creó sus valores funcionales iniciales y #485/PR #506 completó las nuevas vigencias append-only; la resolución agregada temporal queda implementada por #483, sin resolver #435.
 - #264 `Administrativo: catálogos maestros e ítems configurables` abierto.
@@ -664,11 +664,13 @@ El CRUD write de `item_catalogo` quedó implementado por #399. Para configuraci�
 
 ### 6.9 Continuidad vigente
 
-#425 está completado. #484/PR #504 materializó el bootstrap y producer local
-transaccional `calendario_comercial_creado`; #485/PR #506 completó la
-programación append-only y el producer `calendario_comercial_programado`;
-#486/PR #526 está completado/mergeado y materializa consumer, inbox, reentrega,
-aplicación remota y E2E. #426/PR #531 también está completado/mergeado.
+#425 está completado. El GET y los commands POST/PUT del calendario operan bajo
+autoridad central; POST/PUT son GLOBAL, usan ledger/provenance sin instalación y
+no producen nuevos eventos Sync. Los producers
+`calendario_comercial_creado`/`calendario_comercial_programado` quedan como
+contratos legacy históricos. #486/PR #526 conserva consumer, inbox, reentrega,
+aplicación remota y E2E sólo para compatibilidad. #426/PR #531 también está
+completado/mergeado.
 
 Para continuar el frente:
 
@@ -677,8 +679,8 @@ Para continuar el frente:
    bloqueado hasta contar con sus soportes;
 3. mantener `configuracion_local` en Operativo y no usar catálogos como
    parámetros;
-4. preservar los producers y el consumer portable existentes sin inferir que
-   todo Administrativo está sincronizado;
+4. preservar el consumer portable legacy sin reactivar producers en los commands
+   centrales ni inferir que todo Administrativo está sincronizado;
 5. validar SQL, runtime, tests e issues vigentes antes de cada incremento y
    marcar `NO CONFIRMADO` todo dato sin respaldo.
 

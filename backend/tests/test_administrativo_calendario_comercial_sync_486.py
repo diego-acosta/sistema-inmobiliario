@@ -1,13 +1,13 @@
 from copy import deepcopy
-from datetime import date
+from datetime import UTC, date, datetime
 from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
-from app.api.core_ef_headers import AuthenticatedCoreEFHeaders, TechnicalCoreEFHeaders
-from app.application.administrativo.services.bootstrap_calendario_comercial_service import (
-    BootstrapCalendarioComercialService,
-)
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.orm import Session
+
 from app.application.administrativo.services.calendario_comercial_sync_service import (
     CALENDARIO_SYNC_CONSUMER,
     CalendarioComercialSyncPayloadError,
@@ -19,18 +19,12 @@ from app.application.administrativo.services.calendario_comercial_sync_service i
     run_calendario_inbox_once,
     transport_calendario_outbox_once,
 )
-from app.application.administrativo.services.programar_calendario_comercial_service import (
-    ProgramarCalendarioComercialService,
-)
 from app.application.common.idempotency import canonical_payload_hash
 from app.application.integration.inbox_retry import InboxOutcomeKind
 from app.infrastructure.persistence.repositories.inbox_repository import InboxRepository
 from app.infrastructure.persistence.repositories.outbox_repository import (
     OutboxRepository,
 )
-from sqlalchemy import create_engine, text
-from sqlalchemy.exc import IntegrityError, OperationalError
-from sqlalchemy.orm import Session
 
 
 class _NullSession:
@@ -54,18 +48,6 @@ def _run_inbox(db_session, **kwargs):
     )
 
 
-def _headers(op_id=None, version=None):
-    cls = AuthenticatedCoreEFHeaders if version is not None else TechnicalCoreEFHeaders
-    values = {
-        "x_op_id": op_id or uuid4(),
-        "x_sucursal_id": 1,
-        "x_instalacion_id": 1,
-    }
-    if version is not None:
-        values["if_match_version"] = version
-    return cls(**values)
-
-
 def _outbox(db_session, event_type):
     return dict(
         db_session.execute(
@@ -86,39 +68,142 @@ def _outbox(db_session, event_type):
 
 
 def _bootstrap_origin(db_session, op_id=None):
-    BootstrapCalendarioComercialService(db_session).execute(
-        dia_cierre_comercial=20,
-        dia_vencimiento_predeterminado_cuotas=10,
-        vigente_desde=date(2026, 9, 1),
-        headers=_headers(op_id),
-        id_usuario=1,
+    operation_id = op_id or uuid4()
+    root_uid = uuid4()
+    cierre_uid = uuid4()
+    vencimiento_uid = uuid4()
+    data = {
+        "uid_global": str(root_uid),
+        "version_agregada": 1,
+        "vigente_desde": "2026-09-01",
+        "fecha_hasta": None,
+        "dia_cierre_comercial": 20,
+        "dia_vencimiento_predeterminado_cuotas": 10,
+        "valor_dia_cierre_comercial": {
+            "uid_global": str(cierre_uid),
+            "version_registro": 1,
+        },
+        "valor_dia_vencimiento_predeterminado_cuotas": {
+            "uid_global": str(vencimiento_uid),
+            "version_registro": 1,
+        },
+        "op_id": str(operation_id),
+    }
+    _add_legacy_calendar_event(
+        db_session,
+        event_type="calendario_comercial_creado",
+        aggregate_id=1,
+        data=data,
     )
     db_session.commit()
     return _outbox(db_session, "calendario_comercial_creado")
 
 
 def _program_origin(db_session, op_id=None):
-    ProgramarCalendarioComercialService(db_session).execute(
-        dia_cierre_comercial=21,
-        dia_vencimiento_predeterminado_cuotas=11,
-        vigente_desde=date(2026, 10, 1),
-        headers=_headers(op_id, 1),
-        id_usuario=1,
+    _add_legacy_program_event(
+        db_session,
+        op_id=op_id or uuid4(),
+        version=2,
+        vigente_desde="2026-10-01",
+        previous_start="2026-09-01",
+        cierre=21,
+        vencimiento=11,
     )
     db_session.commit()
     return _outbox(db_session, "calendario_comercial_programado")
 
 
 def _program_origin_v3(db_session, op_id=None):
-    ProgramarCalendarioComercialService(db_session).execute(
-        dia_cierre_comercial=22,
-        dia_vencimiento_predeterminado_cuotas=12,
-        vigente_desde=date(2026, 11, 1),
-        headers=_headers(op_id, 2),
-        id_usuario=1,
+    _add_legacy_program_event(
+        db_session,
+        op_id=op_id or uuid4(),
+        version=3,
+        vigente_desde="2026-11-01",
+        previous_start="2026-10-01",
+        cierre=22,
+        vencimiento=12,
     )
     db_session.commit()
     return _outbox(db_session, "calendario_comercial_programado")
+
+
+def _origin_uid(db_session) -> str:
+    return str(
+        db_session.execute(
+            text("SELECT uid_global FROM instalacion ORDER BY id_instalacion LIMIT 1")
+        ).scalar_one()
+    )
+
+
+def _add_legacy_calendar_event(db_session, *, event_type, aggregate_id, data):
+    origin = _origin_uid(db_session)
+    payload = {
+        "metadata": {"uid_instalacion_origen": origin},
+        "data": data,
+    }
+    _rehash(payload)
+    OutboxRepository(db_session).add_event(
+        event_type=event_type,
+        aggregate_type="calendario_comercial",
+        aggregate_id=aggregate_id,
+        payload=payload,
+        occurred_at=datetime.now(UTC).replace(tzinfo=None),
+        status="PENDING",
+    )
+
+
+def _add_legacy_program_event(
+    db_session,
+    *,
+    op_id,
+    version,
+    vigente_desde,
+    previous_start,
+    cierre,
+    vencimiento,
+):
+    previous = (
+        _outbox(db_session, "calendario_comercial_creado")
+        if version == 2
+        else _outbox(db_session, "calendario_comercial_programado")
+    )["payload"]["data"]
+    previous_cierre = previous["valor_dia_cierre_comercial"]
+    previous_vencimiento = previous[
+        "valor_dia_vencimiento_predeterminado_cuotas"
+    ]
+    data = {
+        "uid_global": previous["uid_global"],
+        "version_agregada": version,
+        "version_agregada_anterior": version - 1,
+        "vigente_desde": vigente_desde,
+        "fecha_desde_vigencia_anterior": previous_start,
+        "fecha_hasta_vigencia_anterior": vigente_desde,
+        "dia_cierre_comercial": cierre,
+        "dia_vencimiento_predeterminado_cuotas": vencimiento,
+        "valor_dia_cierre_comercial": {
+            "uid_global": str(uuid4()),
+            "version_registro": 1,
+        },
+        "valor_dia_vencimiento_predeterminado_cuotas": {
+            "uid_global": str(uuid4()),
+            "version_registro": 1,
+        },
+        "valor_anterior_dia_cierre_comercial": {
+            "uid_global": previous_cierre["uid_global"],
+            "version_registro": previous_cierre["version_registro"] + 1,
+        },
+        "valor_anterior_dia_vencimiento_predeterminado_cuotas": {
+            "uid_global": previous_vencimiento["uid_global"],
+            "version_registro": previous_vencimiento["version_registro"] + 1,
+        },
+        "op_id": str(op_id),
+    }
+    _add_legacy_calendar_event(
+        db_session,
+        event_type="calendario_comercial_programado",
+        aggregate_id=1,
+        data=data,
+    )
 
 
 def _clear_calendar(db_session):

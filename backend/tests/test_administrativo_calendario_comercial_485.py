@@ -13,18 +13,19 @@ from app.application.administrativo.authentication import AuthenticatedPrincipal
 from app.application.administrativo.authorization import (
     AdministrativeAuthorizationDecision,
 )
-from app.api.core_ef_headers import AuthenticatedCoreEFHeaders, TechnicalCoreEFHeaders
 from app.application.administrativo.services.bootstrap_calendario_comercial_service import (
     BootstrapCalendarioComercialService,
+)
+from app.application.administrativo.services.obtener_configuracion_calendario_comercial_query_service import (
+    ObtenerConfiguracionCalendarioComercialQueryService,
 )
 from app.application.administrativo.services.programar_calendario_comercial_service import (
     ProgramarCalendarioComercialError,
     ProgramarCalendarioComercialService,
 )
+from app.application.common.central_command import CentralCommandMetadata
+from app.application.common.idempotency import canonical_payload_hash
 from app.config.database import engine
-from app.application.administrativo.services.obtener_configuracion_calendario_comercial_query_service import (
-    ObtenerConfiguracionCalendarioComercialQueryService,
-)
 from app.infrastructure.persistence.repositories.calendario_comercial_query_repository import (
     CalendarioComercialQueryRepository,
 )
@@ -38,9 +39,9 @@ INITIAL = {
 PROGRAM = {**INITIAL, "vigente_desde": "2026-10-01"}
 
 
-def _principal():
+def _principal(id_usuario=1):
     return AuthenticatedPrincipal(
-        id_usuario=1,
+        id_usuario=id_usuario,
         codigo_usuario="ADMIN",
         login="admin",
         id_sesion=uuid4(),
@@ -50,12 +51,7 @@ def _principal():
 
 
 def _headers(op_id=None, version=None):
-    result = {
-        "X-Op-Id": str(op_id or uuid4()),
-        "X-Sucursal-Id": "1",
-        "X-Instalacion-Id": "1",
-        "X-Usuario-Id": "ignorado",
-    }
+    result = {"X-Op-Id": str(op_id or uuid4())}
     if version is not None:
         result["If-Match-Version"] = str(version)
     return result
@@ -75,7 +71,7 @@ def _bootstrap(client):
     assert response.status_code == 201
 
 
-def test_programacion_append_only_replay_outbox_y_version(client, db_session):
+def test_programacion_append_only_replay_sin_outbox_y_version(client, db_session):
     _bootstrap(client)
     op_id = uuid4()
     first = _request(client, "PUT", PROGRAM, _headers(op_id, 1))
@@ -107,16 +103,79 @@ def test_programacion_append_only_replay_outbox_y_version(client, db_session):
          WHERE event_type='calendario_comercial_programado'
     """)
         ).scalar_one()
-        == 1
+        == 0
     )
-    replay = _request(
-        client, "PUT", PROGRAM, {**_headers(op_id, 1), "X-Sucursal-Id": "999999"}
-    )
+    replay = _request(client, "PUT", PROGRAM, {
+        **_headers(op_id, 1),
+        "X-Sucursal-Id": "999999",
+        "X-Instalacion-Id": "999999",
+        "X-Usuario-Id": "ignorado",
+    })
     assert replay.status_code == 200 and replay.json() == first.json()
+    receipt = db_session.execute(text("""
+        SELECT id_usuario, id_sucursal, id_instalacion, payload_hash
+          FROM operacion_idempotente WHERE op_id=:op
+    """), {"op": op_id}).mappings().one()
+    assert receipt["id_usuario"] == 1
+    assert receipt["id_sucursal"] is None
+    assert receipt["id_instalacion"] is None
+    assert receipt["payload_hash"] == canonical_payload_hash({
+        "actor": {"type": "HUMAN", "id_usuario": 1},
+        "scope": {"mode": "GLOBAL", "id_sucursal": None},
+        "payload": {
+            **PROGRAM,
+            "if_match_version": 1,
+        },
+    })
+    assert db_session.execute(text("""
+        SELECT id_instalacion_origen, id_instalacion_ultima_modificacion
+          FROM configuracion_calendario_comercial
+    """)).one() == (None, None)
+    assert db_session.execute(text("""
+        SELECT count(*) FROM valor_parametro v
+          JOIN parametro_sistema p USING(id_parametro_sistema)
+         WHERE p.codigo_parametro IN
+          ('DIA_CIERRE_COMERCIAL','DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS')
+           AND (v.id_instalacion_origen IS NOT NULL
+             OR v.id_instalacion_ultima_modificacion IS NOT NULL)
+    """)).scalar_one() == 0
+
+
+def test_programacion_actor_y_version_distintos_no_reutilizan_receipt(client):
+    _bootstrap(client)
+    op_id = uuid4()
+    assert _request(client, "PUT", PROGRAM, _headers(op_id, 1)).status_code == 200
+    version_conflict = _request(client, "PUT", PROGRAM, _headers(op_id, 2))
+    assert version_conflict.status_code == 409
+    assert version_conflict.json()["error_code"] == "IDEMPOTENCY_PAYLOAD_CONFLICT"
+
+    client.app.dependency_overrides[get_authenticated_principal] = lambda: _principal(2)
+    with patch(
+        "app.api.administrative_authorization.AdministrativeAuthorizationService.authorize",
+        return_value=AdministrativeAuthorizationDecision.GRANTED,
+    ):
+        actor_conflict = client.put(
+            ENDPOINT, json=PROGRAM, headers=_headers(op_id, 1)
+        )
+    assert actor_conflict.status_code == 409
+    assert actor_conflict.json()["error_code"] == "IDEMPOTENCY_PAYLOAD_CONFLICT"
+
+
+def test_programacion_permiso_revocado_precede_replay(client):
+    _bootstrap(client)
+    op_id = uuid4()
+    assert _request(client, "PUT", PROGRAM, _headers(op_id, 1)).status_code == 200
+    with patch(
+        "app.api.administrative_authorization.AdministrativeAuthorizationService.authorize",
+        return_value=AdministrativeAuthorizationDecision.DENIED,
+    ):
+        response = client.put(ENDPOINT, json=PROGRAM, headers=_headers(op_id, 1))
+    assert response.status_code == 403
+    assert response.json()["error_code"] == "autorizacion_insuficiente"
 
 
 @pytest.mark.parametrize(
-    "missing", ["X-Op-Id", "X-Sucursal-Id", "X-Instalacion-Id", "If-Match-Version"]
+    "missing", ["X-Op-Id", "If-Match-Version"]
 )
 def test_headers_faltantes_pasan_por_parser_comun(client, missing):
     headers = _headers(version=1)
@@ -134,8 +193,6 @@ def test_headers_faltantes_pasan_por_parser_comun(client, missing):
     ("name", "value"),
     [
         ("X-Op-Id", "x"),
-        ("X-Sucursal-Id", "0"),
-        ("X-Instalacion-Id", "x"),
         ("If-Match-Version", "0"),
     ],
 )
@@ -150,7 +207,7 @@ def test_openapi_headers_unicos_y_sin_usuario(client):
     pairs = [(item["name"], item["in"]) for item in operation["parameters"]]
     expected = {
         (name, "header")
-        for name in ("X-Op-Id", "X-Sucursal-Id", "X-Instalacion-Id", "If-Match-Version")
+        for name in ("X-Op-Id", "If-Match-Version")
     }
     assert set(pairs) == expected and len(pairs) == len(set(pairs))
     assert all(item["required"] for item in operation["parameters"])
@@ -316,7 +373,7 @@ def test_historia_zero_padded_es_compatible_con_get_y_programacion(client, db_se
     op_id = uuid4()
     response = _request(client, "PUT", PROGRAM, _headers(op_id, 1))
     assert response.status_code == 200
-    assert _calendar_effects(db_session, op_id) == (2, 4, 1, 1)
+    assert _calendar_effects(db_session, op_id) == (2, 4, 0, 1)
     historical = dict(
         db_session.execute(
             text("""
@@ -483,7 +540,7 @@ def _concurrent_program(*, same_op: bool):
             dia_cierre_comercial=20,
             dia_vencimiento_predeterminado_cuotas=10,
             vigente_desde=date(2026, 9, 1),
-            headers=TechnicalCoreEFHeaders(bootstrap_op, 1, 1),
+            metadata=CentralCommandMetadata(bootstrap_op),
             id_usuario=1,
         )
         session.commit()
@@ -498,7 +555,7 @@ def _concurrent_program(*, same_op: bool):
                     dia_cierre_comercial=21,
                     dia_vencimiento_predeterminado_cuotas=11,
                     vigente_desde=date(2026, 10, 1),
-                    headers=AuthenticatedCoreEFHeaders(op_ids[index], 1, 1, 1),
+                    metadata=CentralCommandMetadata(op_ids[index], 1),
                     id_usuario=1,
                 )
                 session.commit()
@@ -569,11 +626,11 @@ def _concurrent_program(*, same_op: bool):
 def test_concurrencia_postgresql_cas_serializa_sin_deadlock():
     outcomes, state = _concurrent_program(same_op=False)
     assert sorted(item[0] for item in outcomes) == ["CONCURRENCY_ERROR", "OK"]
-    assert state == (2, 4, 1, 1)
+    assert state == (2, 4, 1, 0)
 
 
 def test_concurrencia_postgresql_mismo_op_replay_durable():
     outcomes, state = _concurrent_program(same_op=True)
     assert [item[0] for item in outcomes] == ["OK", "OK"]
     assert outcomes[0][1] == outcomes[1][1]
-    assert state == (2, 4, 1, 1)
+    assert state == (2, 4, 1, 0)

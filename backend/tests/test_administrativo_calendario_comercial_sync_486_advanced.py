@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session
 from test_administrativo_calendario_comercial_sync_486 import (
     _bootstrap_origin,
     _clear_calendar,
-    _headers,
     _program_origin,
     _program_origin_v3,
     _rehash,
@@ -33,6 +32,7 @@ from app.application.administrativo.services.programar_calendario_comercial_serv
     ProgramarCalendarioComercialError,
     ProgramarCalendarioComercialService,
 )
+from app.application.common.central_command import CentralCommandMetadata
 from app.application.integration.inbox_retry import (
     InboxOutcomeKind,
     InboxRetryProcessor,
@@ -297,13 +297,20 @@ def test_e2e_dos_instalaciones_bootstrap_programacion_y_fuera_de_orden(
             ],
         }
 
-        source_v1 = ObtenerConfiguracionCalendarioComercialQueryService(
-            CalendarioComercialQueryRepository(source)
-        ).obtener(date(2026, 9, 1))
         destination_v1 = ObtenerConfiguracionCalendarioComercialQueryService(
             CalendarioComercialQueryRepository(destination)
         ).obtener(date(2026, 9, 1))
-        assert destination_v1 == source_v1
+        created_data = created["payload"]["data"]
+        assert destination_v1.dia_cierre_comercial == created_data[
+            "dia_cierre_comercial"
+        ]
+        assert destination_v1.dia_vencimiento_predeterminado_cuotas == created_data[
+            "dia_vencimiento_predeterminado_cuotas"
+        ]
+        assert destination_v1.version_agregada == created_data["version_agregada"]
+        assert destination_v1.fecha_desde.date().isoformat() == created_data[
+            "vigente_desde"
+        ]
 
         v2 = _program_origin(source)
         v3 = _program_origin_v3(source)
@@ -719,7 +726,7 @@ def test_local_vs_remoto_serializa_sin_deadlock_y_preserva_un_solo_v2(
                     dia_cierre_comercial=21,
                     dia_vencimiento_predeterminado_cuotas=11,
                     vigente_desde=date(2026, 10, 1),
-                    headers=_headers(local_op_id, 1),
+                    metadata=CentralCommandMetadata(local_op_id, 1),
                     id_usuario=1,
                 )
                 session.commit()

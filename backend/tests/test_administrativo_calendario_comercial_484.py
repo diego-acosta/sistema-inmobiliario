@@ -14,7 +14,6 @@ from app.application.administrativo.authentication import AuthenticatedPrincipal
 from app.application.administrativo.authorization import (
     AdministrativeAuthorizationDecision,
 )
-from app.api.core_ef_headers import TechnicalCoreEFHeaders
 from app.application.administrativo.services.bootstrap_calendario_comercial_service import (
     BootstrapCalendarioComercialError,
     BootstrapCalendarioComercialService,
@@ -22,6 +21,7 @@ from app.application.administrativo.services.bootstrap_calendario_comercial_serv
     TARGET_KEY,
     TARGET_TYPE,
 )
+from app.application.common.central_command import CentralCommandMetadata
 from app.application.common.idempotency import (
     OperationCompletion,
     canonical_payload_hash,
@@ -52,17 +52,16 @@ def _preserve_root_identity_sequence(db_session):
     )
 
 
-def _principal():
+def _principal(id_usuario=1):
     return AuthenticatedPrincipal(
-        id_usuario=1, codigo_usuario="ROL-ALTERNATIVO", login="bootstrap",
+        id_usuario=id_usuario, codigo_usuario="ROL-ALTERNATIVO", login="bootstrap",
         id_sesion=uuid4(), mecanismo_autenticacion="SESION_SERVIDOR",
         autenticado_en=datetime.now(UTC).replace(tzinfo=None),
     )
 
 
 def _headers(op_id=None):
-    return {"X-Op-Id": str(op_id or uuid4()), "X-Sucursal-Id": "1",
-            "X-Instalacion-Id": "1", "X-Usuario-Id": "no-participa"}
+    return {"X-Op-Id": str(op_id or uuid4())}
 
 
 def _post(client, payload=PAYLOAD, headers=None):
@@ -92,13 +91,17 @@ def _outbox_count(db_session):
     """)).scalar_one()
 
 
-def _payload_hash(payload=PAYLOAD):
+def _payload_hash(payload=PAYLOAD, *, id_usuario=1):
     return canonical_payload_hash({
-        "dia_cierre_comercial": payload["dia_cierre_comercial"],
-        "dia_vencimiento_predeterminado_cuotas": payload[
-            "dia_vencimiento_predeterminado_cuotas"
-        ],
-        "vigente_desde": payload["vigente_desde"],
+        "actor": {"type": "HUMAN", "id_usuario": id_usuario},
+        "scope": {"mode": "GLOBAL", "id_sucursal": None},
+        "payload": {
+            "dia_cierre_comercial": payload["dia_cierre_comercial"],
+            "dia_vencimiento_predeterminado_cuotas": payload[
+                "dia_vencimiento_predeterminado_cuotas"
+            ],
+            "vigente_desde": payload["vigente_desde"],
+        },
     })
 
 
@@ -111,7 +114,7 @@ def _receipt(db_session, op_id, *, command=COMMAND_CODE,
         payload_hash=payload_hash or _payload_hash(), canonicalization_version=1,
         result_code="TEST", result_http_status=201, result_target_uid=None,
         result_version=1, response_snapshot={"ok": True, "data": {}},
-        id_usuario=1, id_sucursal=1, id_instalacion=1))
+        id_usuario=1, id_sucursal=None, id_instalacion=None))
     db_session.commit()
 
 
@@ -145,7 +148,7 @@ def test_bootstrap_y_replay_durable_sin_efectos_adicionales(client, db_session):
     assert first.status_code == 201
     assert first.json()["data"]["estado"] == "COMPLETA"
     assert _counts(db_session) == (1, 2)
-    assert _outbox_count(db_session) == 1
+    assert _outbox_count(db_session) == 0
     child_ops = dict(db_session.execute(text("""
         SELECT p.codigo_parametro, v.op_id_alta
           FROM valor_parametro v JOIN parametro_sistema p
@@ -155,43 +158,35 @@ def test_bootstrap_y_replay_durable_sin_efectos_adicionales(client, db_session):
     """)).all())
     assert child_ops == {code: uuid5(op_id, code) for code in child_ops}
     assert len(set(child_ops.values())) == 2
-    replay = _post(client, headers={**_headers(op_id), "X-Sucursal-Id": "999999"})
+    replay = _post(client, headers={
+        **_headers(op_id),
+        "X-Sucursal-Id": "999999",
+        "X-Instalacion-Id": "999999",
+        "X-Usuario-Id": "no-participa",
+    })
     assert replay.status_code == 201
     assert replay.json() == first.json()
     assert _counts(db_session) == (1, 2)
-    assert _outbox_count(db_session) == 1
+    assert _outbox_count(db_session) == 0
+    receipt = db_session.execute(text("""
+        SELECT id_usuario, id_sucursal, id_instalacion, payload_hash
+          FROM operacion_idempotente WHERE op_id=:op
+    """), {"op": op_id}).mappings().one()
+    assert receipt["id_usuario"] == 1
+    assert receipt["id_sucursal"] is None
+    assert receipt["id_instalacion"] is None
+    assert receipt["payload_hash"] == _payload_hash()
+    provenance = db_session.execute(text("""
+        SELECT id_instalacion_origen, id_instalacion_ultima_modificacion
+          FROM configuracion_calendario_comercial
+    """)).one()
+    assert provenance == (None, None)
 
 
-def test_outbox_agregado_portable_y_hash_determinista(client, db_session):
+def test_bootstrap_central_no_emite_outbox(client, db_session):
     op_id = uuid4()
     assert _post(client, headers=_headers(op_id)).status_code == 201
-    event = db_session.execute(text("""
-        SELECT event_type, aggregate_type, aggregate_id, status, payload
-          FROM outbox_event WHERE event_type='calendario_comercial_creado'
-    """)).mappings().one()
-    assert (event["event_type"], event["aggregate_type"], event["status"]) == (
-        "calendario_comercial_creado", "calendario_comercial", "PENDING")
-    payload = event["payload"]
-    data = payload["data"]
-    metadata = payload["metadata"]
-    assert data["op_id"] == str(op_id)
-    assert data["version_agregada"] == 1
-    assert data["vigente_desde"] == "2026-09-01"
-    assert data["fecha_hasta"] is None
-    assert data["dia_cierre_comercial"] == 20
-    assert data["dia_vencimiento_predeterminado_cuotas"] == 10
-    assert data["valor_dia_cierre_comercial"]["version_registro"] == 1
-    assert data["valor_dia_vencimiento_predeterminado_cuotas"][
-        "version_registro"
-    ] == 1
-    assert "id_configuracion_calendario_comercial" not in str(payload)
-    assert "id_valor_parametro" not in str(payload)
-    expected = canonical_payload_hash({
-        "metadata": {"uid_instalacion_origen": metadata["uid_instalacion_origen"]},
-        "data": data,
-    })
-    assert metadata["payload_hash"] == expected
-    assert len(expected) == 64 and expected == expected.lower()
+    assert _outbox_count(db_session) == 0
 
 
 def test_bootstrap_payload_conflict(client, db_session):
@@ -202,7 +197,32 @@ def test_bootstrap_payload_conflict(client, db_session):
     assert response.status_code == 409
     assert response.json()["error_code"] == "IDEMPOTENCY_PAYLOAD_CONFLICT"
     assert _counts(db_session) == (1, 2)
-    assert _outbox_count(db_session) == 1
+    assert _outbox_count(db_session) == 0
+
+
+def test_bootstrap_actor_distinto_no_reutiliza_receipt(client):
+    op_id = uuid4()
+    assert _post(client, headers=_headers(op_id)).status_code == 201
+    client.app.dependency_overrides[get_authenticated_principal] = lambda: _principal(2)
+    with patch(
+        "app.api.administrative_authorization.AdministrativeAuthorizationService.authorize",
+        return_value=AdministrativeAuthorizationDecision.GRANTED,
+    ):
+        response = client.post(ENDPOINT, json=PAYLOAD, headers=_headers(op_id))
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "IDEMPOTENCY_PAYLOAD_CONFLICT"
+
+
+def test_bootstrap_permiso_revocado_precede_replay(client):
+    op_id = uuid4()
+    assert _post(client, headers=_headers(op_id)).status_code == 201
+    with patch(
+        "app.api.administrative_authorization.AdministrativeAuthorizationService.authorize",
+        return_value=AdministrativeAuthorizationDecision.DENIED,
+    ):
+        response = client.post(ENDPOINT, json=PAYLOAD, headers=_headers(op_id))
+    assert response.status_code == 403
+    assert response.json()["error_code"] == "autorizacion_insuficiente"
 
 
 @pytest.mark.parametrize(
@@ -265,12 +285,8 @@ def test_headers_y_openapi(client):
     pairs = [(parameter["name"], parameter["in"]) for parameter in parameters]
     assert len(pairs) == len(set(pairs))
     calendar_headers = [item for item in parameters if item["in"] == "header"]
-    assert len(calendar_headers) == 3
-    expected = {
-        ("X-Op-Id", "header"),
-        ("X-Sucursal-Id", "header"),
-        ("X-Instalacion-Id", "header"),
-    }
+    assert len(calendar_headers) == 1
+    expected = {("X-Op-Id", "header")}
     assert {(item["name"], item["in"]) for item in calendar_headers} == expected
     assert all(item["required"] is True for item in calendar_headers)
     assert all(pairs.count(pair) == 1 for pair in expected)
@@ -287,7 +303,7 @@ def test_headers_y_openapi(client):
     }
 
 
-@pytest.mark.parametrize("missing", ["X-Op-Id", "X-Sucursal-Id", "X-Instalacion-Id"])
+@pytest.mark.parametrize("missing", ["X-Op-Id"])
 def test_post_header_faltante_sanitizado(client, missing):
     headers = _headers()
     headers.pop(missing)
@@ -300,10 +316,6 @@ def test_post_header_faltante_sanitizado(client, missing):
     ("header", "value"),
     [
         ("X-Op-Id", "no-es-uuid"),
-        ("X-Sucursal-Id", "abc"),
-        ("X-Sucursal-Id", "0"),
-        ("X-Instalacion-Id", "abc"),
-        ("X-Instalacion-Id", "0"),
     ],
 )
 def test_post_header_invalido_pasa_por_parser_core_ef(client, header, value):
@@ -392,7 +404,7 @@ def test_rollback_integral_y_retry_mismo_op_id(client, db_session):
         {"op": op_id}).scalar_one() == 0
     assert _post(client, headers=_headers(op_id)).status_code == 201
     assert _counts(db_session) == (1, 2)
-    assert _outbox_count(db_session) == 1
+    assert _outbox_count(db_session) == 0
 
 
 def _cleanup_concurrent(op_ids):
@@ -437,7 +449,7 @@ def _concurrent_bootstrap(*, same_op):
                     dia_cierre_comercial=20,
                     dia_vencimiento_predeterminado_cuotas=10,
                     vigente_desde=date(2026, 9, 1),
-                    headers=TechnicalCoreEFHeaders(op_ids[index], 1, 1),
+                    metadata=CentralCommandMetadata(op_ids[index]),
                     id_usuario=1)
                 session.commit()
                 outcomes.append(("OK", result))
@@ -470,11 +482,11 @@ def test_concurrencia_postgres_distintos_op_id_materializa_una_vez():
     outcomes, counts, _ = _concurrent_bootstrap(same_op=False)
     assert sorted(outcome[0] for outcome in outcomes) == [
         "CONFIGURACION_CALENDARIO_COMERCIAL_CONFLICTO", "OK"]
-    assert counts == (1, 2, 1, 1)
+    assert counts == (1, 2, 1, 0)
 
 
 def test_concurrencia_postgres_mismo_op_id_replay_snapshot():
     outcomes, counts, _ = _concurrent_bootstrap(same_op=True)
     assert [outcome[0] for outcome in outcomes] == ["OK", "OK"]
     assert outcomes[0][1] == outcomes[1][1]
-    assert counts == (1, 2, 1, 1)
+    assert counts == (1, 2, 1, 0)

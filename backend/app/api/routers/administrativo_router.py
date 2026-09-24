@@ -5,12 +5,8 @@ from typing import Annotated
 from app.api.administrative_authorization import require_administrative_permission
 from app.api.authentication import get_authenticated_principal
 from app.api.core_ef_headers import (
-    AuthenticatedCoreEFHeaders,
     CoreEFHeaders,
     CoreEFHeaderValidationError,
-    TechnicalCoreEFHeaders,
-    get_authenticated_core_ef_headers_write,
-    get_core_ef_headers_technical_write,
     parse_authenticated_core_ef_headers,
     parse_central_command_metadata,
     parse_core_ef_headers,
@@ -172,7 +168,7 @@ _CALENDARIO_BOOTSTRAP_HEADERS_OPENAPI = {
             "required": True,
             "schema": {"type": "string"},
         }
-        for name in ("X-Op-Id", "X-Sucursal-Id", "X-Instalacion-Id")
+        for name in ("X-Op-Id",)
     ]
 }
 
@@ -180,8 +176,7 @@ _CALENDARIO_PROGRAMAR_HEADERS_OPENAPI = {
     "parameters": [
         {"name": name, "in": "header", "required": True,
          "schema": {"type": "string"}}
-        for name in ("X-Op-Id", "X-Sucursal-Id", "X-Instalacion-Id",
-                     "If-Match-Version")
+        for name in ("X-Op-Id", "If-Match-Version")
     ]
 }
 
@@ -828,32 +823,32 @@ def bootstrap_calendario_comercial(
     principal: Annotated[AuthenticatedPrincipal, Depends(
         require_administrative_permission(
             "ADMIN.CONFIG.CALENDARIO_COMERCIAL.ADMINISTRAR"))],
-    core_ef: Annotated[
-        TechnicalCoreEFHeaders | CoreEFHeaderValidationError,
-        Depends(get_core_ef_headers_technical_write),
-    ],
     db: Session = Depends(get_db),
+    x_op_id: str | None = Header(
+        default=None, alias="X-Op-Id", include_in_schema=False
+    ),
 ) -> BootstrapCalendarioComercialResponse | JSONResponse:
     # COMMAND_WRITE_NEGOCIO: creación sin If-Match; identidad sólo desde Bearer.
-    if isinstance(core_ef, CoreEFHeaderValidationError):
+    try:
+        metadata = parse_central_command_metadata(x_op_id)
+    except CoreEFHeaderValidationError as exc:
         return _parametro_global_error(
             400,
             "VALIDATION_ERROR",
-            core_ef.message,
-            {"header": core_ef.header_name, "reason": core_ef.reason},
+            exc.message,
+            {"header": exc.header_name, "reason": exc.reason},
         )
     try:
         snapshot = BootstrapCalendarioComercialService(db).execute(
             dia_cierre_comercial=request.dia_cierre_comercial,
             dia_vencimiento_predeterminado_cuotas=(
                 request.dia_vencimiento_predeterminado_cuotas),
-            vigente_desde=request.vigente_desde, headers=core_ef,
+            vigente_desde=request.vigente_desde, metadata=metadata,
             id_usuario=principal.id_usuario)
         db.commit()
     except BootstrapCalendarioComercialError as exc:
         db.rollback()
         messages = {
-            "inconsistencia_contexto_tecnico": "El contexto técnico declarado es inconsistente.",
             "CONFIGURACION_CALENDARIO_COMERCIAL_CONFLICTO": (
                 "El calendario comercial no se encuentra vacío y consistente."),
         }
@@ -886,29 +881,36 @@ def programar_calendario_comercial(
     principal: Annotated[AuthenticatedPrincipal, Depends(
         require_administrative_permission(
             "ADMIN.CONFIG.CALENDARIO_COMERCIAL.ADMINISTRAR"))],
-    core_ef: Annotated[
-        AuthenticatedCoreEFHeaders | CoreEFHeaderValidationError,
-        Depends(get_authenticated_core_ef_headers_write),
-    ],
     db: Session = Depends(get_db),
+    x_op_id: str | None = Header(
+        default=None, alias="X-Op-Id", include_in_schema=False
+    ),
+    if_match_version: str | None = Header(
+        default=None, alias="If-Match-Version", include_in_schema=False
+    ),
 ) -> ProgramarCalendarioComercialResponse | JSONResponse:
     # COMMAND_WRITE_NEGOCIO: Bearer identifica al humano; metadata técnica + CAS.
-    if isinstance(core_ef, CoreEFHeaderValidationError):
+    try:
+        metadata = parse_central_command_metadata(
+            x_op_id,
+            if_match_version,
+            require_if_match_version=True,
+        )
+    except CoreEFHeaderValidationError as exc:
         return _parametro_global_error(
-            400, "VALIDATION_ERROR", core_ef.message,
-            {"header": core_ef.header_name, "reason": core_ef.reason})
+            400, "VALIDATION_ERROR", exc.message,
+            {"header": exc.header_name, "reason": exc.reason})
     try:
         snapshot = ProgramarCalendarioComercialService(db).execute(
             dia_cierre_comercial=request.dia_cierre_comercial,
             dia_vencimiento_predeterminado_cuotas=(
                 request.dia_vencimiento_predeterminado_cuotas),
-            vigente_desde=request.vigente_desde, headers=core_ef,
+            vigente_desde=request.vigente_desde, metadata=metadata,
             id_usuario=principal.id_usuario)
         db.commit()
     except ProgramarCalendarioComercialError as exc:
         db.rollback()
         messages = {
-            "inconsistencia_contexto_tecnico": "El contexto técnico declarado es inconsistente.",
             "CONCURRENCY_ERROR": "La versión del calendario comercial no coincide.",
             "CONFIGURACION_CALENDARIO_COMERCIAL_INCONSISTENTE": (
                 "El calendario comercial es estructuralmente inconsistente."),

@@ -1396,32 +1396,34 @@ no-store`.
 con el envelope estándar y el agregado `COMPLETA` (UID raíz, ambos días,
 `version_agregada = 1`, `fecha_desde` y `fecha_hasta = null`). Exige Bearer,
 permiso `ADMIN.CONFIG.CALENDARIO_COMERCIAL.ADMINISTRAR`, `X-Op-Id`,
-`X-Sucursal-Id` y `X-Instalacion-Id`. No usa `X-Usuario-Id` ni
-`If-Match-Version`. Los días son enteros estrictos 1–31 y `vigente_desde` es una
+sin requerir `X-Sucursal-Id`, `X-Instalacion-Id`, `X-Usuario-Id` ni
+`If-Match-Version`. Los headers legacy adicionales se ignoran. Los días son
+enteros estrictos 1–31 y `vigente_desde` es una
 fecha explícita. Aplica idempotencia #470 con target
 `CALENDARIO_COMERCIAL/GLOBAL`; un replay compatible conserva el `201` y snapshot
-original. La ejecución material captura exactamente un outbox agregado
-`calendario_comercial_creado`/`calendario_comercial`, `PENDING`, en la misma
-transacción que raíz, pareja y receipt #470; replay y conflictos no emiten. Su
-payload sólo distribuye UIDs/versiones, intervalo, días, `op_id` y UID de
-instalación origen, con hash RFC 8785/SHA-256. #486 consume ese contrato mediante
-el inbox portable vigente. #485 produce
-`calendario_comercial_programado` transaccionalmente.
+original. El fingerprint RFC 8785/SHA-256 contiene exactamente `actor = {type:
+HUMAN, id_usuario}`, `scope = {mode: GLOBAL, id_sucursal: null}` y `payload =
+{dia_cierre_comercial, dia_vencimiento_predeterminado_cuotas, vigente_desde}`.
+Ledger y provenance usan sucursal/instalación `NULL`. No emite outbox. El contrato
+legacy `calendario_comercial_creado` permanece consumible por #486, pero ya no es
+producido por este endpoint central.
 
 ### PUT programación de nueva vigencia (#485)
 
 `PUT /api/v1/administrativo/configuracion/calendario-comercial` es
 `COMMAND_WRITE_NEGOCIO`. Requiere Bearer, permiso
-`ADMIN.CONFIG.CALENDARIO_COMERCIAL.ADMINISTRAR`, `X-Op-Id`, `X-Sucursal-Id`,
-`X-Instalacion-Id` e `If-Match-Version`; no usa `X-Usuario-Id`. El body completo
+`ADMIN.CONFIG.CALENDARIO_COMERCIAL.ADMINISTRAR`, `X-Op-Id` e
+`If-Match-Version`; no requiere `X-Sucursal-Id`, `X-Instalacion-Id` ni
+`X-Usuario-Id`, y los headers legacy adicionales se ignoran. El body completo
 reutiliza los dos enteros estrictos 1–31 y la fecha ASCII `YYYY-MM-DD` del POST.
 Programa append-only una fecha posterior a la última vigencia, devuelve 200 con
 snapshot `COMPLETA` y nueva versión, y responde 412 `CONCURRENCY_ERROR` ante CAS
-real bajo lock. Idempotencia usa el target singleton GLOBAL y replay durable sin
-requery. El producer EVT-ADM-079 comparte la transacción; #486 implementa su
-consumo remoto sin agregar una ruta HTTP pública. El entry point de
-sincronización es interno y reutiliza delivery, operation scope, retry y fencing
-de #512.
+real bajo lock. Idempotencia usa el target singleton GLOBAL; su fingerprint agrega
+actor humano, scope `GLOBAL/null` y `payload = {dia_cierre_comercial,
+dia_vencimiento_predeterminado_cuotas, vigente_desde, if_match_version}`. El
+replay durable no repite CAS ni append. Ledger y provenance usan
+sucursal/instalación `NULL`; no emite outbox. EVT-ADM-079 y el consumer #486 se
+preservan únicamente para compatibilidad con eventos legacy históricos.
 
 ### Serialización temporal HTTP de autenticación central (#544)
 

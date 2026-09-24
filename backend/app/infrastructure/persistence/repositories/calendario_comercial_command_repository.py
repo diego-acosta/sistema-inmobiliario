@@ -19,17 +19,6 @@ class CalendarioComercialCommandRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def validate_context(self, id_sucursal: int, id_instalacion: int) -> UUID | None:
-        return self.session.execute(
-            text("""
-                SELECT i.uid_global
-                  FROM sucursal s JOIN instalacion i
-                    ON i.id_sucursal=s.id_sucursal
-                 WHERE s.id_sucursal=:s AND i.id_instalacion=:i
-            """),
-            {"s": id_sucursal, "i": id_instalacion},
-        ).scalar_one_or_none()
-
     def lock_global(self) -> None:
         # Dos mitades constantes del SHA-256 de CALENDARIO_COMERCIAL/GLOBAL.
         self.session.execute(text("SELECT pg_advisory_xact_lock(759942885, 986974765)"))
@@ -116,7 +105,6 @@ class CalendarioComercialCommandRepository:
         values: dict[str, int],
         vigente_desde: date,
         op_id: UUID,
-        id_instalacion: int,
     ) -> dict[str, Any]:
         root = (
             self.session.execute(
@@ -124,11 +112,11 @@ class CalendarioComercialCommandRepository:
                 INSERT INTO configuracion_calendario_comercial(
                     id_instalacion_origen,id_instalacion_ultima_modificacion,
                     op_id_alta,op_id_ultima_modificacion)
-                VALUES (:inst,:inst,:op,:op)
+                VALUES (NULL,NULL,:op,:op)
                 RETURNING id_configuracion_calendario_comercial,
                           uid_global,version_registro
             """),
-                {"inst": id_instalacion, "op": op_id},
+                {"op": op_id},
             )
             .mappings()
             .one()
@@ -146,14 +134,13 @@ class CalendarioComercialCommandRepository:
                     fecha_desde,fecha_hasta,id_instalacion_origen,
                     id_instalacion_ultima_modificacion,op_id_alta,
                     op_id_ultima_modificacion)
-                VALUES (:pid,:value,true,:start,NULL,:inst,:inst,:op,:op)
+                VALUES (:pid,:value,true,:start,NULL,NULL,NULL,:op,:op)
                 RETURNING uid_global, version_registro, fecha_desde, fecha_hasta
             """),
                     {
                         "pid": parameter_id,
                         "value": str(values[code]),
                         "start": vigente_desde,
-                        "inst": id_instalacion,
                         "op": child_op_id,
                     },
                 )
@@ -182,7 +169,6 @@ class CalendarioComercialCommandRepository:
         values: dict[str, int],
         vigente_desde: date,
         op_id: UUID,
-        id_instalacion: int,
     ) -> dict[str, Any]:
         previous_by_code = {row["codigo_parametro"]: row for row in previous}
         for row in previous:
@@ -190,13 +176,12 @@ class CalendarioComercialCommandRepository:
                 text("""
                 UPDATE valor_parametro SET fecha_hasta=:start,
                        es_valor_vigente=false,
-                       id_instalacion_ultima_modificacion=:inst,
+                       id_instalacion_ultima_modificacion=NULL,
                        op_id_ultima_modificacion=:op
                  WHERE id_valor_parametro=:id
             """),
                 {
                     "start": vigente_desde,
-                    "inst": id_instalacion,
                     "op": op_id,
                     "id": row["id_valor_parametro"],
                 },
@@ -211,14 +196,13 @@ class CalendarioComercialCommandRepository:
                     fecha_desde,fecha_hasta,id_instalacion_origen,
                     id_instalacion_ultima_modificacion,op_id_alta,
                     op_id_ultima_modificacion)
-                VALUES (:pid,:value,true,:start,NULL,:inst,:inst,:op,:op)
+                VALUES (:pid,:value,true,:start,NULL,NULL,NULL,:op,:op)
                 RETURNING uid_global,version_registro,fecha_desde,fecha_hasta
             """),
                     {
                         "pid": parameter_id,
                         "value": str(values[code]),
                         "start": vigente_desde,
-                        "inst": id_instalacion,
                         "op": uuid5(op_id, code),
                     },
                 )
@@ -230,13 +214,13 @@ class CalendarioComercialCommandRepository:
             self.session.execute(
                 text("""
             UPDATE configuracion_calendario_comercial
-               SET id_instalacion_ultima_modificacion=:inst,
+               SET id_instalacion_ultima_modificacion=NULL,
                    op_id_ultima_modificacion=:op
              WHERE id_configuracion_calendario_comercial=:id
              RETURNING id_configuracion_calendario_comercial,uid_global,
                        version_registro
         """),
-                {"inst": id_instalacion, "op": op_id, "id": root_id},
+                {"op": op_id, "id": root_id},
             )
             .mappings()
             .one()
