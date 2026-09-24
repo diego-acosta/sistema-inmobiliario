@@ -64,6 +64,11 @@ def _delete_permission(db_session) -> None:
     )
 
 
+def _materialize_permission(db_session) -> None:
+    db_session.execute(text(_sql()))
+    assert _counts(db_session) == (1, 1)
+
+
 def test_reset_scripts_include_patch_in_symmetric_deterministic_order():
     sh = RESET_SH.read_text(encoding="utf-8")
     bat = RESET_BAT.read_text(encoding="utf-8")
@@ -110,6 +115,7 @@ def test_first_application_creates_exact_permission_and_grant(db_session):
 
 
 def test_compatible_reexecution_does_not_duplicate_permission_or_grant(db_session):
+    _materialize_permission(db_session)
     before = _counts(db_session)
     db_session.execute(text(_sql()))
     assert _counts(db_session) == before == (1, 1)
@@ -124,15 +130,17 @@ def test_compatible_reexecution_does_not_duplicate_permission_or_grant(db_sessio
     ],
 )
 def test_permission_contract_drift_is_rejected(db_session, column, value):
+    _materialize_permission(db_session)
     before = _counts(db_session)
     with pytest.raises(DBAPIError), db_session.begin_nested():
-        db_session.execute(
+        result = db_session.execute(
             text(
                 f"UPDATE permiso SET {column}=:value "
                 "WHERE codigo_permiso=:permission_code"
             ),
             {"value": value, "permission_code": PERMISSION_CODE},
         )
+        assert result.rowcount == 1
         db_session.execute(text(_sql()))
     assert _counts(db_session) == before
 
@@ -160,6 +168,7 @@ def test_patch_requires_exactly_one_active_canonical_role(db_session, mode):
 
 
 def test_duplicate_permission_is_rejected(db_session):
+    _materialize_permission(db_session)
     before = _counts(db_session)
     with pytest.raises(DBAPIError), db_session.begin_nested():
         db_session.execute(text("ALTER TABLE permiso DROP CONSTRAINT uq_permiso_codigo"))
@@ -184,8 +193,10 @@ def test_duplicate_permission_is_rejected(db_session):
 
 
 def test_duplicate_role_permission_grant_is_rejected(db_session):
+    _materialize_permission(db_session)
     before = _counts(db_session)
     with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text("DROP INDEX ux_rol_seguridad_permiso"))
         db_session.execute(
             text(
                 """
@@ -241,6 +252,7 @@ def test_patch_rolls_back_permission_when_grant_insert_fails(db_session):
 
 
 def test_materialized_permission_is_resolvable_by_existing_d1(db_session):
+    _materialize_permission(db_session)
     suffix = uuid4().hex
     user_id = db_session.execute(
         text(
