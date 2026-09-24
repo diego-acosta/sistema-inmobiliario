@@ -258,6 +258,20 @@ Los comandos de alta, modificación, cambio de estado y baja lógica de ítems s
 
 El intento con un nuevo `X-Op-Id` de persistir el mismo estado físico es una transición inválida (`INVALID_STATE_TRANSITION`), no un conflicto de idempotencia. La baja repetida sólo hace replay con el mismo identificador de la baja previa; con otro identificador se trata como recurso no operable (`NOT_FOUND`). Los errores técnicos se devuelven sin detalle interno; la transacción conserva rollback conjunto de negocio y outbox.
 
+## Prerrequisito D1 para la migración central de catálogos
+
+Se materializa el permiso activo `ADMIN.CONFIG.CATALOGO.ADMINISTRAR`, denominado
+`Administrar catálogos`, con descripción contractual “Permite crear, modificar,
+cambiar estado y dar de baja catálogos maestros y sus ítems configurables.”. Es
+una capacidad D1 `GLOBAL` única para los comandos de `catalogo_maestro` e
+`item_catalogo`; no tiene scope de sucursal ni depende de instalación.
+
+El grant inicial se vincula al rol canónico activo `ADMINISTRADOR_SISTEMA`, sin
+crear otro rol ni asignar usuarios. El runtime posterior debe resolver el permiso
+efectivo y no condicionar acceso al código de rol. Este prerrequisito no modifica
+los siete endpoints productivos: su migración a Bearer, D1 y ledger central queda
+para el siguiente incremento.
+
 ## Incremento #407 — Inventario de definiciones de parámetros
 
 Se implementa una consulta administrativa read-only del inventario existente. La

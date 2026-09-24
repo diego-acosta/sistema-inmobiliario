@@ -41,6 +41,7 @@ SQL_FILES=(
   "patch_usuario_uid_global_20260821.sql"
   "patch_inbox_pending_dependency_20260822.sql"
   "patch_auth_central_20260914.sql"
+  "patch_admin_catalogos_permission_20260924.sql"
 )
 
 DEV_SEEDS=(
@@ -166,6 +167,7 @@ apply_common_files() {
   run_sql "${db}" "identidad portable de usuario #508" "patch_usuario_uid_global_20260821.sql"
   run_sql "${db}" "lifecycle inbox pending dependency #511" "patch_inbox_pending_dependency_20260822.sql"
   run_sql "${db}" "auth central sin instalacion" "patch_auth_central_20260914.sql"
+  run_sql "${db}" "permiso central de catalogos" "patch_admin_catalogos_permission_20260924.sql"
 }
 
 log "============================"

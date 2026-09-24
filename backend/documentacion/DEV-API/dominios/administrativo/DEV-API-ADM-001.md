@@ -790,6 +790,19 @@ Con un `X-Op-Id` nuevo, solicitar el estado físico ya vigente no es una colisi�
 
 Para baja lógica, el repository primero verifica pertenencia, existencia física y `deleted_at`: la repetición con el mismo `X-Op-Id` devuelve replay; con otro identificador devuelve `404 NOT_FOUND`. Las respuestas `500 TECHNICAL_INCONSISTENCY` se sanitizan y no incluyen SQL, constraints, parámetros ni mensajes de driver. La recuperación posterior a una colisión de `ux_item_catalogo_op_id_alta` propaga la excepción técnica original si la fila no puede recuperarse tras rollback.
 
+### Prerrequisito de autorización central de catálogos
+
+Existe el permiso activo D1 `GLOBAL`
+`ADMIN.CONFIG.CATALOGO.ADMINISTRAR` (`Administrar catálogos`), que cubre la
+creación, modificación, cambio de estado y baja de catálogos maestros y sus ítems
+configurables. El grant canónico inicial corresponde a
+`ADMINISTRADOR_SISTEMA`, sin que ese código de rol sea una condición runtime ni
+se creen asignaciones de usuarios.
+
+Este incremento no cambia el contrato HTTP vigente de los siete writes: todavía
+no declara Bearer/D1 productivo, no retira headers CORE-EF legacy y no adopta el
+ledger central. Esa migración queda como siguiente incremento.
+
 ## Incremento #408 — Sin cambios de API
 
 #408 congela arquitectura y **no agrega ni modifica endpoints**. El GET de #407 continúa exponiendo únicamente definiciones; no devuelve `valor_parametro`, no ejecuta resolución contextual y no constituye el read de #425.
