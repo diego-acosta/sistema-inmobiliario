@@ -1,5 +1,5 @@
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from unittest.mock import patch
 from uuid import uuid4
 

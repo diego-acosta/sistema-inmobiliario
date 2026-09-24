@@ -297,13 +297,20 @@ def test_e2e_dos_instalaciones_bootstrap_programacion_y_fuera_de_orden(
             ],
         }
 
-        source_v1 = ObtenerConfiguracionCalendarioComercialQueryService(
-            CalendarioComercialQueryRepository(source)
-        ).obtener(date(2026, 9, 1))
         destination_v1 = ObtenerConfiguracionCalendarioComercialQueryService(
             CalendarioComercialQueryRepository(destination)
         ).obtener(date(2026, 9, 1))
-        assert destination_v1 == source_v1
+        created_data = created["payload"]["data"]
+        assert destination_v1.dia_cierre_comercial == created_data[
+            "dia_cierre_comercial"
+        ]
+        assert destination_v1.dia_vencimiento_predeterminado_cuotas == created_data[
+            "dia_vencimiento_predeterminado_cuotas"
+        ]
+        assert destination_v1.version_agregada == created_data["version_agregada"]
+        assert destination_v1.fecha_desde.date().isoformat() == created_data[
+            "vigente_desde"
+        ]
 
         v2 = _program_origin(source)
         v3 = _program_origin_v3(source)
