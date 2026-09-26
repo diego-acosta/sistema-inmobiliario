@@ -27,6 +27,18 @@ No cubre:
 - auditoría administrativa
 - configuración global del sistema
 
+## Prerrequisito de autorización central para grants
+
+El permiso activo `ADMIN.SEGURIDAD.GRANTS.ADMINISTRAR` (`Administrar grants de
+seguridad`) es una capacidad D1 `GLOBAL` para asignar y revocar roles de
+seguridad de usuarios. Su receptor canónico inicial es el rol activo
+`ADMINISTRADOR_SISTEMA`; D1 seguirá autorizando por permiso efectivo y no por el
+código del rol.
+
+La materialización no migra los dos endpoints productivos, no agrega
+`uid_global` a `usuario_rol_seguridad` y no define todavía su target idempotente
+central.
+
 ## Entidades principales
 - rol_administrativo
 - permiso

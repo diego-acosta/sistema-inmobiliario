@@ -20,6 +20,7 @@ Este dominio cubre gestión de usuarios y acceso, seguridad y autorización, aud
 
 ### CU-ADM-001 — Alta de usuario
 - servicio_origen: SRV-ADM-001
+- permiso_contractual: ADMIN.USUARIO.ADMINISTRAR (GLOBAL; adopción runtime pendiente)
 - tipo: write
 - objetivo: registrar un nuevo usuario administrativo del sistema.
 - entidades: usuario
@@ -46,6 +47,7 @@ Este dominio cubre gestión de usuarios y acceso, seguridad y autorización, aud
 
 ### CU-ADM-003 — Baja lógica o desactivación de usuario
 - servicio_origen: SRV-ADM-001
+- permiso_contractual: ADMIN.USUARIO.ADMINISTRAR (GLOBAL; adopción runtime pendiente)
 - tipo: write
 - objetivo: invalidar o desactivar un usuario sin eliminarlo físicamente.
 - entidades: usuario
@@ -85,6 +87,7 @@ Este dominio cubre gestión de usuarios y acceso, seguridad y autorización, aud
 
 ### CU-ADM-006 — Gestión de habilitación de usuario por sucursal
 - servicio_origen: SRV-ADM-001
+- permiso_contractual: ADMIN.USUARIO_SUCURSAL.ADMINISTRAR (GLOBAL; adopción runtime pendiente)
 - tipo: write
 - objetivo: administrar la habilitación operativa de un usuario en una o más sucursales.
 - entidades: usuario, sucursal, usuario_sucursal
@@ -373,6 +376,7 @@ Este dominio cubre gestión de usuarios y acceso, seguridad y autorización, aud
 
 ### CU-ADM-028 — Asignación de rol de seguridad a usuario
 - servicio_origen: SRV-ADM-002
+- permiso_contractual: ADMIN.SEGURIDAD.GRANTS.ADMINISTRAR (GLOBAL; adopción runtime pendiente)
 - tipo: write
 - objetivo: asignar un rol de seguridad a un usuario.
 - entidades: usuario_rol, usuario, rol_administrativo
@@ -386,6 +390,7 @@ Este dominio cubre gestión de usuarios y acceso, seguridad y autorización, aud
 
 ### CU-ADM-029 — Revocación o modificación de rol de usuario
 - servicio_origen: SRV-ADM-002
+- permiso_contractual: ADMIN.SEGURIDAD.GRANTS.ADMINISTRAR (GLOBAL; adopción runtime pendiente)
 - tipo: write
 - objetivo: revocar o ajustar la asignación de roles de seguridad sobre un usuario.
 - entidades: usuario_rol, usuario, rol_administrativo

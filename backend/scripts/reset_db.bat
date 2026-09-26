@@ -41,6 +41,7 @@ set PATCH_USUARIO_UID_GLOBAL_FILE=%BACKEND_DIR%\database\patch_usuario_uid_globa
 set PATCH_INBOX_PENDING_DEPENDENCY_FILE=%BACKEND_DIR%\database\patch_inbox_pending_dependency_20260822.sql
 set PATCH_AUTH_CENTRAL_FILE=%BACKEND_DIR%\database\patch_auth_central_20260914.sql
 set PATCH_ADMIN_CATALOGOS_PERMISSION_FILE=%BACKEND_DIR%\database\patch_admin_catalogos_permission_20260924.sql
+set PATCH_ADMIN_USER_SECURITY_PERMISSIONS_FILE=%BACKEND_DIR%\database\patch_admin_user_security_permissions_20260926.sql
 set SEED_INDICES_FINANCIEROS_DEMO_FILE=%BACKEND_DIR%\database\seed_indices_financieros_demo.sql
 
 echo ============================
@@ -203,6 +204,12 @@ if not exist "%PATCH_CALENDARIO_COMERCIAL_482_FILE%" (
 
 if not exist "%PATCH_ADMIN_CATALOGOS_PERMISSION_FILE%" (
   echo ERROR: No existe el patch del permiso central de catalogos: %PATCH_ADMIN_CATALOGOS_PERMISSION_FILE%
+  pause
+  exit /b 1
+)
+
+if not exist "%PATCH_ADMIN_USER_SECURITY_PERMISSIONS_FILE%" (
+  echo ERROR: No existe el patch de permisos centrales de usuarios y seguridad: %PATCH_ADMIN_USER_SECURITY_PERMISSIONS_FILE%
   pause
   exit /b 1
 )
@@ -446,6 +453,12 @@ if errorlevel 1 (
 %PGBIN%\psql -v ON_ERROR_STOP=1 -d %DEV_DB% -f "%PATCH_ADMIN_CATALOGOS_PERMISSION_FILE%"
 if errorlevel 1 (
     echo ERROR aplicando permiso central de catalogos en DEV
+    exit /b 1
+)
+
+%PGBIN%\psql -v ON_ERROR_STOP=1 -d %DEV_DB% -f "%PATCH_ADMIN_USER_SECURITY_PERMISSIONS_FILE%"
+if errorlevel 1 (
+    echo ERROR aplicando permisos centrales de usuarios y seguridad en DEV
     exit /b 1
 )
 
@@ -706,6 +719,12 @@ if errorlevel 1 (
 %PGBIN%\psql -v ON_ERROR_STOP=1 -d %TEST_DB% -f "%PATCH_ADMIN_CATALOGOS_PERMISSION_FILE%"
 if errorlevel 1 (
     echo ERROR aplicando permiso central de catalogos en TEST
+    exit /b 1
+)
+
+%PGBIN%\psql -v ON_ERROR_STOP=1 -d %TEST_DB% -f "%PATCH_ADMIN_USER_SECURITY_PERMISSIONS_FILE%"
+if errorlevel 1 (
+    echo ERROR aplicando permisos centrales de usuarios y seguridad en TEST
     exit /b 1
 )
 

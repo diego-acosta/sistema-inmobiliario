@@ -84,6 +84,23 @@ Criterios explícitos:
 
 ## 4. Usuarios del sistema
 
+### 4.0 Prerrequisitos D1 materializados; adopción runtime pendiente
+
+Existen tres permisos activos con perfil D1 `GLOBAL` y grant inicial al rol
+canónico activo `ADMINISTRADOR_SISTEMA`:
+
+- `ADMIN.USUARIO.ADMINISTRAR`, para alta y baja de usuarios;
+- `ADMIN.SEGURIDAD.GRANTS.ADMINISTRAR`, para asignación y revocación de roles;
+- `ADMIN.USUARIO_SUCURSAL.ADMINISTRAR`, para asignación de sucursales y
+  capacidades operativas.
+
+El código del rol no es condición de autorización: el runtime futuro resolverá
+permisos efectivos. Este incremento no migra los cinco writes correspondientes;
+sus headers, identidad, idempotencia y outbox documentados en las secciones
+siguientes continúan describiendo el runtime legacy. Bearer/D1 productivo queda
+pendiente, al igual que la resolución contractual de la frontera Sync de
+`usuario_creado` y `usuario_desactivado`.
+
 ### 4.1 `POST /api/v1/administrativo/usuarios`
 
 - Estado: implementado.

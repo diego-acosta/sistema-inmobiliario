@@ -42,6 +42,7 @@ SQL_FILES=(
   "patch_inbox_pending_dependency_20260822.sql"
   "patch_auth_central_20260914.sql"
   "patch_admin_catalogos_permission_20260924.sql"
+  "patch_admin_user_security_permissions_20260926.sql"
 )
 
 DEV_SEEDS=(
@@ -168,6 +169,7 @@ apply_common_files() {
   run_sql "${db}" "lifecycle inbox pending dependency #511" "patch_inbox_pending_dependency_20260822.sql"
   run_sql "${db}" "auth central sin instalacion" "patch_auth_central_20260914.sql"
   run_sql "${db}" "permiso central de catalogos" "patch_admin_catalogos_permission_20260924.sql"
+  run_sql "${db}" "permisos centrales de usuarios y seguridad" "patch_admin_user_security_permissions_20260926.sql"
 }
 
 log "============================"

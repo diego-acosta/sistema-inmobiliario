@@ -10,6 +10,16 @@ Los siete writes de catálogo maestro e ítems usan Bearer + D1 `GLOBAL`, permis
 `412`; provenance de instalación queda `NULL`; los siete producers outbox legacy
 se retiran. Sync general y los reads de catálogos permanecen sin cambios.
 
+## Permisos centrales de usuarios y seguridad (2026-09-26)
+
+Quedan materializados como prerrequisito los permisos D1 `GLOBAL`
+`ADMIN.USUARIO.ADMINISTRAR`, `ADMIN.SEGURIDAD.GRANTS.ADMINISTRAR` y
+`ADMIN.USUARIO_SUCURSAL.ADMINISTRAR`, con grant inicial al rol activo
+`ADMINISTRADOR_SISTEMA`. Los cinco endpoints write de usuarios, grants y alcance
+por sucursal todavía no fueron migrados y conservan su runtime legacy. La
+frontera Sync de `usuario_creado`/`usuario_desactivado` sigue abierta; tampoco se
+agrega identidad portable a `usuario_rol_seguridad` en este incremento.
+
 ## 1. Propósito
 
 Este documento resume el estado operativo verificable del proyecto para retomar trabajo desde un chat nuevo, Codex Web u otro agente sin depender de memoria conversacional. No reemplaza la arquitectura formal ni los issues/PRs de GitHub: orienta qué revisar primero y qué no asumir.
