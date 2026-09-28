@@ -16,8 +16,9 @@ Clasificación vigente de transición:
 - `usuario_sync_service.py` es un consumer real con outbox/inbox, remote apply y
   pruebas específicas;
 - producer, consumer y envelope dependen del modelo histórico de instalación;
-- el consumer se conserva como **LEGACY / COMPATIBILIDAD TRANSITORIA**, no como
-  requisito de los futuros commands centrales.
+- el consumer portable vigente se conserva por **COMPATIBILIDAD TRANSITORIA**;
+  usa el protocolo portable de #510/#512 y no es requisito de los futuros
+  commands centrales.
 
 Eventos documentados en EVT-ADM pero todavía no materializados porque no existe command runtime correspondiente:
 
@@ -102,7 +103,7 @@ La garantía es prospectiva desde el despliegue de #510. Filas u operaciones his
 
 Los métodos destinados a aplicación remota no hacen `commit()` ni `rollback()`. La frontera exterior pertenece al processor de #512.
 
-### 3.1 Contrato cerrado para la migración B1
+### 3.1 Decisiones de frontera Sync ya cerradas para el futuro B1
 
 La autoridad objetivo es FastAPI central sobre PostgreSQL central autoritativo y
 no incluye replicación escribible entre bases. Al migrar el alta y la baja de
@@ -122,6 +123,13 @@ produzcan eventos, se auditarán producers/callers remanentes y, recién cuando 
 quede una necesidad real, se retirarán producer, transporte sin uso y finalmente
 consumer, policy y tests específicos. Mensajes legacy en tránsito pueden seguir
 siendo procesados durante esa transición.
+
+Esta sección no cierra el contrato CORE-EF completo de B1. Antes de modificar
+runtime, ese PR deberá decidir expresamente headers exactos; mismo `op_id` con
+mismo payload; mismo `op_id` con payload distinto; retry post-error; locks;
+CAS/`version_registro`/`If-Match-Version`; outbox no relacionado con Sync;
+frontera transaccional; rollback; error mapping; y tests CORE-EF obligatorios.
+Ninguna de esas decisiones se define aquí.
 
 ## 4. Envelope portable
 

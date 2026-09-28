@@ -70,9 +70,9 @@ la replicación escribible entre bases no forma parte de ese destino. El produce
 legacy de `usuario_creado` y `usuario_desactivado` y su consumer real
 `administrativo.usuario` continúan materializados mientras los endpoints de alta
 y baja conserven su runtime legacy y puedan existir mensajes en tránsito. El
-consumer implementado por `usuario_sync_service.py` se clasifica como
-**LEGACY / COMPATIBILIDAD TRANSITORIA**: su existencia no obliga a nuevos
-commands centrales a producir esos eventos.
+consumer portable implementado por `usuario_sync_service.py` se conserva por
+**COMPATIBILIDAD TRANSITORIA**: usa el protocolo portable de #510/#512 y su
+existencia no obliga a nuevos commands centrales a producir esos eventos.
 
 Cuando `POST /api/v1/administrativo/usuarios` y
 `PATCH /api/v1/administrativo/usuarios/{id_usuario}/baja` migren en B1, deberán
@@ -92,6 +92,13 @@ temporalmente en catálogo, policy, consumer y tests históricos sin formar part
 del contrato de escritura central. `OUTBOX` no equivale a `SYNC`: una futura
 necesidad central de integración, jobs o eventos locales requerirá contrato
 propio y no revive por sí sola la replicación interbase.
+
+Estas son únicamente decisiones de frontera Sync ya cerradas para el futuro B1;
+no constituyen su decisión CORE-EF completa. Antes de modificar runtime, B1 deberá
+definir expresamente headers, equivalencia y conflicto de `op_id`, retry
+post-error, locks, CAS/`version_registro`/`If-Match-Version`, cualquier outbox no
+relacionado con Sync, frontera transaccional, rollback, error mapping y tests
+CORE-EF obligatorios. Este incremento no fija esas decisiones.
 
 | Concepto | Clasificación | Decisión |
 | --- | --- | --- |

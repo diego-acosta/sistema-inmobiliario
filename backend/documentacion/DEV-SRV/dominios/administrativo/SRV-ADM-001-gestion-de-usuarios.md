@@ -28,8 +28,8 @@ Este incremento sólo materializa permiso y grant. Los endpoints de alta y baja
 continúan con su runtime legacy hasta la migración posterior. En particular, no
 se declara todavía Bearer/D1 productivo. La frontera Sync de
 `usuario_creado` y `usuario_desactivado` queda contractualmente cerrada para esa
-migración: el runtime actual conserva producer y consumer legacy, pero los
-commands centrales B1 no producirán esos eventos.
+migración: el runtime actual conserva producers heredados y un consumer portable
+vigente, pero los commands centrales B1 no producirán esos eventos.
 
 El permiso independiente `ADMIN.USUARIO_SUCURSAL.ADMINISTRAR` (`Administrar
 alcance de usuarios por sucursal`) es una capacidad D1 `GLOBAL` para asignar
@@ -49,12 +49,18 @@ emitirán `usuario_creado` ni `usuario_desactivado` como replicación. No se def
 instalación sintética, dual-write, bridge ni adaptación del envelope Sync legacy.
 
 Hasta esa migración, los flujos, outbox y transacciones descritos abajo reflejan
-el runtime legacy vigente. `usuario_sync_service.py` permanece como consumer
-**LEGACY / COMPATIBILIDAD TRANSITORIA** para mensajes en tránsito y callers aún
-no migrados. Después de B1 se auditarán producers/callers restantes antes de
+el runtime heredado vigente. `usuario_sync_service.py` permanece como consumer
+portable vigente por **COMPATIBILIDAD TRANSITORIA** para mensajes en tránsito y
+callers aún no migrados; no pertenece al path técnico `LEGACY` payload-less.
+Después de B1 se auditarán producers/callers restantes antes de
 retirar producer, transporte, consumer, policy o tests. La eventual necesidad de
 outbox central para integración, jobs o eventos locales será independiente de
 Sync y requerirá contrato propio.
+
+Lo anterior cierra sólo la frontera Sync. El PR B1 deberá definir antes del
+cambio runtime headers exactos, equivalencia/conflicto de `op_id`, retry
+post-error, locks, CAS/`version_registro`/`If-Match-Version`, outbox ajeno a Sync,
+frontera transaccional, rollback, error mapping y tests CORE-EF obligatorios.
 
 ## Entidades principales
 - usuario

@@ -19,8 +19,8 @@ Quedan materializados como prerrequisito los permisos D1 `GLOBAL`
 por sucursal todavía no fueron migrados y conservan su runtime legacy. La
 frontera Sync de `usuario_creado`/`usuario_desactivado` queda cerrada
 contractualmente para B1: los commands centrales futuros no producirán esos
-eventos. Producer y consumer reales permanecen por ahora como compatibilidad
-legacy transitoria; tampoco se agrega identidad portable a
+eventos. El producer heredado y el consumer portable real permanecen por ahora
+por compatibilidad transitoria; tampoco se agrega identidad portable a
 `usuario_rol_seguridad` en este incremento.
 
 ## Frontera Sync de lifecycle de usuario (2026-09-28)
@@ -39,6 +39,9 @@ legacy antes de retirar, en orden, producer, transporte sin uso y finalmente
 consumer/policy/tests específicos. Los nombres de evento pueden permanecer como
 contrato histórico durante la transición. `OUTBOX` no equivale a `SYNC`; una
 futura necesidad de integración, jobs o eventos locales se decidirá por separado.
+Estas decisiones cierran sólo la frontera Sync; headers, semántica completa de
+`op_id`, retry, locks, CAS, outbox ajeno a Sync, transacción, rollback, errores y
+tests CORE-EF deberán cerrarse en B1 antes de modificar runtime.
 
 ## 1. Propósito
 
@@ -722,7 +725,7 @@ Para continuar el frente:
    bloqueado hasta contar con sus soportes;
 3. mantener `configuracion_local` en Operativo y no usar catálogos como
    parámetros;
-4. preservar el consumer portable legacy sin reactivar producers en los commands
+4. preservar el consumer portable transitorio sin reactivar producers en los commands
    centrales ni inferir que todo Administrativo está sincronizado;
 5. validar SQL, runtime, tests e issues vigentes antes de cada incremento y
    marcar `NO CONFIRMADO` todo dato sin respaldo.
@@ -824,8 +827,10 @@ La replicación es prospectiva: no incorpora backfill ni reparación legacy de #
 #507 está cerrado/completado. La autenticación técnica de procesos
 `origen = SISTEMA` permanece separada y bajo #522.
 
-Estado de transición vigente: producer y consumer anteriores se clasifican como
-legacy/compatibilidad transitoria. Su runtime no cambia en este corte documental.
+Estado de transición vigente: el producer heredado y el consumer portable
+anterior se conservan por compatibilidad transitoria. El consumer usa el
+protocolo portable #510/#512 y no se clasifica como path técnico `LEGACY`.
+Su runtime no cambia en este corte documental.
 Los futuros commands centrales B1 no producirán esos eventos y resolverán
 idempotencia exclusivamente con `operacion_idempotente`; su procedencia de
 instalación será `NULL`. El consumer no se retira hasta migrar B1, verificar que

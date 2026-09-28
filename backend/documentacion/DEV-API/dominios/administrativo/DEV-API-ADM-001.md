@@ -100,16 +100,25 @@ sus headers, identidad, idempotencia y outbox documentados en las secciones
 siguientes continúan describiendo el runtime legacy. Bearer/D1 productivo queda
 pendiente. La frontera Sync ya queda resuelta contractualmente: al migrar alta y
 baja en B1, los commands centrales no producirán `usuario_creado` ni
-`usuario_desactivado`; producer y consumer actuales permanecen sólo como
-compatibilidad legacy transitoria.
+`usuario_desactivado`; el producer heredado y el consumer portable actual
+permanecen sólo por compatibilidad transitoria. El consumer
+`administrativo.usuario` usa el protocolo #510/#512, no el path técnico
+`LEGACY` payload-less.
 
-Contrato objetivo B1: Bearer → `AuthenticatedPrincipal` → D1 `GLOBAL`
-`ADMIN.USUARIO.ADMINISTRAR` → ledger `operacion_idempotente`. La procedencia de
-instalación de los nuevos writes será `NULL` y Sync no participará de la
-autorización ni de la idempotencia. No habrá instalación sintética, dual-write,
-bridge ni adaptación del envelope legacy. Las secciones 4.1 y 4.4 continúan
-documentando el runtime observable previo a B1 hasta que ese incremento migre
-los endpoints.
+Decisiones de frontera ya cerradas para el futuro B1: identidad humana mediante
+`AuthenticatedPrincipal`; autorización D1 `GLOBAL` con
+`ADMIN.USUARIO.ADMINISTRAR`; `operacion_idempotente` como autoridad idempotente,
+sin depender de Sync, inbox u `op_id_alta`; procedencia de instalación `NULL`; y
+ausencia de producción central de `usuario_creado`/`usuario_desactivado`. No
+habrá instalación sintética, dual-write, bridge ni adaptación del envelope
+legacy. Las secciones 4.1 y 4.4 continúan documentando el runtime observable
+previo a B1 hasta que ese incremento migre los endpoints.
+
+Este PR no define la decisión CORE-EF completa de B1. Antes de modificar runtime,
+B1 deberá cerrar headers exactos; mismo `op_id` con mismo payload; mismo `op_id`
+con payload distinto; retry post-error; locks;
+CAS/`version_registro`/`If-Match-Version`; outbox no relacionado con Sync;
+frontera transaccional; rollback; error mapping; y tests CORE-EF obligatorios.
 
 ### 4.1 `POST /api/v1/administrativo/usuarios`
 

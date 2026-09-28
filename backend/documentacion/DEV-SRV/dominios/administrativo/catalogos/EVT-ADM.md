@@ -17,8 +17,8 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 - entidad_principal: usuario
 - tipo_evento: negocio
 - sincronizable: sí
-- estado_runtime: LEGACY / COMPATIBILIDAD TRANSITORIA
-- producer_vigente: commands legacy de alta de usuario hasta su migración B1
+- estado_runtime: HEREDADO / COMPATIBILIDAD TRANSITORIA
+- producer_vigente: commands heredados de alta de usuario hasta su migración B1
 - contrato_central: el command central B1 no produce este evento Sync
 - genera_trazabilidad_administrativa: sí
 
@@ -38,8 +38,8 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 - entidad_principal: usuario
 - tipo_evento: negocio
 - sincronizable: sí
-- estado_runtime: LEGACY / COMPATIBILIDAD TRANSITORIA
-- producer_vigente: commands legacy de baja de usuario hasta su migración B1
+- estado_runtime: HEREDADO / COMPATIBILIDAD TRANSITORIA
+- producer_vigente: commands heredados de baja de usuario hasta su migración B1
 - contrato_central: el command central B1 no produce este evento Sync
 - genera_trazabilidad_administrativa: sí
 
