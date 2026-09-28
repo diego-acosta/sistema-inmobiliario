@@ -98,8 +98,18 @@ El código del rol no es condición de autorización: el runtime futuro resolver
 permisos efectivos. Este incremento no migra los cinco writes correspondientes;
 sus headers, identidad, idempotencia y outbox documentados en las secciones
 siguientes continúan describiendo el runtime legacy. Bearer/D1 productivo queda
-pendiente, al igual que la resolución contractual de la frontera Sync de
-`usuario_creado` y `usuario_desactivado`.
+pendiente. La frontera Sync ya queda resuelta contractualmente: al migrar alta y
+baja en B1, los commands centrales no producirán `usuario_creado` ni
+`usuario_desactivado`; producer y consumer actuales permanecen sólo como
+compatibilidad legacy transitoria.
+
+Contrato objetivo B1: Bearer → `AuthenticatedPrincipal` → D1 `GLOBAL`
+`ADMIN.USUARIO.ADMINISTRAR` → ledger `operacion_idempotente`. La procedencia de
+instalación de los nuevos writes será `NULL` y Sync no participará de la
+autorización ni de la idempotencia. No habrá instalación sintética, dual-write,
+bridge ni adaptación del envelope legacy. Las secciones 4.1 y 4.4 continúan
+documentando el runtime observable previo a B1 hasta que ese incremento migre
+los endpoints.
 
 ### 4.1 `POST /api/v1/administrativo/usuarios`
 
