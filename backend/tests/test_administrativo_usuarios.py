@@ -105,6 +105,17 @@ def test_baja_metadata_y_nueva_baja(client):
     assert second.status_code == 404
 
 
+def test_baja_usuario_fisicamente_inexistente_404(client):
+    response = _central_request(
+        client,
+        "PATCH",
+        f"{ENDPOINT}/2147483647/baja",
+        headers=_central_headers(version=1),
+    )
+    assert response.status_code == 404
+    assert response.json()["error_code"] == "NOT_FOUND"
+
+
 def test_openapi_usuario_central(client):
     paths = client.get("/openapi.json").json()["paths"]
     post = paths[ENDPOINT]["post"]; baja = paths[f"{ENDPOINT}/{{id_usuario}}/baja"]["patch"]

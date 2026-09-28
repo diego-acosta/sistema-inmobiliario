@@ -392,7 +392,7 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
         row = self.db.execute(
             text(
                 f"SELECT {_USUARIO_COLUMNS} FROM usuario "
-                "WHERE id_usuario = :id_usuario AND deleted_at IS NULL FOR UPDATE"
+                "WHERE id_usuario = :id_usuario FOR UPDATE"
             ),
             {"id_usuario": id_usuario},
         ).mappings().one_or_none()
@@ -434,6 +434,8 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
             return None
         if actual["version_registro"] != expected_version:
             raise UsuarioConcurrencyError("La versión del usuario no coincide.")
+        if actual["deleted_at"] is not None:
+            return None
         row = self.db.execute(
             text(
                 f"""
