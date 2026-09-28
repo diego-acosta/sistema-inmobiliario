@@ -66,17 +66,16 @@ incremento no incorpora scheduler/broker transversal.
 #### Frontera transitoria de Sync para lifecycle de usuario
 
 La autoridad objetivo es FastAPI central sobre PostgreSQL central autoritativo;
-la replicación escribible entre bases no forma parte de ese destino. El producer
-legacy de `usuario_creado` y `usuario_desactivado` y su consumer real
-`administrativo.usuario` continúan materializados mientras los endpoints de alta
-y baja conserven su runtime legacy y puedan existir mensajes en tránsito. El
+la replicación escribible entre bases no forma parte de ese destino. El consumer
+real `administrativo.usuario` continúa materializado para mensajes portables
+heredados que puedan seguir en tránsito. El
 consumer portable implementado por `usuario_sync_service.py` se conserva por
 **COMPATIBILIDAD TRANSITORIA**: usa el protocolo portable de #510/#512 y su
 existencia no obliga a nuevos commands centrales a producir esos eventos.
 
-Cuando `POST /api/v1/administrativo/usuarios` y
-`PATCH /api/v1/administrativo/usuarios/{id_usuario}/baja` migren en B1, deberán
-usar Bearer, `AuthenticatedPrincipal`, D1 `GLOBAL` con
+`POST /api/v1/administrativo/usuarios` y
+`PATCH /api/v1/administrativo/usuarios/{id_usuario}/baja` usan en B1 Bearer,
+`AuthenticatedPrincipal`, D1 `GLOBAL` con
 `ADMIN.USUARIO.ADMINISTRAR` y `operacion_idempotente` central. Esos commands no
 emitirán `usuario_creado` ni `usuario_desactivado` como mecanismo de replicación;
 persistirán `id_instalacion_origen = NULL` e

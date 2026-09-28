@@ -4,10 +4,14 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import UTC, datetime
+from unittest.mock import patch
 from uuid import UUID, uuid4
 
 import pytest
+from app.api.authentication import get_authenticated_principal
 from app.api.core_ef_headers import CoreEFHeaders
+from app.application.administrativo.authentication import AuthenticatedPrincipal
+from app.application.administrativo.authorization import AdministrativeAuthorizationDecision
 from app.application.administrativo.services.usuario_sync_service import (
     USUARIO_SYNC_CONSUMER,
     UsuarioSyncApplicator,
@@ -55,6 +59,23 @@ def _headers(op_id: str | None = None, *, version: int | None = None) -> dict[st
     if version is not None:
         headers["If-Match-Version"] = str(version)
     return headers
+
+
+def _central_request(client, method, url, *, json=None, headers=None):
+    principal = AuthenticatedPrincipal(
+        id_usuario=1,
+        codigo_usuario="ADMIN",
+        login="admin",
+        id_sesion=uuid4(),
+        mecanismo_autenticacion="SESION_SERVIDOR",
+        autenticado_en=datetime.now(UTC).replace(tzinfo=None),
+    )
+    client.app.dependency_overrides[get_authenticated_principal] = lambda: principal
+    with patch(
+        "app.api.administrative_authorization.AdministrativeAuthorizationService.authorize",
+        return_value=AdministrativeAuthorizationDecision.GRANTED,
+    ):
+        return client.request(method, url, json=json, headers=headers or {})
 
 
 def _payload(suffix: str) -> dict:
@@ -155,38 +176,20 @@ def _retained_from_outbox(outbox: dict) -> dict:
     }
 
 
-def test_alta_genera_outbox_portable_en_misma_operacion(client, db_session):
+def test_alta_central_no_genera_outbox_portable(client, db_session):
     op_id = str(uuid4())
-    response = client.post(
+    response = _central_request(client, "POST",
         "/api/v1/administrativo/usuarios",
         json=_payload("OUTBOX"),
         headers=_headers(op_id),
     )
     assert response.status_code == 201
     created = response.json()["data"]
-    uid = _usuario_uid(db_session, created["id_usuario"])
-
-    outbox = _outbox_for_user(db_session, created["id_usuario"], "usuario_creado")
-    envelope = outbox["payload"]
-    assert outbox["aggregate_type"] == "usuario"
-    assert envelope["aggregate_uid"] == uid
-    assert envelope["version_registro"] == 1
-    assert envelope["op_id"] == op_id
-    assert envelope["provenance"]["installation_uid"]
-    assert "id_usuario" not in envelope
-    assert "id_usuario" not in envelope["snapshot"]
-    assert "fecha_ultimo_acceso" not in envelope["snapshot"]
-    assert not {
-        "password",
-        "hash_credencial",
-        "token",
-        "token_sesion",
-        "refresh_token",
-    } & set(envelope["snapshot"])
+    assert db_session.execute(text("SELECT count(*) FROM outbox_event WHERE aggregate_type='usuario' AND aggregate_id=:id"), {"id": created["id_usuario"]}).scalar_one() == 0
 
 
-def test_baja_genera_outbox_portable_con_misma_operacion(client, db_session):
-    create = client.post(
+def test_baja_central_no_genera_outbox_portable(client, db_session):
+    create = _central_request(client, "POST",
         "/api/v1/administrativo/usuarios",
         json=_payload("BAJA-OUTBOX"),
         headers=_headers(),
@@ -195,24 +198,16 @@ def test_baja_genera_outbox_portable_con_misma_operacion(client, db_session):
     created = create.json()["data"]
     op_id = str(uuid4())
 
-    baja = client.patch(
+    baja = _central_request(client, "PATCH",
         f"/api/v1/administrativo/usuarios/{created['id_usuario']}/baja",
         headers=_headers(op_id, version=created["version_registro"]),
     )
     assert baja.status_code == 200
 
-    outbox = _outbox_for_user(
-        db_session, created["id_usuario"], "usuario_desactivado"
-    )
-    envelope = outbox["payload"]
-    assert envelope["op_id"] == op_id
-    assert envelope["version_registro"] == 2
-    assert envelope["snapshot"]["estado_usuario"] == "INACTIVO"
-    assert envelope["snapshot"]["deleted"] is True
-    assert envelope["snapshot"]["fecha_baja"] is not None
+    assert db_session.execute(text("SELECT count(*) FROM outbox_event WHERE aggregate_type='usuario' AND aggregate_id=:id"), {"id": created["id_usuario"]}).scalar_one() == 0
 
 
-def test_fallo_outbox_revierte_alta(client, db_session, monkeypatch):
+def test_outbox_no_participa_en_alta_central(client, db_session, monkeypatch):
     def fail_add_event(*args, **kwargs):
         raise RuntimeError("outbox unavailable")
 
@@ -222,23 +217,23 @@ def test_fallo_outbox_revierte_alta(client, db_session, monkeypatch):
         fail_add_event,
     )
     payload = _payload("ROLLBACK")
-    response = client.post(
+    response = _central_request(client, "POST",
         "/api/v1/administrativo/usuarios",
         json=payload,
         headers=_headers(),
     )
-    assert response.status_code == 500
+    assert response.status_code == 201
     assert (
         db_session.execute(
             text("SELECT COUNT(*) FROM usuario WHERE codigo_usuario=:codigo"),
             {"codigo": payload["codigo_usuario"]},
         ).scalar_one()
-        == 0
+        == 1
     )
 
 
-def test_fallo_outbox_revierte_baja_y_version(client, db_session, monkeypatch):
-    created = client.post(
+def test_outbox_no_participa_en_baja_central(client, db_session, monkeypatch):
+    created = _central_request(client, "POST",
         "/api/v1/administrativo/usuarios",
         json=_payload("ROLLBACK-BAJA"),
         headers=_headers(),
@@ -252,11 +247,11 @@ def test_fallo_outbox_revierte_baja_y_version(client, db_session, monkeypatch):
         "OutboxRepository.add_event",
         fail_add_event,
     )
-    response = client.patch(
+    response = _central_request(client, "PATCH",
         f"/api/v1/administrativo/usuarios/{created['id_usuario']}/baja",
         headers=_headers(version=created["version_registro"]),
     )
-    assert response.status_code == 500
+    assert response.status_code == 200
     row = db_session.execute(
         text(
             "SELECT estado_usuario, fecha_baja, deleted_at, version_registro "
@@ -264,19 +259,19 @@ def test_fallo_outbox_revierte_baja_y_version(client, db_session, monkeypatch):
         ),
         {"id": created["id_usuario"]},
     ).mappings().one()
-    assert row["estado_usuario"] == "ACTIVO"
-    assert row["fecha_baja"] is None
-    assert row["deleted_at"] is None
-    assert row["version_registro"] == created["version_registro"]
+    assert row["estado_usuario"] == "INACTIVO"
+    assert row["fecha_baja"] is not None
+    assert row["deleted_at"] is not None
+    assert row["version_registro"] == created["version_registro"] + 1
 
 
-def test_retry_nuevo_mismo_op_id_no_duplica_outbox(client, db_session):
+def test_retry_nuevo_mismo_op_id_mantiene_outbox_vacio(client, db_session):
     op_id = str(uuid4())
     payload = _payload("RETRY-OUTBOX")
-    first = client.post(
+    first = _central_request(client, "POST",
         "/api/v1/administrativo/usuarios", json=payload, headers=_headers(op_id)
     )
-    retry = client.post(
+    retry = _central_request(client, "POST",
         "/api/v1/administrativo/usuarios", json=payload, headers=_headers(op_id)
     )
     assert first.status_code == retry.status_code == 201
@@ -287,23 +282,23 @@ def test_retry_nuevo_mismo_op_id_no_duplica_outbox(client, db_session):
             "AND aggregate_id=:id AND event_type='usuario_creado'"
         ),
         {"id": id_usuario},
-    ).scalar_one() == 1
+    ).scalar_one() == 0
 
 
 def test_op_id_de_alta_no_puede_reutilizarse_para_baja(client, db_session):
     op_id = str(uuid4())
-    created = client.post(
+    created = _central_request(client, "POST",
         "/api/v1/administrativo/usuarios",
         json=_payload("OP-ALTA-BAJA"),
         headers=_headers(op_id),
     ).json()["data"]
 
-    response = client.patch(
+    response = _central_request(client, "PATCH",
         f"/api/v1/administrativo/usuarios/{created['id_usuario']}/baja",
         headers=_headers(op_id, version=created["version_registro"]),
     )
     assert response.status_code == 409
-    assert response.json()["error_code"] == "IDEMPOTENT_DUPLICATE"
+    assert response.json()["error_code"] == "IDEMPOTENCY_COMMAND_CONFLICT"
 
     row = db_session.execute(
         text(
@@ -325,11 +320,11 @@ def test_op_id_de_alta_no_puede_reutilizarse_para_baja(client, db_session):
             {"id": created["id_usuario"]},
         ).mappings().one()
     )
-    assert counts == {"altas": 1, "bajas": 0}
+    assert counts == {"altas": 0, "bajas": 0}
 
 
-def test_retry_de_misma_baja_no_duplica_outbox(client, db_session):
-    created = client.post(
+def test_retry_de_misma_baja_mantiene_outbox_vacio(client, db_session):
+    created = _central_request(client, "POST",
         "/api/v1/administrativo/usuarios",
         json=_payload("RETRY-BAJA-OUTBOX"),
         headers=_headers(),
@@ -337,11 +332,11 @@ def test_retry_de_misma_baja_no_duplica_outbox(client, db_session):
     op_id = str(uuid4())
     headers = _headers(op_id, version=created["version_registro"])
 
-    first = client.patch(
+    first = _central_request(client, "PATCH",
         f"/api/v1/administrativo/usuarios/{created['id_usuario']}/baja",
         headers=headers,
     )
-    retry = client.patch(
+    retry = _central_request(client, "PATCH",
         f"/api/v1/administrativo/usuarios/{created['id_usuario']}/baja",
         headers=headers,
     )
@@ -353,7 +348,7 @@ def test_retry_de_misma_baja_no_duplica_outbox(client, db_session):
             "AND aggregate_id=:id AND event_type='usuario_desactivado'"
         ),
         {"id": created["id_usuario"]},
-    ).scalar_one() == 1
+    ).scalar_one() == 0
 
 
 @pytest.mark.parametrize(
@@ -505,13 +500,9 @@ def test_instantes_distintos_permanecen_materialmente_distintos():
 
 
 def test_alta_remota_preserva_uid_y_pk_local_independiente(client, db_session):
-    response = client.post(
-        "/api/v1/administrativo/usuarios",
-        json=_payload("REMOTE"),
-        headers=_headers(),
+    source = UsuarioSistemaRepository(db_session).create(
+        _payload("REMOTE"), _core(str(uuid4()))
     )
-    assert response.status_code == 201
-    source = response.json()["data"]
     source_uid = _usuario_uid(db_session, source["id_usuario"])
     outbox = _outbox_for_user(db_session, source["id_usuario"], "usuario_creado")
     retained = _retained_from_outbox(outbox)
@@ -988,13 +979,9 @@ def test_usuario_no_requiere_persona_rol_o_sucursal_para_aplicar(db_session):
 
 
 def test_registro_inbox_usa_uid_y_no_pk_remota(client, db_session):
-    response = client.post(
-        "/api/v1/administrativo/usuarios",
-        json=_payload("INBOX"),
-        headers=_headers(),
+    created = UsuarioSistemaRepository(db_session).create(
+        _payload("INBOX"), _core(str(uuid4()))
     )
-    assert response.status_code == 201
-    created = response.json()["data"]
     uid = _usuario_uid(db_session, created["id_usuario"])
     outbox = _outbox_for_user(db_session, created["id_usuario"], "usuario_creado")
     assert register_usuario_outbox_delivery(db_session, outbox_event=outbox) is True
@@ -1500,33 +1487,33 @@ def test_cas_race_v2_v3_desde_v1_converge_a_v3(winner):
 
 def test_op_id_global_rechaza_altas_de_usuarios_distintos(client, db_session):
     op_id = str(uuid4())
-    first = client.post(
+    first = _central_request(client, "POST",
         "/api/v1/administrativo/usuarios",
         json=_payload("GLOBAL-ALTA-A-" + uuid4().hex[:6]),
         headers=_headers(op_id),
     )
-    second = client.post(
+    second = _central_request(client, "POST",
         "/api/v1/administrativo/usuarios",
         json=_payload("GLOBAL-ALTA-B-" + uuid4().hex[:6]),
         headers=_headers(op_id),
     )
     assert first.status_code == 201
     assert second.status_code == 409
-    assert second.json()["error_code"] == "IDEMPOTENT_DUPLICATE"
+    assert second.json()["error_code"] == "IDEMPOTENCY_TARGET_CONFLICT"
     assert db_session.execute(
         text("SELECT count(*) FROM outbox_event WHERE payload->>'op_id'=:op_id"),
         {"op_id": op_id},
-    ).scalar_one() == 1
+    ).scalar_one() == 0
 
 
 def test_op_id_global_rechaza_alta_y_baja_de_usuarios_distintos(client, db_session):
     op_id = str(uuid4())
-    first = client.post(
+    first = _central_request(client, "POST",
         "/api/v1/administrativo/usuarios",
         json=_payload("GLOBAL-CROSS-A-" + uuid4().hex[:6]),
         headers=_headers(op_id),
     )
-    target = client.post(
+    target = _central_request(client, "POST",
         "/api/v1/administrativo/usuarios",
         json=_payload("GLOBAL-CROSS-B-" + uuid4().hex[:6]),
         headers=_headers(),
@@ -1534,12 +1521,12 @@ def test_op_id_global_rechaza_alta_y_baja_de_usuarios_distintos(client, db_sessi
     assert first.status_code == target.status_code == 201
     target_row = target.json()["data"]
 
-    rejected = client.patch(
+    rejected = _central_request(client, "PATCH",
         f"/api/v1/administrativo/usuarios/{target_row['id_usuario']}/baja",
         headers=_headers(op_id, version=target_row["version_registro"]),
     )
     assert rejected.status_code == 409
-    assert rejected.json()["error_code"] == "IDEMPOTENT_DUPLICATE"
+    assert rejected.json()["error_code"] == "IDEMPOTENCY_COMMAND_CONFLICT"
     row = UsuarioSistemaRepository(db_session).get(target_row["id_usuario"])
     assert row is not None
     assert row["estado_usuario"] == "ACTIVO"

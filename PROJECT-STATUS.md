@@ -10,6 +10,14 @@ Los siete writes de catálogo maestro e ítems usan Bearer + D1 `GLOBAL`, permis
 `412`; provenance de instalación queda `NULL`; los siete producers outbox legacy
 se retiran. Sync general y los reads de catálogos permanecen sin cambios.
 
+## Lifecycle central de usuario B1 (2026-09-28)
+
+`POST /usuarios` y `PATCH /usuarios/{id}/baja` usan Bearer, D1 `GLOBAL`
+`ADMIN.USUARIO.ADMINISTRAR`, metadata central y ledger NULL/NULL. La baja usa
+CAS 412; provenance de instalación queda NULL y no se producen
+`usuario_creado`/`usuario_desactivado`. El consumer portable se conserva por
+compatibilidad transitoria; roles y usuario-sucursal siguen pendientes.
+
 ## Permisos centrales de usuarios y seguridad (2026-09-26)
 
 Quedan materializados como prerrequisito los permisos D1 `GLOBAL`

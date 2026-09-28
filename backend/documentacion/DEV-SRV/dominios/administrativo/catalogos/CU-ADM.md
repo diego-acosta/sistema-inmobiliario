@@ -20,16 +20,16 @@ Este dominio cubre gestión de usuarios y acceso, seguridad y autorización, aud
 
 ### CU-ADM-001 — Alta de usuario
 - servicio_origen: SRV-ADM-001
-- permiso_contractual: ADMIN.USUARIO.ADMINISTRAR (GLOBAL; adopción runtime pendiente)
+- permiso_contractual: ADMIN.USUARIO.ADMINISTRAR (GLOBAL; runtime vigente)
 - tipo: write
 - objetivo: registrar un nuevo usuario administrativo del sistema.
 - entidades: usuario
 - criticidad: alta
-- sincronizable: sí
+- sincronizable: no en el command central
 - requiere_versionado: no
 - requiere_lock: no
 - genera_op_id: sí
-- genera_outbox: sí
+- genera_outbox: no
 - puede_entrar_en_conflicto: no
 
 ### CU-ADM-002 — Modificación de usuario
@@ -47,12 +47,12 @@ Este dominio cubre gestión de usuarios y acceso, seguridad y autorización, aud
 
 ### CU-ADM-003 — Baja lógica o desactivación de usuario
 - servicio_origen: SRV-ADM-001
-- permiso_contractual: ADMIN.USUARIO.ADMINISTRAR (GLOBAL; adopción runtime pendiente)
+- permiso_contractual: ADMIN.USUARIO.ADMINISTRAR (GLOBAL; runtime vigente)
 - tipo: write
 - objetivo: invalidar o desactivar un usuario sin eliminarlo físicamente.
 - entidades: usuario
 - criticidad: alta
-- sincronizable: sí
+- sincronizable: no en el command central
 - requiere_versionado: sí
 - requiere_lock: no
 - genera_op_id: sí
