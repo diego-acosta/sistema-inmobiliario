@@ -27,7 +27,7 @@ código de rol en condición de autorización runtime.
 El incremento B1 adopta este permiso en los endpoints de alta y baja mediante
 Bearer y `AuthenticatedPrincipal`. La frontera Sync de
 `usuario_creado` y `usuario_desactivado` queda contractualmente cerrada para esa
-migración conserva el consumer portable vigente, pero los commands centrales B1
+migración: conserva el consumer portable vigente, pero los commands centrales B1
 no producen esos eventos.
 
 El permiso independiente `ADMIN.USUARIO_SUCURSAL.ADMINISTRAR` (`Administrar
@@ -42,15 +42,15 @@ legacy.
 
 El B1 vigente migra exclusivamente alta y baja a Bearer,
 `AuthenticatedPrincipal`, D1 `GLOBAL` con `ADMIN.USUARIO.ADMINISTRAR` y
-`operacion_idempotente` central. Los nuevos writes usarán
+`operacion_idempotente` central. Los writes centrales usan
 `id_instalacion_origen = NULL` e `id_instalacion_ultima_modificacion = NULL` y no
-emitirán `usuario_creado` ni `usuario_desactivado` como replicación. No se define
+emiten `usuario_creado` ni `usuario_desactivado` como replicación. No se define
 instalación sintética, dual-write, bridge ni adaptación del envelope Sync legacy.
 
 `usuario_sync_service.py` permanece como consumer
 portable vigente por **COMPATIBILIDAD TRANSITORIA** para mensajes en tránsito y
 callers aún no migrados; no pertenece al path técnico `LEGACY` payload-less.
-Después de B1 se auditarán producers/callers restantes antes de
+Tras B1 se auditarán producers/callers restantes antes de
 retirar producer, transporte, consumer, policy o tests. La eventual necesidad de
 outbox central para integración, jobs o eventos locales será independiente de
 Sync y requerirá contrato propio.
@@ -58,6 +58,12 @@ Sync y requerirá contrato propio.
 B1 usa sólo `X-Op-Id` en alta y agrega `If-Match-Version` en baja. El ledger
 central resuelve claim/replay/conflictos, la baja aplica CAS con 412 y el caller
 posee la transacción que reúne mutación y completion.
+
+La adopción de B1 presupone el rebuild oficial sin datos útiles y no conserva
+receipts del write heredado. La durabilidad aplica a requests bajo el fingerprint
+central; no hay dual fingerprint, fallback ni backfill. Si aparecieran datos
+útiles antes del corte, se debe detener el rebuild y definir una migración
+específica.
 
 ## Entidades principales
 - usuario

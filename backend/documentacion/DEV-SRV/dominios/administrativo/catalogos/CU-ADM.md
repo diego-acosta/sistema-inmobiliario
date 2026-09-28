@@ -56,7 +56,7 @@ Este dominio cubre gestión de usuarios y acceso, seguridad y autorización, aud
 - requiere_versionado: sí
 - requiere_lock: no
 - genera_op_id: sí
-- genera_outbox: sí
+- genera_outbox: no en el command central
 - puede_entrar_en_conflicto: sí
 
 ### CU-ADM-004 — Reactivación de usuario

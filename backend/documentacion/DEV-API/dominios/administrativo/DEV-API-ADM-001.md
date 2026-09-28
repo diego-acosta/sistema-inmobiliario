@@ -107,6 +107,13 @@ por compatibilidad transitoria. El consumer
 scope técnico del ledger son `NULL`. No hay instalación sintética, dual-write,
 bridge ni adaptación del envelope heredado.
 
+B1 se adopta sobre el rebuild oficial de transición y no preserva receipts
+pre-B1: no se soportan migración in-place, dual fingerprint, fallback ni backfill
+de `operacion_idempotente`. La durabilidad idempotente se garantiza entre
+requests bajo el contrato central una vez materializado B1. Si antes del corte
+aparecen datos útiles, debe detenerse el rebuild y diseñarse una migración
+específica.
+
 ### 4.1 `POST /api/v1/administrativo/usuarios`
 
 - Estado: implementado.
