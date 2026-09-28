@@ -74,7 +74,8 @@ específica.
 Permite registrar un nuevo usuario.
 
 ### Modificación
-Permite actualizar datos de un usuario.
+Modo conceptual todavía no implementado ni migrado por B1. Permitiría actualizar
+datos de un usuario en un incremento posterior.
 
 ### Baja lógica
 Permite invalidar un usuario.
@@ -84,11 +85,13 @@ Permite visualizar usuarios.
 
 ## Entradas conceptuales
 
-### Contexto técnico (write)
-- usuario_id
-- instalacion_id
+### Contexto central B1 (alta/baja)
+- principal autenticado
 - op_id
-- version_esperada cuando corresponda
+- version_esperada para baja
+
+La modificación conceptual no forma parte de B1 y este documento no fija todavía
+su metadata runtime.
 
 ### Datos de negocio
 - identificador de usuario
@@ -120,14 +123,17 @@ Permite visualizar usuarios.
 ## Flujo de alto nivel
 
 ### Alta
-1. validar contexto técnico e idempotencia
-2. validar datos de usuario
-3. registrar usuario
-4. persistir con metadatos transversales
-5. registrar outbox
-6. devolver resultado
+1. autenticar el principal
+2. autorizar D1 `GLOBAL` con `ADMIN.USUARIO.ADMINISTRAR`
+3. validar metadata central e intención idempotente
+4. ejecutar claim o devolver replay
+5. validar datos de usuario
+6. insertar usuario con provenance de instalación `NULL`
+7. completar el receipt central
+8. realizar el commit exterior
+9. devolver resultado
 
-### Modificación
+### Modificación (conceptual; fuera de B1)
 1. validar contexto técnico
 2. cargar usuario existente
 3. validar versión esperada
@@ -138,13 +144,16 @@ Permite visualizar usuarios.
 8. devolver resultado
 
 ### Baja lógica
-1. validar contexto técnico
-2. cargar usuario
-3. validar condiciones de baja
-4. aplicar invalidación
-5. persistir cambios
-6. registrar outbox
-7. devolver resultado
+1. autenticar el principal
+2. autorizar D1 `GLOBAL` con `ADMIN.USUARIO.ADMINISTRAR`
+3. validar metadata central
+4. resolver el usuario objetivo
+5. ejecutar claim o devolver replay
+6. validar CAS y lifecycle bajo la transacción vigente
+7. aplicar la baja lógica con provenance de instalación `NULL`
+8. completar el receipt central
+9. realizar el commit exterior
+10. devolver resultado
 
 ### Consulta
 1. validar parámetros
@@ -159,10 +168,14 @@ Permite visualizar usuarios.
 - idempotencia en alta
 
 ## Efectos transaccionales
-- alta o actualización de usuario
-- aplicación de borrado lógico
-- actualización de metadatos transversales
-- registro de outbox en operaciones sincronizables
+- en alta B1, inserción del usuario y completion del receipt central en una única
+  transacción;
+- en baja B1, baja lógica, actualización de versión y completion del receipt
+  central en una única transacción;
+- provenance de instalación `NULL` en ambas operaciones centrales;
+- alta y baja B1 no registran outbox Sync;
+- la modificación permanece conceptual y B1 no define sus efectos
+  transaccionales ni su eventual outbox.
 
 ## Errores
 - [[ERR-ADM]]

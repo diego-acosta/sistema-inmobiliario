@@ -127,8 +127,9 @@ específica.
 - `If-Match-Version`: NO APLICA; es alta de entidad nueva.
 - Idempotencia: aplica por `X-Op-Id` mediante el claim/receipt global de `operacion_idempotente` (#469/#470); `op_id_alta` conserva provenance row-local, pero no es la autoridad concurrente.
   - mismo `X-Op-Id` + mismo payload: devuelve el mismo resultado sin duplicar usuario.
-  - mismo `X-Op-Id` + payload distinto: `409 IDEMPOTENT_DUPLICATE`.
-  - mismo `X-Op-Id` reutilizado por otro usuario o command incompatible: `409 IDEMPOTENT_DUPLICATE`.
+  - mismo `X-Op-Id` + `command_code` distinto: `409 IDEMPOTENCY_COMMAND_CONFLICT`.
+  - mismo `X-Op-Id` + target distinto: `409 IDEMPOTENCY_TARGET_CONFLICT`.
+  - mismo `X-Op-Id` + mismo command/target pero actor o payload distinto: `409 IDEMPOTENCY_PAYLOAD_CONFLICT`.
   - el claim usa la exclusión transaccional estable de #470 y precede cualquier mutación.
   - compatibilidad prospectiva: los writes nuevos completan receipt; la evidencia histórica por `op_id_alta` no repara outbox ni receipt ausentes.
 - Versionado: crea con `version_registro = 1`.
@@ -176,7 +177,10 @@ Errores esperados:
 - `400 VALIDATION_ERROR`: `X-Op-Id` faltante/inválido.
 - `401`/`403`: autenticación o autorización D1 insuficiente.
 - `422 Unprocessable Entity`: request body/path/query inválido detectado automáticamente por FastAPI/Pydantic antes de entrar al handler.
-- `409`: conflicto idempotente o código/login duplicado.
+- `409 IDEMPOTENCY_COMMAND_CONFLICT`: `X-Op-Id` reutilizado por otro command.
+- `409 IDEMPOTENCY_TARGET_CONFLICT`: `X-Op-Id` reutilizado para otro target.
+- `409 IDEMPOTENCY_PAYLOAD_CONFLICT`: mismo command/target con actor o payload incompatible.
+- `409 DUPLICATE_USER`: código/login duplicado.
 - `500 TECHNICAL_INCONSISTENCY`: fallo técnico no controlado.
 
 Fuera de alcance: credenciales, password y modificación de usuario.
@@ -226,7 +230,9 @@ Errores esperados:
 - Headers heredados de usuario/sucursal/instalación: ignorados.
 - Idempotencia: aplica por `X-Op-Id` mediante el claim/receipt global de `operacion_idempotente`; `op_id_ultima_modificacion` conserva evidencia row-local.
   - mismo `X-Op-Id` sobre la misma baja ya persistida: devuelve el estado ya dado de baja sin incrementar dos veces `version_registro`.
-  - reutilización del `X-Op-Id` del alta, de otro usuario u otra operación incompatible: `409 IDEMPOTENT_DUPLICATE` antes de mutar o emitir outbox.
+  - mismo `X-Op-Id` con `command_code` distinto, incluido el de un alta: `409 IDEMPOTENCY_COMMAND_CONFLICT`.
+  - mismo `X-Op-Id` sobre otro usuario objetivo: `409 IDEMPOTENCY_TARGET_CONFLICT`.
+  - mismo `X-Op-Id` y target con actor o `If-Match-Version` distinto: `409 IDEMPOTENCY_PAYLOAD_CONFLICT`.
   - versión distinta sin baja previa por ese `X-Op-Id`: `412 CONCURRENCY_ERROR`.
 - Versionado: requiere `If-Match-Version`; al aplicar baja incrementa `version_registro + 1`.
 - Baja lógica: establece `estado_usuario = INACTIVO`, `fecha_baja` y `deleted_at`.
@@ -241,7 +247,9 @@ Errores esperados:
 
 - `400 VALIDATION_ERROR`: headers CORE-EF faltantes/inválidos o `If-Match-Version` faltante/inválido.
 - `404 NOT_FOUND`: usuario inexistente.
-- `409 IDEMPOTENT_DUPLICATE`: `X-Op-Id` reutilizado por una operación incompatible.
+- `409 IDEMPOTENCY_COMMAND_CONFLICT`: `X-Op-Id` reutilizado por otro command.
+- `409 IDEMPOTENCY_TARGET_CONFLICT`: `X-Op-Id` reutilizado para otro usuario objetivo.
+- `409 IDEMPOTENCY_PAYLOAD_CONFLICT`: mismo command/target con actor o payload incompatible.
 - `412 CONCURRENCY_ERROR`: mismatch real de versión.
 - `500 TECHNICAL_INCONSISTENCY`.
 
