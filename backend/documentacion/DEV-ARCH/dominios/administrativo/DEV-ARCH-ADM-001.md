@@ -106,6 +106,28 @@ de `catalogo_maestro` e `item_catalogo` conservan todavía el contexto CORE-EF
 legacy; Bearer, D1 productivo y ledger central se incorporarán en el siguiente
 incremento de migración.
 
+### Permisos centrales de usuarios y seguridad
+
+Se materializan como capacidades D1 `GLOBAL` independientes:
+
+- `ADMIN.USUARIO.ADMINISTRAR` (`Administrar usuarios`), para crear y dar de baja
+  usuarios del sistema;
+- `ADMIN.SEGURIDAD.GRANTS.ADMINISTRAR` (`Administrar grants de seguridad`), para
+  asignar y revocar roles de seguridad de usuarios;
+- `ADMIN.USUARIO_SUCURSAL.ADMINISTRAR` (`Administrar alcance de usuarios por
+  sucursal`), para asignar sucursales y capacidades operativas a usuarios.
+
+El rol activo `ADMINISTRADOR_SISTEMA` es el receptor canónico inicial de los tres
+grants. Su código no se convierte en una condición runtime: D1 continúa
+resolviendo permisos efectivos. Este incremento no crea asignaciones de usuarios,
+no agrega identidad portable a `usuario_rol_seguridad` y no modifica la frontera
+Sync de usuario.
+
+Los cinco writes productivos de lifecycle de usuario, grants globales y
+`usuario_sucursal` conservan su contrato legacy hasta un incremento posterior.
+Por lo tanto, esta materialización no declara todavía Bearer ni D1 productivo en
+esos endpoints.
+
 ## 3. Modelo canónico
 
 `parametro_sistema` define identidad y referencia físicamente a `alcance_parametro`; `valor_parametro` conserva el valor y posee campos opcionales `id_sucursal` e `id_instalacion`. Esas columnas prueban capacidad física de contexto, pero no congelan por sí solas su semántica de resolución.

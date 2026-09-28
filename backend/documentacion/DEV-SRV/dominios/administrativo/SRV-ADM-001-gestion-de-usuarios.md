@@ -17,6 +17,26 @@ No cubre:
 - autorización de operaciones
 - auditoría
 
+## Prerrequisito de autorización central
+
+El permiso activo `ADMIN.USUARIO.ADMINISTRAR` (`Administrar usuarios`) es una
+capacidad D1 `GLOBAL` para crear y dar de baja usuarios del sistema. Su receptor
+canónico inicial es el rol activo `ADMINISTRADOR_SISTEMA`, sin convertir ese
+código de rol en condición de autorización runtime.
+
+Este incremento sólo materializa permiso y grant. Los endpoints de alta y baja
+continúan con su runtime legacy hasta la migración posterior. En particular, no
+se declara todavía Bearer/D1 productivo y sigue abierta la frontera de los
+eventos Sync `usuario_creado` y `usuario_desactivado`.
+
+El permiso independiente `ADMIN.USUARIO_SUCURSAL.ADMINISTRAR` (`Administrar
+alcance de usuarios por sucursal`) es una capacidad D1 `GLOBAL` para asignar
+sucursales y capacidades operativas a usuarios. La sucursal asignada es dato
+funcional del vínculo y no convierte el command administrativo en autorización
+contextual. También recibe grant inicial el rol activo
+`ADMINISTRADOR_SISTEMA`; el endpoint productivo conserva por ahora su contrato
+legacy.
+
 ## Entidades principales
 - usuario
 
