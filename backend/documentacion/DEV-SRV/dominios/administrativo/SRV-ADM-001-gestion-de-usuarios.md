@@ -26,8 +26,10 @@ código de rol en condición de autorización runtime.
 
 Este incremento sólo materializa permiso y grant. Los endpoints de alta y baja
 continúan con su runtime legacy hasta la migración posterior. En particular, no
-se declara todavía Bearer/D1 productivo y sigue abierta la frontera de los
-eventos Sync `usuario_creado` y `usuario_desactivado`.
+se declara todavía Bearer/D1 productivo. La frontera Sync de
+`usuario_creado` y `usuario_desactivado` queda contractualmente cerrada para esa
+migración: el runtime actual conserva producers heredados y un consumer portable
+vigente, pero los commands centrales B1 no producirán esos eventos.
 
 El permiso independiente `ADMIN.USUARIO_SUCURSAL.ADMINISTRAR` (`Administrar
 alcance de usuarios por sucursal`) es una capacidad D1 `GLOBAL` para asignar
@@ -36,6 +38,29 @@ funcional del vínculo y no convierte el command administrativo en autorización
 contextual. También recibe grant inicial el rol activo
 `ADMINISTRADOR_SISTEMA`; el endpoint productivo conserva por ahora su contrato
 legacy.
+
+### Transición del lifecycle de usuario a autoridad central
+
+El futuro B1 migrará exclusivamente alta y baja a Bearer,
+`AuthenticatedPrincipal`, D1 `GLOBAL` con `ADMIN.USUARIO.ADMINISTRAR` y
+`operacion_idempotente` central. Los nuevos writes usarán
+`id_instalacion_origen = NULL` e `id_instalacion_ultima_modificacion = NULL` y no
+emitirán `usuario_creado` ni `usuario_desactivado` como replicación. No se define
+instalación sintética, dual-write, bridge ni adaptación del envelope Sync legacy.
+
+Hasta esa migración, los flujos, outbox y transacciones descritos abajo reflejan
+el runtime heredado vigente. `usuario_sync_service.py` permanece como consumer
+portable vigente por **COMPATIBILIDAD TRANSITORIA** para mensajes en tránsito y
+callers aún no migrados; no pertenece al path técnico `LEGACY` payload-less.
+Después de B1 se auditarán producers/callers restantes antes de
+retirar producer, transporte, consumer, policy o tests. La eventual necesidad de
+outbox central para integración, jobs o eventos locales será independiente de
+Sync y requerirá contrato propio.
+
+Lo anterior cierra sólo la frontera Sync. El PR B1 deberá definir antes del
+cambio runtime headers exactos, equivalencia/conflicto de `op_id`, retry
+post-error, locks, CAS/`version_registro`/`If-Match-Version`, outbox ajeno a Sync,
+frontera transaccional, rollback, error mapping y tests CORE-EF obligatorios.
 
 ## Entidades principales
 - usuario

@@ -9,6 +9,17 @@ Eventos materializados:
 - `usuario_creado`;
 - `usuario_desactivado`.
 
+Clasificación vigente de transición:
+
+- ambos eventos tienen producer legacy real en los commands HTTP todavía no
+  migrados;
+- `usuario_sync_service.py` es un consumer real con outbox/inbox, remote apply y
+  pruebas específicas;
+- producer, consumer y envelope dependen del modelo histórico de instalación;
+- el consumer portable vigente se conserva por **COMPATIBILIDAD TRANSITORIA**;
+  usa el protocolo portable de #510/#512 y no es requisito de los futuros
+  commands centrales.
+
 Eventos documentados en EVT-ADM pero todavía no materializados porque no existe command runtime correspondiente:
 
 - `usuario_modificado`;
@@ -91,6 +102,34 @@ Los replays locales nuevos se resuelven por el receipt global y no emiten un seg
 La garantía es prospectiva desde el despliegue de #510. Filas u operaciones históricas anteriores pueden conservar `op_id` sin un outbox de usuario asociado. Un retry histórico no repara ni reemite implícitamente ese outbox; backfill, reemisión y convergencia histórica pertenecen a un follow-up separado.
 
 Los métodos destinados a aplicación remota no hacen `commit()` ni `rollback()`. La frontera exterior pertenece al processor de #512.
+
+### 3.1 Decisiones de frontera Sync ya cerradas para el futuro B1
+
+La autoridad objetivo es FastAPI central sobre PostgreSQL central autoritativo y
+no incluye replicación escribible entre bases. Al migrar el alta y la baja de
+usuario en B1, ambos commands usarán Bearer, `AuthenticatedPrincipal`, D1
+`GLOBAL` con `ADMIN.USUARIO.ADMINISTRAR` y el ledger
+`operacion_idempotente`. No emitirán `usuario_creado` ni
+`usuario_desactivado`; la escritura central autoritativa será suficiente.
+
+La idempotencia de B1 no dependerá de `op_id_alta`, del replay del evento ni del
+inbox remoto. Sus writes nuevos persistirán procedencia de instalación `NULL`.
+Este contrato no modifica el envelope existente ni introduce instalación
+sintética, envelope con instalación nula, dual-write, bridge o traducción.
+
+El runtime descrito en la sección 3 permanece vigente únicamente para los
+callers legacy hasta su migración. Luego de B1 se verificará que esos endpoints no
+produzcan eventos, se auditarán producers/callers remanentes y, recién cuando no
+quede una necesidad real, se retirarán producer, transporte sin uso y finalmente
+consumer, policy y tests específicos. Mensajes legacy en tránsito pueden seguir
+siendo procesados durante esa transición.
+
+Esta sección no cierra el contrato CORE-EF completo de B1. Antes de modificar
+runtime, ese PR deberá decidir expresamente headers exactos; mismo `op_id` con
+mismo payload; mismo `op_id` con payload distinto; retry post-error; locks;
+CAS/`version_registro`/`If-Match-Version`; outbox no relacionado con Sync;
+frontera transaccional; rollback; error mapping; y tests CORE-EF obligatorios.
+Ninguna de esas decisiones se define aquí.
 
 ## 4. Envelope portable
 
@@ -298,3 +337,10 @@ Se preservan:
 - `aggregate_id` legacy del inbox como campo técnico neutro, sin autoridad distribuida.
 
 La migración transversal de identidad HTTP sigue perteneciendo a #461.
+
+Los nombres `usuario_creado` y `usuario_desactivado`, su policy, consumer y tests
+pueden mantenerse como contratos históricos mientras dure esta compatibilidad.
+Esa conservación no los convierte en eventos obligatorios de la escritura
+central. Del mismo modo, conservar outbox como infraestructura transversal no
+implica conservar Sync: una futura emisión central para integración, jobs o
+eventos locales requerirá una decisión independiente.

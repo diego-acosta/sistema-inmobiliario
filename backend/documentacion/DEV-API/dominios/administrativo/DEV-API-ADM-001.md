@@ -98,8 +98,27 @@ El código del rol no es condición de autorización: el runtime futuro resolver
 permisos efectivos. Este incremento no migra los cinco writes correspondientes;
 sus headers, identidad, idempotencia y outbox documentados en las secciones
 siguientes continúan describiendo el runtime legacy. Bearer/D1 productivo queda
-pendiente, al igual que la resolución contractual de la frontera Sync de
-`usuario_creado` y `usuario_desactivado`.
+pendiente. La frontera Sync ya queda resuelta contractualmente: al migrar alta y
+baja en B1, los commands centrales no producirán `usuario_creado` ni
+`usuario_desactivado`; el producer heredado y el consumer portable actual
+permanecen sólo por compatibilidad transitoria. El consumer
+`administrativo.usuario` usa el protocolo #510/#512, no el path técnico
+`LEGACY` payload-less.
+
+Decisiones de frontera ya cerradas para el futuro B1: identidad humana mediante
+`AuthenticatedPrincipal`; autorización D1 `GLOBAL` con
+`ADMIN.USUARIO.ADMINISTRAR`; `operacion_idempotente` como autoridad idempotente,
+sin depender de Sync, inbox u `op_id_alta`; procedencia de instalación `NULL`; y
+ausencia de producción central de `usuario_creado`/`usuario_desactivado`. No
+habrá instalación sintética, dual-write, bridge ni adaptación del envelope
+legacy. Las secciones 4.1 y 4.4 continúan documentando el runtime observable
+previo a B1 hasta que ese incremento migre los endpoints.
+
+Este PR no define la decisión CORE-EF completa de B1. Antes de modificar runtime,
+B1 deberá cerrar headers exactos; mismo `op_id` con mismo payload; mismo `op_id`
+con payload distinto; retry post-error; locks;
+CAS/`version_registro`/`If-Match-Version`; outbox no relacionado con Sync;
+frontera transaccional; rollback; error mapping; y tests CORE-EF obligatorios.
 
 ### 4.1 `POST /api/v1/administrativo/usuarios`
 

@@ -63,6 +63,43 @@ desde #544 y siguen excluidas del transporte por la política #455. #508 / PR #5
 existente. Los demás eventos de lifecycle continúan sin runtime productivo y este
 incremento no incorpora scheduler/broker transversal.
 
+#### Frontera transitoria de Sync para lifecycle de usuario
+
+La autoridad objetivo es FastAPI central sobre PostgreSQL central autoritativo;
+la replicación escribible entre bases no forma parte de ese destino. El producer
+legacy de `usuario_creado` y `usuario_desactivado` y su consumer real
+`administrativo.usuario` continúan materializados mientras los endpoints de alta
+y baja conserven su runtime legacy y puedan existir mensajes en tránsito. El
+consumer portable implementado por `usuario_sync_service.py` se conserva por
+**COMPATIBILIDAD TRANSITORIA**: usa el protocolo portable de #510/#512 y su
+existencia no obliga a nuevos commands centrales a producir esos eventos.
+
+Cuando `POST /api/v1/administrativo/usuarios` y
+`PATCH /api/v1/administrativo/usuarios/{id_usuario}/baja` migren en B1, deberán
+usar Bearer, `AuthenticatedPrincipal`, D1 `GLOBAL` con
+`ADMIN.USUARIO.ADMINISTRAR` y `operacion_idempotente` central. Esos commands no
+emitirán `usuario_creado` ni `usuario_desactivado` como mecanismo de replicación;
+persistirán `id_instalacion_origen = NULL` e
+`id_instalacion_ultima_modificacion = NULL`. No se adapta el envelope legacy con
+una instalación sintética o nula y no se introduce dual-write, bridge ni replay
+mediante inbox.
+
+El retiro se ordena así: migrar alta/baja B1; comprobar ausencia de nuevos eventos
+Sync; auditar producers y callers legacy restantes; y sólo cuando ya no sean
+necesarios retirar producer, transporte sin uso y finalmente consumer, policy y
+tests específicos. Los nombres de evento y sus contratos pueden permanecer
+temporalmente en catálogo, policy, consumer y tests históricos sin formar parte
+del contrato de escritura central. `OUTBOX` no equivale a `SYNC`: una futura
+necesidad central de integración, jobs o eventos locales requerirá contrato
+propio y no revive por sí sola la replicación interbase.
+
+Estas son únicamente decisiones de frontera Sync ya cerradas para el futuro B1;
+no constituyen su decisión CORE-EF completa. Antes de modificar runtime, B1 deberá
+definir expresamente headers, equivalencia y conflicto de `op_id`, retry
+post-error, locks, CAS/`version_registro`/`If-Match-Version`, cualquier outbox no
+relacionado con Sync, frontera transaccional, rollback, error mapping y tests
+CORE-EF obligatorios. Este incremento no fija esas decisiones.
+
 | Concepto | Clasificación | Decisión |
 | --- | --- | --- |
 | `parametro_sistema` | núcleo de Administrativo | Definición canónica de cada parámetro. |
