@@ -19,14 +19,14 @@ def _principal(id_usuario=1):
     )
 
 
-def _request(client, method, url, *, json=None, headers=None, user=1, granted=True):
+def _central_request(client, method, url, *, json=None, headers=None, user=1, granted=True):
     client.app.dependency_overrides[get_authenticated_principal] = lambda: _principal(user)
     decision = AdministrativeAuthorizationDecision.GRANTED if granted else AdministrativeAuthorizationDecision.DENIED
     with patch("app.api.administrative_authorization.AdministrativeAuthorizationService.authorize", return_value=decision):
         return client.request(method, url, json=json, headers=headers or {})
 
 
-def _headers(op=None, version=None, legacy=False):
+def _central_headers(op=None, version=None, legacy=False):
     result = {"X-Op-Id": str(op or uuid4())}
     if version is not None:
         result["If-Match-Version"] = str(version)
@@ -44,8 +44,8 @@ def _payload(suffix="001"):
 
 
 def _create(client, suffix="CRUD", *, op=None, user=1, legacy=False):
-    return _request(client, "POST", ENDPOINT, json=_payload(suffix),
-                    headers=_headers(op, legacy=legacy), user=user)
+    return _central_request(client, "POST", ENDPOINT, json=_payload(suffix),
+                            headers=_central_headers(op, legacy=legacy), user=user)
 
 
 def test_create_central_receipt_provenance_replay_y_sin_outbox(client, db_session):
@@ -61,24 +61,24 @@ def test_create_central_receipt_provenance_replay_y_sin_outbox(client, db_sessio
 
 
 def test_create_headers_conflicts_y_autorizacion(client):
-    missing = _request(client, "POST", ENDPOINT, json=_payload("MISSING"))
+    missing = _central_request(client, "POST", ENDPOINT, json=_payload("MISSING"))
     assert missing.status_code == 400 and missing.json()["details"]["header"] == "X-Op-Id"
-    assert _request(client, "POST", ENDPOINT, json=_payload("DENIED"), headers=_headers(), granted=False).status_code == 403
+    assert _central_request(client, "POST", ENDPOINT, json=_payload("DENIED"), headers=_central_headers(), granted=False).status_code == 403
     op = uuid4(); payload = _payload("CONFLICT")
-    assert _request(client, "POST", ENDPOINT, json=payload, headers=_headers(op)).status_code == 201
-    conflict = _request(client, "POST", ENDPOINT, json={**payload, "login": "otro.login"}, headers=_headers(op))
+    assert _central_request(client, "POST", ENDPOINT, json=payload, headers=_central_headers(op)).status_code == 201
+    conflict = _central_request(client, "POST", ENDPOINT, json={**payload, "login": "otro.login"}, headers=_central_headers(op))
     assert conflict.status_code == 409 and conflict.json()["error_code"] == "IDEMPOTENCY_PAYLOAD_CONFLICT"
 
 
 def test_baja_cas_replay_actor_conflict_y_provenance(client, db_session):
     created = _create(client, "BAJA").json()["data"]
     url = f"{ENDPOINT}/{created['id_usuario']}/baja"; op = uuid4()
-    headers = _headers(op, created["version_registro"], legacy=True)
-    first = _request(client, "PATCH", url, headers=headers)
-    replay = _request(client, "PATCH", url, headers=headers)
+    headers = _central_headers(op, created["version_registro"], legacy=True)
+    first = _central_request(client, "PATCH", url, headers=headers)
+    replay = _central_request(client, "PATCH", url, headers=headers)
     assert first.status_code == replay.status_code == 200 and replay.json() == first.json()
     assert first.json()["data"]["estado_usuario"] == "INACTIVO"
-    cross = _request(client, "PATCH", url, headers=headers, user=created["id_usuario"])
+    cross = _central_request(client, "PATCH", url, headers=headers, user=created["id_usuario"])
     assert cross.status_code == 409 and cross.json()["error_code"] == "IDEMPOTENCY_PAYLOAD_CONFLICT"
     assert db_session.execute(text("SELECT id_sucursal,id_instalacion FROM operacion_idempotente WHERE op_id=:op"), {"op": op}).one() == (None, None)
     assert db_session.execute(text("SELECT id_instalacion_origen,id_instalacion_ultima_modificacion FROM usuario WHERE id_usuario=:id"), {"id": created["id_usuario"]}).one() == (None, None)
@@ -87,21 +87,21 @@ def test_baja_cas_replay_actor_conflict_y_provenance(client, db_session):
 def test_baja_stale_412_rollback_y_autorizacion_antes_de_replay(client, db_session):
     created = _create(client, "STALE").json()["data"]
     url = f"{ENDPOINT}/{created['id_usuario']}/baja"; stale_op = uuid4()
-    stale = _request(client, "PATCH", url, headers=_headers(stale_op, created["version_registro"] + 1))
+    stale = _central_request(client, "PATCH", url, headers=_central_headers(stale_op, created["version_registro"] + 1))
     assert stale.status_code == 412 and stale.json()["error_code"] == "CONCURRENCY_ERROR"
     assert db_session.execute(text("SELECT count(*) FROM operacion_idempotente WHERE op_id=:op"), {"op": stale_op}).scalar_one() == 0
-    op = uuid4(); headers = _headers(op, created["version_registro"])
-    assert _request(client, "PATCH", url, headers=headers).status_code == 200
-    assert _request(client, "PATCH", url, headers=headers, granted=False).status_code == 403
+    op = uuid4(); headers = _central_headers(op, created["version_registro"])
+    assert _central_request(client, "PATCH", url, headers=headers).status_code == 200
+    assert _central_request(client, "PATCH", url, headers=headers, granted=False).status_code == 403
 
 
 def test_baja_metadata_y_nueva_baja(client):
     created = _create(client, "META").json()["data"]
     url = f"{ENDPOINT}/{created['id_usuario']}/baja"
-    assert _request(client, "PATCH", url, headers=_headers()).status_code == 400
-    first = _request(client, "PATCH", url, headers=_headers(version=created["version_registro"]))
+    assert _central_request(client, "PATCH", url, headers=_central_headers()).status_code == 400
+    first = _central_request(client, "PATCH", url, headers=_central_headers(version=created["version_registro"]))
     assert first.status_code == 200
-    second = _request(client, "PATCH", url, headers=_headers(version=first.json()["data"]["version_registro"]))
+    second = _central_request(client, "PATCH", url, headers=_central_headers(version=first.json()["data"]["version_registro"]))
     assert second.status_code == 404
 
 

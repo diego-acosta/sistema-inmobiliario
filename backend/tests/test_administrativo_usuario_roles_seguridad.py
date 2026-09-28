@@ -2,14 +2,32 @@ from uuid import uuid4
 
 from sqlalchemy import text
 
-from tests.test_administrativo_usuarios import _headers, _payload
+from tests.test_administrativo_usuarios import (
+    _central_headers,
+    _central_request,
+    _payload,
+)
+
+
+def _legacy_headers(op_id=None, version=None):
+    result = {
+        "X-Op-Id": str(op_id or uuid4()),
+        "X-Usuario-Id": "1",
+        "X-Sucursal-Id": "1",
+        "X-Instalacion-Id": "1",
+    }
+    if version is not None:
+        result["If-Match-Version"] = str(version)
+    return result
 
 
 def _crear_usuario(client, suffix: str) -> dict:
-    response = client.post(
+    response = _central_request(
+        client,
+        "POST",
         "/api/v1/administrativo/usuarios",
         json=_payload(f"ROL-{suffix}"),
-        headers=_headers(),
+        headers=_central_headers(),
     )
     assert response.status_code == 201
     return response.json()["data"]
@@ -32,7 +50,7 @@ def _asignar(client, id_usuario: int, id_rol: int, op_id: str | None = None):
     return client.post(
         f"/api/v1/administrativo/usuarios/{id_usuario}/roles-seguridad",
         json={"id_rol_seguridad": id_rol},
-        headers=_headers(op_id),
+        headers=_legacy_headers(op_id),
     )
 
 
@@ -123,7 +141,7 @@ def test_baja_logica_asignacion_y_no_aparece_en_listado_activo(client, db_sessio
 
     response = client.patch(
         f"/api/v1/administrativo/usuarios/{usuario['id_usuario']}/roles-seguridad/{asignacion['id_usuario_rol_seguridad']}/baja",
-        headers=_headers(version=asignacion["version_registro"]),
+        headers=_legacy_headers(version=asignacion["version_registro"]),
     )
 
     assert response.status_code == 200
@@ -156,7 +174,7 @@ def test_baja_sin_if_match_version_devuelve_validation_error(client, db_session)
 
     response = client.patch(
         f"/api/v1/administrativo/usuarios/{usuario['id_usuario']}/roles-seguridad/{asignacion['id_usuario_rol_seguridad']}/baja",
-        headers=_headers(),
+        headers=_legacy_headers(),
     )
 
     assert response.status_code == 400
@@ -171,7 +189,7 @@ def test_baja_version_desactualizada_devuelve_concurrency_error(client, db_sessi
 
     response = client.patch(
         f"/api/v1/administrativo/usuarios/{usuario['id_usuario']}/roles-seguridad/{asignacion['id_usuario_rol_seguridad']}/baja",
-        headers=_headers(version=asignacion["version_registro"] + 10),
+        headers=_legacy_headers(version=asignacion["version_registro"] + 10),
     )
 
     assert response.status_code == 409
@@ -237,7 +255,7 @@ def test_baja_asignacion_crea_outbox_event(client, db_session):
 
     response = client.patch(
         f"/api/v1/administrativo/usuarios/{usuario['id_usuario']}/roles-seguridad/{asignacion['id_usuario_rol_seguridad']}/baja",
-        headers=_headers(version=asignacion["version_registro"]),
+        headers=_legacy_headers(version=asignacion["version_registro"]),
     )
 
     assert response.status_code == 200
@@ -290,7 +308,7 @@ def test_falla_outbox_en_baja_revierte_baja(client, db_session, monkeypatch):
 
     response = client.patch(
         f"/api/v1/administrativo/usuarios/{usuario['id_usuario']}/roles-seguridad/{asignacion['id_usuario_rol_seguridad']}/baja",
-        headers=_headers(version=asignacion["version_registro"]),
+        headers=_legacy_headers(version=asignacion["version_registro"]),
     )
 
     assert response.status_code == 500
@@ -336,11 +354,11 @@ def test_baja_retry_mismo_op_id_no_duplica_outbox_ni_version(client, db_session)
 
     first = client.patch(
         f"/api/v1/administrativo/usuarios/{usuario['id_usuario']}/roles-seguridad/{asignacion['id_usuario_rol_seguridad']}/baja",
-        headers=_headers(op_id, version=asignacion["version_registro"]),
+        headers=_legacy_headers(op_id, version=asignacion["version_registro"]),
     )
     retry = client.patch(
         f"/api/v1/administrativo/usuarios/{usuario['id_usuario']}/roles-seguridad/{asignacion['id_usuario_rol_seguridad']}/baja",
-        headers=_headers(op_id, version=asignacion["version_registro"]),
+        headers=_legacy_headers(op_id, version=asignacion["version_registro"]),
     )
 
     assert first.status_code == 200
