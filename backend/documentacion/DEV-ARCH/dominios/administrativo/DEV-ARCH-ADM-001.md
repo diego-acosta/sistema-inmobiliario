@@ -158,9 +158,12 @@ resolviendo permisos efectivos. Este incremento no crea asignaciones de usuarios
 no agrega identidad portable a `usuario_rol_seguridad` y no modifica la frontera
 Sync de usuario.
 
-Alta y baja de usuario ya adoptaron Bearer y D1 `GLOBAL` en B1. Los tres writes
-restantes —asignar y revocar roles, y asignar `usuario_sucursal`— conservan su
-contrato heredado hasta B2/B3.
+Alta y baja de usuario adoptaron Bearer y D1 `GLOBAL` en B1. Asignar y revocar
+roles adoptan en B2 Bearer, D1 `GLOBAL`, ledger central y el permiso
+`ADMIN.SEGURIDAD.GRANTS.ADMINISTRAR`. La asignación de `usuario_sucursal`
+conserva su contrato heredado hasta B3. Sucursal continúa siendo un concepto
+funcional dentro de la única base central; instalación y portabilidad entre
+bases no participan en los commands B2.
 
 ## 3. Modelo canónico
 

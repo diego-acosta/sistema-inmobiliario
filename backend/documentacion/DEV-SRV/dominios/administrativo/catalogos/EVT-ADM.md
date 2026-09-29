@@ -286,6 +286,7 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 ### EVT-ADM-030 — Rol asignado a usuario
 - codigo: rol_asignado_a_usuario
 - descripcion: un rol de seguridad fue asignado a un usuario.
+- estado_runtime: histórico; no producido por el POST central B2.
 - origen_principal: SRV-ADM-002
 - entidad_principal: usuario_rol
 - tipo_evento: negocio
@@ -295,6 +296,7 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 ### EVT-ADM-031 — Rol revocado de usuario
 - codigo: rol_revocado_de_usuario
 - descripcion: una asignación de rol fue revocada o dejada sin efecto.
+- estado_runtime: histórico; no producido por el PATCH central B2.
 - origen_principal: SRV-ADM-002
 - entidad_principal: usuario_rol
 - tipo_evento: negocio

@@ -376,30 +376,30 @@ Este dominio cubre gestión de usuarios y acceso, seguridad y autorización, aud
 
 ### CU-ADM-028 — Asignación de rol de seguridad a usuario
 - servicio_origen: SRV-ADM-002
-- permiso_contractual: ADMIN.SEGURIDAD.GRANTS.ADMINISTRAR (GLOBAL; adopción runtime pendiente)
+- permiso_contractual: ADMIN.SEGURIDAD.GRANTS.ADMINISTRAR (GLOBAL; runtime central B2)
 - tipo: write
 - objetivo: asignar un rol de seguridad a un usuario.
 - entidades: usuario_rol, usuario, rol_administrativo
 - criticidad: alta
-- sincronizable: sí
+- sincronizable: no en el command central B2
 - requiere_versionado: sí
 - requiere_lock: no
 - genera_op_id: sí
-- genera_outbox: sí
+- genera_outbox: no
 - puede_entrar_en_conflicto: sí
 
 ### CU-ADM-029 — Revocación o modificación de rol de usuario
 - servicio_origen: SRV-ADM-002
-- permiso_contractual: ADMIN.SEGURIDAD.GRANTS.ADMINISTRAR (GLOBAL; adopción runtime pendiente)
+- permiso_contractual: ADMIN.SEGURIDAD.GRANTS.ADMINISTRAR (GLOBAL; runtime central B2)
 - tipo: write
 - objetivo: revocar o ajustar la asignación de roles de seguridad sobre un usuario.
 - entidades: usuario_rol, usuario, rol_administrativo
 - criticidad: alta
-- sincronizable: sí
+- sincronizable: no en el command central B2
 - requiere_versionado: sí
 - requiere_lock: no
 - genera_op_id: sí
-- genera_outbox: sí
+- genera_outbox: no
 - puede_entrar_en_conflicto: sí
 
 ### CU-ADM-030 — Asignación de rol por sucursal
