@@ -12,6 +12,7 @@ from app.application.administrativo.services.usuario_sucursal_central_command_se
 )
 from app.application.administrativo.services.usuarios_central_command_service import (
     UsuariosCentralCommandService,
+    UsuariosCommandError,
 )
 from app.application.common.central_command import CentralCommandMetadata
 from app.config.database import engine
@@ -89,6 +90,29 @@ def _assign(
             session.commit()
             return "OK", result
         except UsuarioSucursalCommandError as exc:
+            session.rollback()
+            return exc.code, None
+
+
+def _deactivate(
+    id_usuario: int,
+    op_id,
+    expected_version: int,
+    *,
+    id_usuario_actor: int,
+    barrier: Barrier,
+) -> tuple[str, dict | None]:
+    with Session(engine) as session:
+        try:
+            barrier.wait()
+            result = UsuariosCentralCommandService(session).deactivate(
+                id_usuario=id_usuario,
+                metadata=CentralCommandMetadata(op_id, expected_version),
+                id_usuario_actor=id_usuario_actor,
+            )
+            session.commit()
+            return "OK", result
+        except UsuariosCommandError as exc:
             session.rollback()
             return exc.code, None
 
@@ -245,4 +269,60 @@ def test_actores_y_targets_cruzados_bloquean_usuarios_en_orden(db_session):
     assert {row["op_id"]: row["id_usuario"] for row in receipts} == {
         str(first_op_id): first_user,
         str(second_op_id): second_user,
+    }
+
+
+def test_b1_y_b3_bloquean_actor_y_target_en_el_mismo_orden(db_session):
+    actor_a, branches_a = _targets(uuid4().hex[:8])
+    target_b, _ = _targets(uuid4().hex[:8])
+    assert actor_a < target_b
+    target_b_version = db_session.execute(
+        text("SELECT version_registro FROM usuario WHERE id_usuario=:id_usuario"),
+        {"id_usuario": target_b},
+    ).scalar_one()
+    deactivate_op_id = uuid4()
+    assign_op_id = uuid4()
+    barrier = Barrier(2)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        deactivate_future = pool.submit(
+            _deactivate,
+            target_b,
+            deactivate_op_id,
+            target_b_version,
+            id_usuario_actor=actor_a,
+            barrier=barrier,
+        )
+        assign_future = pool.submit(
+            _assign,
+            actor_a,
+            _payload(branches_a[0]),
+            assign_op_id,
+            id_usuario_actor=target_b,
+            barrier=barrier,
+        )
+        results = (deactivate_future.result(), assign_future.result())
+
+    assert [code for code, _ in results] == ["OK", "OK"]
+    assert db_session.execute(
+        text(
+            "SELECT count(*) FROM usuario_sucursal "
+            "WHERE id_usuario=:id_usuario AND id_sucursal=:id_sucursal"
+        ),
+        {"id_usuario": actor_a, "id_sucursal": branches_a[0]},
+    ).scalar_one() == 1
+    receipts = db_session.execute(
+        text(
+            "SELECT op_id::text AS op_id, id_usuario "
+            "FROM operacion_idempotente "
+            "WHERE op_id IN (:deactivate_op_id, :assign_op_id)"
+        ),
+        {
+            "deactivate_op_id": str(deactivate_op_id),
+            "assign_op_id": str(assign_op_id),
+        },
+    ).mappings().all()
+    assert {row["op_id"]: row["id_usuario"] for row in receipts} == {
+        str(deactivate_op_id): actor_a,
+        str(assign_op_id): target_b,
     }

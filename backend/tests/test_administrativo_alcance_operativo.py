@@ -907,6 +907,95 @@ def test_vinculo_acotado_vigente_no_admite_segundo_alcance_d1(client):
     assert duplicate.json()["error_code"] == "DUPLICATE_ACTIVE_SCOPE"
 
 
+def _insert_bounded_link(
+    db_session,
+    *,
+    id_usuario: int,
+    id_sucursal: int,
+    predeterminada: bool,
+) -> None:
+    now = datetime.now(UTC).replace(tzinfo=None)
+    db_session.execute(
+        text(
+            """
+            INSERT INTO usuario_sucursal (
+                id_usuario, id_sucursal, tipo_habilitacion_sucursal,
+                es_sucursal_predeterminada, puede_operar, puede_consultar,
+                puede_administrar, fecha_desde, fecha_hasta, estado_vinculo,
+                observaciones, version_registro, id_instalacion_origen,
+                id_instalacion_ultima_modificacion, op_id_alta,
+                op_id_ultima_modificacion
+            ) VALUES (
+                :id_usuario, :id_sucursal, 'OPERATIVA_BASICA',
+                :predeterminada, true, true, false,
+                :fecha_desde, :fecha_hasta, 'ACTIVO', NULL, 1,
+                NULL, NULL, :op_id, :op_id
+            )
+            """
+        ),
+        {
+            "id_usuario": id_usuario,
+            "id_sucursal": id_sucursal,
+            "predeterminada": predeterminada,
+            "fecha_desde": now - timedelta(hours=1),
+            "fecha_hasta": now + timedelta(hours=1),
+            "op_id": uuid4(),
+        },
+    )
+
+
+def test_multiples_vinculos_bounded_efectivos_devuelven_409(client, db_session):
+    usuario = crear_usuario(client, "MULTI-BOUNDED")
+    sucursal = crear_sucursal(client, "MULTI-BOUNDED")
+    for _ in range(2):
+        _insert_bounded_link(
+            db_session,
+            id_usuario=usuario["id_usuario"],
+            id_sucursal=sucursal["id_sucursal"],
+            predeterminada=False,
+        )
+    db_session.commit()
+
+    response = client.post(
+        f"/api/v1/administrativo/usuarios/{usuario['id_usuario']}/sucursales",
+        json=alcance_payload(sucursal["id_sucursal"]),
+        headers=headers(),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "DUPLICATE_ACTIVE_SCOPE"
+
+
+def test_multiples_predeterminadas_bounded_efectivas_devuelven_409(
+    client,
+    db_session,
+):
+    usuario = crear_usuario(client, "MULTI-DEFAULT")
+    existing = [
+        crear_sucursal(client, f"MULTI-DEFAULT-{index}") for index in range(3)
+    ]
+    for sucursal in existing[:2]:
+        _insert_bounded_link(
+            db_session,
+            id_usuario=usuario["id_usuario"],
+            id_sucursal=sucursal["id_sucursal"],
+            predeterminada=True,
+        )
+    db_session.commit()
+
+    response = client.post(
+        f"/api/v1/administrativo/usuarios/{usuario['id_usuario']}/sucursales",
+        json=alcance_payload(
+            existing[2]["id_sucursal"],
+            es_sucursal_predeterminada=True,
+        ),
+        headers=headers(),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "DUPLICATE_ACTIVE_SCOPE"
+
+
 def test_existen_indices_unicos_usuario_sucursal_core_ef(db_session):
     assert db_session.execute(text("SELECT to_regclass('public.ux_usuario_sucursal_op_id_alta')")).scalar() == "ux_usuario_sucursal_op_id_alta"
     assert db_session.execute(text("SELECT to_regclass('public.ux_usuario_sucursal_uid_global')")).scalar() == "ux_usuario_sucursal_uid_global"
