@@ -6,6 +6,9 @@ from sqlalchemy import text
 from app.api.core_ef_headers import CoreEFHeaders
 from app.infrastructure.persistence.base_repository import BaseRepository
 from app.infrastructure.persistence.repositories.outbox_repository import OutboxRepository
+from app.infrastructure.persistence.repositories.usuario_locking import (
+    lock_usuarios_ordered,
+)
 
 
 class UsuarioRolSeguridadIdempotencyConflictError(ValueError):
@@ -408,8 +411,22 @@ class UsuarioRolSeguridadRepository(BaseRepository[Any]):
             raise
 
     def create_central(
-        self, id_usuario: int, id_rol_seguridad: int, *, op_id: str
+        self,
+        id_usuario: int,
+        id_rol_seguridad: int,
+        *,
+        id_usuario_actor: int,
+        op_id: str,
     ) -> dict[str, Any]:
+        usuarios = lock_usuarios_ordered(
+            self.db,
+            (id_usuario_actor, id_usuario),
+        )
+        if id_usuario_actor not in usuarios:
+            raise UsuarioRolSeguridadTechnicalError("actor no recuperable")
+        if id_usuario not in usuarios:
+            raise LookupError("usuario")
+
         usuario = self.get_usuario_state(id_usuario)
         if usuario is None:
             raise LookupError("usuario")
