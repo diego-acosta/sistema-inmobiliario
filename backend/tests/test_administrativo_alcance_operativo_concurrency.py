@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
+from threading import Barrier
 from uuid import uuid4
 
 from sqlalchemy import text
@@ -67,14 +68,23 @@ def _payload(id_sucursal: int, *, default: bool = False) -> dict:
     }
 
 
-def _assign(id_usuario: int, payload: dict, op_id) -> tuple[str, dict | None]:
+def _assign(
+    id_usuario: int,
+    payload: dict,
+    op_id,
+    *,
+    id_usuario_actor: int = 1,
+    barrier: Barrier | None = None,
+) -> tuple[str, dict | None]:
     with Session(engine) as session:
         try:
+            if barrier is not None:
+                barrier.wait()
             result = UsuarioSucursalCentralCommandService(session).assign(
                 id_usuario=id_usuario,
                 payload=payload,
                 metadata=CentralCommandMetadata(op_id, None),
-                id_usuario_actor=1,
+                id_usuario_actor=id_usuario_actor,
             )
             session.commit()
             return "OK", result
@@ -165,3 +175,74 @@ def test_usuarios_distintos_pueden_asignarse_en_paralelo(db_session):
         ),
         {"first_user": first_user, "second_user": second_user},
     ).scalar_one() == 2
+
+
+def test_actores_y_targets_cruzados_bloquean_usuarios_en_orden(db_session):
+    first_user, first_branches = _targets(uuid4().hex[:8])
+    second_user, second_branches = _targets(uuid4().hex[:8])
+    first_op_id = uuid4()
+    second_op_id = uuid4()
+    barrier = Barrier(2)
+    commands = (
+        (
+            second_user,
+            _payload(first_branches[0]),
+            first_op_id,
+            first_user,
+        ),
+        (
+            first_user,
+            _payload(second_branches[0]),
+            second_op_id,
+            second_user,
+        ),
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(
+            pool.map(
+                lambda args: _assign(
+                    args[0],
+                    args[1],
+                    args[2],
+                    id_usuario_actor=args[3],
+                    barrier=barrier,
+                ),
+                commands,
+            )
+        )
+
+    assert [code for code, _ in results] == ["OK", "OK"]
+    assert db_session.execute(
+        text(
+            """
+            SELECT count(*)
+            FROM usuario_sucursal
+            WHERE (id_usuario=:first_target AND id_sucursal=:first_branch)
+               OR (id_usuario=:second_target AND id_sucursal=:second_branch)
+            """
+        ),
+        {
+            "first_target": second_user,
+            "first_branch": first_branches[0],
+            "second_target": first_user,
+            "second_branch": second_branches[0],
+        },
+    ).scalar_one() == 2
+    receipts = db_session.execute(
+        text(
+            """
+            SELECT op_id::text AS op_id, id_usuario
+            FROM operacion_idempotente
+            WHERE op_id IN (:first_op_id, :second_op_id)
+            """
+        ),
+        {
+            "first_op_id": str(first_op_id),
+            "second_op_id": str(second_op_id),
+        },
+    ).mappings().all()
+    assert {row["op_id"]: row["id_usuario"] for row in receipts} == {
+        str(first_op_id): first_user,
+        str(second_op_id): second_user,
+    }
