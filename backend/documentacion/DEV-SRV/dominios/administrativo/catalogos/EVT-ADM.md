@@ -18,8 +18,8 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 - tipo_evento: negocio
 - sincronizable: sí
 - estado_runtime: HEREDADO / COMPATIBILIDAD TRANSITORIA
-- producer_vigente: commands heredados de alta de usuario hasta su migración B1
-- contrato_central: el command central B1 no produce este evento Sync
+- producer_vigente: no producido por el command central B1
+- contrato_central: evento histórico/transitorio consumible por compatibilidad portable
 - genera_trazabilidad_administrativa: sí
 
 ### EVT-ADM-002 — Usuario modificado
@@ -39,8 +39,8 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 - tipo_evento: negocio
 - sincronizable: sí
 - estado_runtime: HEREDADO / COMPATIBILIDAD TRANSITORIA
-- producer_vigente: commands heredados de baja de usuario hasta su migración B1
-- contrato_central: el command central B1 no produce este evento Sync
+- producer_vigente: no producido por el command central B1
+- contrato_central: evento histórico/transitorio consumible por compatibilidad portable
 - genera_trazabilidad_administrativa: sí
 
 ### EVT-ADM-004 — Usuario reactivado

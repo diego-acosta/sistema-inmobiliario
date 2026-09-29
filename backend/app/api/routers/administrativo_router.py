@@ -113,6 +113,10 @@ from app.application.administrativo.services.programar_calendario_comercial_serv
     ProgramarCalendarioComercialError,
     ProgramarCalendarioComercialService,
 )
+from app.application.administrativo.services.usuarios_central_command_service import (
+    UsuariosCentralCommandService,
+    UsuariosCommandError,
+)
 from app.application.administrativo.services.catalogos_central_command_service import (
     CatalogosCentralCommandService,
     CatalogosCommandError,
@@ -147,8 +151,6 @@ from app.infrastructure.persistence.repositories.usuario_rol_seguridad_repositor
     UsuarioRolSeguridadRepository,
 )
 from app.infrastructure.persistence.repositories.usuario_sistema_repository import (
-    UsuarioConcurrencyError,
-    UsuarioIdempotencyConflictError,
     UsuarioSistemaRepository,
 )
 from app.infrastructure.persistence.repositories.usuario_sucursal_repository import (
@@ -159,7 +161,6 @@ from app.infrastructure.persistence.repositories.usuario_sucursal_repository imp
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 router = APIRouter(tags=["Administrativo"])
@@ -207,6 +208,33 @@ _CATALOGO_CHANGE_HEADERS_OPENAPI = {
         for name in ("X-Op-Id", "If-Match-Version")
     ]
 }
+
+_USUARIO_CREATE_HEADERS_OPENAPI = {
+    "parameters": [
+        {"name": "X-Op-Id", "in": "header", "required": True,
+         "schema": {"type": "string"}}
+    ]
+}
+_USUARIO_DEACTIVATE_HEADERS_OPENAPI = {
+    "parameters": [
+        {"name": name, "in": "header", "required": True,
+         "schema": {"type": "string"}}
+        for name in ("X-Op-Id", "If-Match-Version")
+    ]
+}
+
+
+def _usuario_command_error(exc: UsuariosCommandError) -> JSONResponse:
+    messages = {
+        "NOT_FOUND": "Usuario del sistema no encontrado.",
+        "DUPLICATE_USER": "Ya existe un usuario con ese código o login.",
+        "CONCURRENCY_ERROR": "La versión informada no coincide con la vigente.",
+    }
+    return _error(
+        exc.status,
+        exc.code,
+        messages.get(exc.code, "No se pudo ejecutar el command de usuario."),
+    )
 
 
 def _catalogo_command_error(exc: CatalogosCommandError) -> JSONResponse:
@@ -1298,44 +1326,45 @@ def list_permisos_by_rol_seguridad(
     "/api/v1/administrativo/usuarios",
     status_code=201,
     response_model=UsuarioSistemaCreateResponse,
-    responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    responses={
+        400: {"model": ErrorResponse},
+        401: {"model": ErrorResponse},
+        403: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+    openapi_extra=_USUARIO_CREATE_HEADERS_OPENAPI,
 )
 def create_usuario_sistema(
     request: UsuarioSistemaCreateRequest,
+    principal: Annotated[AuthenticatedPrincipal, Depends(
+        require_administrative_permission("ADMIN.USUARIO.ADMINISTRAR")
+    )],
     db: Session = Depends(get_db),
-    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
-    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
-    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
-    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    x_op_id: str | None = Header(
+        default=None, alias="X-Op-Id", include_in_schema=False
+    ),
 ) -> UsuarioSistemaCreateResponse | JSONResponse:
-    core = _parse_core_or_error(
-        x_op_id=x_op_id,
-        x_usuario_id=x_usuario_id,
-        x_sucursal_id=x_sucursal_id,
-        x_instalacion_id=x_instalacion_id,
-    )
-    if isinstance(core, JSONResponse):
-        return core
-
     try:
-        usuario = UsuarioSistemaRepository(db).create(request.model_dump(), core)
-    except UsuarioIdempotencyConflictError as exc:
-        return _error(409, "IDEMPOTENT_DUPLICATE", str(exc))
-    except IntegrityError:
-        return _error(
-            409,
-            "TECHNICAL_INCONSISTENCY",
-            "Ya existe un usuario con ese código o login.",
+        metadata = parse_central_command_metadata(x_op_id)
+        snapshot = UsuariosCentralCommandService(db).create(
+            payload=request.model_dump(),
+            metadata=metadata,
+            id_usuario_actor=principal.id_usuario,
         )
-    except Exception as exc:
-        return _error(
-            500,
-            "TECHNICAL_INCONSISTENCY",
-            "No se pudo crear el usuario del sistema.",
-            {"error": str(exc)},
-        )
-
-    return UsuarioSistemaCreateResponse(data=UsuarioSistemaData(**usuario))
+        db.commit()
+        return UsuarioSistemaCreateResponse.model_validate(snapshot)
+    except CoreEFHeaderValidationError as exc:
+        db.rollback()
+        return _error(400, "VALIDATION_ERROR", exc.message,
+                      {"header": exc.header_name, "reason": exc.reason})
+    except UsuariosCommandError as exc:
+        db.rollback()
+        return _usuario_command_error(exc)
+    except Exception:
+        db.rollback()
+        return _error(500, "TECHNICAL_INCONSISTENCY",
+                      "No se pudo crear el usuario del sistema.")
 
 
 @router.get(
@@ -1669,53 +1698,49 @@ def list_usuarios_by_rol_seguridad(
     response_model=UsuarioSistemaBajaResponse,
     responses={
         400: {"model": ErrorResponse},
+        401: {"model": ErrorResponse},
+        403: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        412: {"model": ErrorResponse},
         500: {"model": ErrorResponse},
     },
+    openapi_extra=_USUARIO_DEACTIVATE_HEADERS_OPENAPI,
 )
 def baja_usuario_sistema(
     id_usuario: int,
+    principal: Annotated[AuthenticatedPrincipal, Depends(
+        require_administrative_permission("ADMIN.USUARIO.ADMINISTRAR")
+    )],
     db: Session = Depends(get_db),
-    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
-    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
-    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
-    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
-    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
+    x_op_id: str | None = Header(
+        default=None, alias="X-Op-Id", include_in_schema=False
+    ),
+    if_match_version: str | None = Header(
+        default=None, alias="If-Match-Version", include_in_schema=False
+    ),
 ) -> UsuarioSistemaBajaResponse | JSONResponse:
     try:
-        core = parse_core_ef_headers(
-            x_op_id=x_op_id,
-            x_usuario_id=x_usuario_id,
-            x_sucursal_id=x_sucursal_id,
-            x_instalacion_id=x_instalacion_id,
+        metadata = parse_central_command_metadata(
+            x_op_id,
             if_match_version=if_match_version,
             require_if_match_version=True,
         )
+        snapshot = UsuariosCentralCommandService(db).deactivate(
+            id_usuario=id_usuario,
+            metadata=metadata,
+            id_usuario_actor=principal.id_usuario,
+        )
+        db.commit()
+        return UsuarioSistemaBajaResponse.model_validate(snapshot)
     except CoreEFHeaderValidationError as exc:
-        return _error(
-            400,
-            "VALIDATION_ERROR",
-            exc.message,
-            {"header": exc.header_name, "reason": exc.reason},
-        )
-
-    try:
-        usuario = UsuarioSistemaRepository(db).baja_logica(
-            id_usuario,
-            core=core,
-            if_match_version=core.if_match_version or 0,
-        )
-    except UsuarioIdempotencyConflictError as exc:
-        return _error(409, "IDEMPOTENT_DUPLICATE", str(exc))
-    except UsuarioConcurrencyError as exc:
-        return _error(409, "CONCURRENCY_ERROR", str(exc))
-    except Exception as exc:
-        return _error(
-            500,
-            "TECHNICAL_INCONSISTENCY",
-            "No se pudo dar de baja el usuario del sistema.",
-            {"error": str(exc)},
-        )
-    if usuario is None:
-        return _error(404, "NOT_FOUND", "Usuario del sistema no encontrado.")
-    return UsuarioSistemaBajaResponse(data=UsuarioSistemaData(**usuario))
+        db.rollback()
+        return _error(400, "VALIDATION_ERROR", exc.message,
+                      {"header": exc.header_name, "reason": exc.reason})
+    except UsuariosCommandError as exc:
+        db.rollback()
+        return _usuario_command_error(exc)
+    except Exception:
+        db.rollback()
+        return _error(500, "TECHNICAL_INCONSISTENCY",
+                      "No se pudo dar de baja el usuario del sistema.")

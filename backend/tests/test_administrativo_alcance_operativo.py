@@ -7,6 +7,7 @@ from app.infrastructure.persistence.repositories.technical_context_repository im
     TechnicalContextRepository,
 )
 from sqlalchemy import text
+from tests.test_administrativo_usuarios import _central_headers, _central_request
 
 CORE_HEADERS = {"X-Usuario-Id": "1", "X-Sucursal-Id": "1", "X-Instalacion-Id": "1"}
 
@@ -45,7 +46,13 @@ def suc_payload(suffix: str) -> dict:
 
 
 def crear_usuario(client, suffix: str = "001") -> dict:
-    r = client.post("/api/v1/administrativo/usuarios", json=user_payload(suffix), headers=headers())
+    r = _central_request(
+        client,
+        "POST",
+        "/api/v1/administrativo/usuarios",
+        json=user_payload(suffix),
+        headers=_central_headers(),
+    )
     assert r.status_code == 201, r.text
     return r.json()["data"]
 

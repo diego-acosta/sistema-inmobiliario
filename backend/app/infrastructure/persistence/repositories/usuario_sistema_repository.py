@@ -388,6 +388,81 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
         )
         return self._map(row) if row is not None else None
 
+    def get_for_update(self, id_usuario: int) -> dict[str, Any] | None:
+        row = self.db.execute(
+            text(
+                f"SELECT {_USUARIO_COLUMNS} FROM usuario "
+                "WHERE id_usuario = :id_usuario FOR UPDATE"
+            ),
+            {"id_usuario": id_usuario},
+        ).mappings().one_or_none()
+        return self._map(row) if row is not None else None
+
+    def create_central(
+        self, payload: dict[str, Any], *, op_id: str
+    ) -> dict[str, Any]:
+        """Inserta un usuario central; el caller posee transacción e idempotencia."""
+        row = self.db.execute(
+            text(
+                f"""
+                INSERT INTO usuario (
+                    codigo_usuario, login, email, estado_usuario, fecha_alta,
+                    usuario_sistema_interno, observaciones, version_registro,
+                    updated_at, id_instalacion_origen,
+                    id_instalacion_ultima_modificacion, op_id_alta,
+                    op_id_ultima_modificacion
+                ) VALUES (
+                    :codigo_usuario, :login, :email, :estado_usuario,
+                    CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
+                    :usuario_sistema_interno, :observaciones, 1,
+                    CURRENT_TIMESTAMP AT TIME ZONE 'UTC', NULL, NULL,
+                    CAST(:op_id AS uuid), CAST(:op_id AS uuid)
+                )
+                RETURNING {_USUARIO_COLUMNS}
+                """
+            ),
+            {**payload, "op_id": op_id},
+        ).mappings().one()
+        return self._map(row)
+
+    def deactivate_central(
+        self, id_usuario: int, *, op_id: str, expected_version: int
+    ) -> dict[str, Any] | None:
+        """Aplica la baja central bajo lock/CAS, sin commit, replay ni outbox."""
+        actual = self.get_for_update(id_usuario)
+        if actual is None:
+            return None
+        if actual["version_registro"] != expected_version:
+            raise UsuarioConcurrencyError("La versión del usuario no coincide.")
+        if actual["deleted_at"] is not None:
+            return None
+        row = self.db.execute(
+            text(
+                f"""
+                UPDATE usuario
+                SET estado_usuario = 'INACTIVO',
+                    fecha_baja = CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
+                    deleted_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
+                    updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
+                    id_instalacion_ultima_modificacion = NULL,
+                    op_id_ultima_modificacion = CAST(:op_id AS uuid),
+                    version_registro = version_registro + 1
+                WHERE id_usuario = :id_usuario
+                  AND deleted_at IS NULL
+                  AND version_registro = :expected_version
+                RETURNING {_USUARIO_COLUMNS}
+                """
+            ),
+            {
+                "id_usuario": id_usuario,
+                "expected_version": expected_version,
+                "op_id": op_id,
+            },
+        ).mappings().one_or_none()
+        if row is None:
+            raise UsuarioConcurrencyError("La versión del usuario no coincide.")
+        return self._map(row)
+
     def baja_logica(
         self,
         id_usuario: int,

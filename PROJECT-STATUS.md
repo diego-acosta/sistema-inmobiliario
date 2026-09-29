@@ -10,15 +10,24 @@ Los siete writes de catálogo maestro e ítems usan Bearer + D1 `GLOBAL`, permis
 `412`; provenance de instalación queda `NULL`; los siete producers outbox legacy
 se retiran. Sync general y los reads de catálogos permanecen sin cambios.
 
+## Lifecycle central de usuario B1 (2026-09-28)
+
+`POST /usuarios` y `PATCH /usuarios/{id}/baja` usan Bearer, D1 `GLOBAL`
+`ADMIN.USUARIO.ADMINISTRAR`, metadata central y ledger NULL/NULL. La baja usa
+CAS 412; provenance de instalación queda NULL y no se producen
+`usuario_creado`/`usuario_desactivado`. El consumer portable se conserva por
+compatibilidad transitoria; roles y usuario-sucursal siguen pendientes.
+
 ## Permisos centrales de usuarios y seguridad (2026-09-26)
 
 Quedan materializados como prerrequisito los permisos D1 `GLOBAL`
 `ADMIN.USUARIO.ADMINISTRAR`, `ADMIN.SEGURIDAD.GRANTS.ADMINISTRAR` y
 `ADMIN.USUARIO_SUCURSAL.ADMINISTRAR`, con grant inicial al rol activo
-`ADMINISTRADOR_SISTEMA`. Los cinco endpoints write de usuarios, grants y alcance
-por sucursal todavía no fueron migrados y conservan su runtime legacy. La
+`ADMINISTRADOR_SISTEMA`. Alta y baja de usuario ya fueron migradas en B1; los
+tres endpoints de asignación/revocación de roles y asignación de alcance por
+sucursal conservan su runtime heredado hasta B2/B3. La
 frontera Sync de `usuario_creado`/`usuario_desactivado` queda cerrada
-contractualmente para B1: los commands centrales futuros no producirán esos
+contractualmente para B1: los commands centrales no producen esos
 eventos. El producer heredado y el consumer portable real permanecen por ahora
 por compatibilidad transitoria; tampoco se agrega identidad portable a
 `usuario_rol_seguridad` en este incremento.
@@ -26,22 +35,21 @@ por compatibilidad transitoria; tampoco se agrega identidad portable a
 ## Frontera Sync de lifecycle de usuario (2026-09-28)
 
 La autoridad objetivo es FastAPI central sobre PostgreSQL central autoritativo.
-El runtime actual conserva producers legacy de `usuario_creado` y
+El runtime actual conserva producers heredados de `usuario_creado` y
 `usuario_desactivado` y el consumer real `administrativo.usuario` implementado
-por `usuario_sync_service.py`, con outbox/inbox, remote apply y tests. La futura
-migración B1 de alta/baja usará Bearer, D1 `GLOBAL`
-`ADMIN.USUARIO.ADMINISTRAR` y `operacion_idempotente`, persistirá provenance de
-instalación `NULL` y no emitirá esos eventos Sync.
+por `usuario_sync_service.py`, con outbox/inbox, remote apply y tests. B1 ya migró
+alta/baja a Bearer, D1 `GLOBAL` `ADMIN.USUARIO.ADMINISTRAR` y
+`operacion_idempotente`; persiste provenance de instalación `NULL` y no emite
+esos eventos Sync.
 
 No se define instalación sintética, dual-write, bridge ni envelope Sync central.
-Después de B1 se comprobará la ausencia de nuevos eventos y se auditarán callers
-legacy antes de retirar, en orden, producer, transporte sin uso y finalmente
+Tras B1 corresponde comprobar la ausencia de nuevos eventos y auditar callers
+heredados antes de retirar, en orden, producer, transporte sin uso y finalmente
 consumer/policy/tests específicos. Los nombres de evento pueden permanecer como
 contrato histórico durante la transición. `OUTBOX` no equivale a `SYNC`; una
 futura necesidad de integración, jobs o eventos locales se decidirá por separado.
-Estas decisiones cierran sólo la frontera Sync; headers, semántica completa de
-`op_id`, retry, locks, CAS, outbox ajeno a Sync, transacción, rollback, errores y
-tests CORE-EF deberán cerrarse en B1 antes de modificar runtime.
+El contrato CORE-EF de B1 ya cierra headers, semántica de `op_id`, retry, locks,
+CAS, outbox, transacción, rollback, errores y tests de alta/baja.
 
 ## 1. Propósito
 
@@ -831,10 +839,10 @@ Estado de transición vigente: el producer heredado y el consumer portable
 anterior se conservan por compatibilidad transitoria. El consumer usa el
 protocolo portable #510/#512 y no se clasifica como path técnico `LEGACY`.
 Su runtime no cambia en este corte documental.
-Los futuros commands centrales B1 no producirán esos eventos y resolverán
-idempotencia exclusivamente con `operacion_idempotente`; su procedencia de
-instalación será `NULL`. El consumer no se retira hasta migrar B1, verificar que
-no haya nuevos eventos y auditar callers/producers legacy restantes.
+Los commands centrales B1 no producen esos eventos y resuelven idempotencia
+exclusivamente con `operacion_idempotente`; su procedencia de instalación es
+`NULL`. El consumer no se retira hasta verificar que no haya nuevos eventos y
+auditar callers/producers heredados restantes.
 
 ## 18. Incremento Administrativo/Técnico #486 — sync de calendario comercial
 

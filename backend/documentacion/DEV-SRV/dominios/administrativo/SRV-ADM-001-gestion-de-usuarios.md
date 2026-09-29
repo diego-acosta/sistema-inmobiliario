@@ -24,12 +24,11 @@ capacidad D1 `GLOBAL` para crear y dar de baja usuarios del sistema. Su receptor
 canónico inicial es el rol activo `ADMINISTRADOR_SISTEMA`, sin convertir ese
 código de rol en condición de autorización runtime.
 
-Este incremento sólo materializa permiso y grant. Los endpoints de alta y baja
-continúan con su runtime legacy hasta la migración posterior. En particular, no
-se declara todavía Bearer/D1 productivo. La frontera Sync de
+El incremento B1 adopta este permiso en los endpoints de alta y baja mediante
+Bearer y `AuthenticatedPrincipal`. La frontera Sync de
 `usuario_creado` y `usuario_desactivado` queda contractualmente cerrada para esa
-migración: el runtime actual conserva producers heredados y un consumer portable
-vigente, pero los commands centrales B1 no producirán esos eventos.
+migración: conserva el consumer portable vigente, pero los commands centrales B1
+no producen esos eventos.
 
 El permiso independiente `ADMIN.USUARIO_SUCURSAL.ADMINISTRAR` (`Administrar
 alcance de usuarios por sucursal`) es una capacidad D1 `GLOBAL` para asignar
@@ -41,26 +40,30 @@ legacy.
 
 ### Transición del lifecycle de usuario a autoridad central
 
-El futuro B1 migrará exclusivamente alta y baja a Bearer,
+El B1 vigente migra exclusivamente alta y baja a Bearer,
 `AuthenticatedPrincipal`, D1 `GLOBAL` con `ADMIN.USUARIO.ADMINISTRAR` y
-`operacion_idempotente` central. Los nuevos writes usarán
+`operacion_idempotente` central. Los writes centrales usan
 `id_instalacion_origen = NULL` e `id_instalacion_ultima_modificacion = NULL` y no
-emitirán `usuario_creado` ni `usuario_desactivado` como replicación. No se define
+emiten `usuario_creado` ni `usuario_desactivado` como replicación. No se define
 instalación sintética, dual-write, bridge ni adaptación del envelope Sync legacy.
 
-Hasta esa migración, los flujos, outbox y transacciones descritos abajo reflejan
-el runtime heredado vigente. `usuario_sync_service.py` permanece como consumer
+`usuario_sync_service.py` permanece como consumer
 portable vigente por **COMPATIBILIDAD TRANSITORIA** para mensajes en tránsito y
 callers aún no migrados; no pertenece al path técnico `LEGACY` payload-less.
-Después de B1 se auditarán producers/callers restantes antes de
+Tras B1 se auditarán producers/callers restantes antes de
 retirar producer, transporte, consumer, policy o tests. La eventual necesidad de
 outbox central para integración, jobs o eventos locales será independiente de
 Sync y requerirá contrato propio.
 
-Lo anterior cierra sólo la frontera Sync. El PR B1 deberá definir antes del
-cambio runtime headers exactos, equivalencia/conflicto de `op_id`, retry
-post-error, locks, CAS/`version_registro`/`If-Match-Version`, outbox ajeno a Sync,
-frontera transaccional, rollback, error mapping y tests CORE-EF obligatorios.
+B1 usa sólo `X-Op-Id` en alta y agrega `If-Match-Version` en baja. El ledger
+central resuelve claim/replay/conflictos, la baja aplica CAS con 412 y el caller
+posee la transacción que reúne mutación y completion.
+
+La adopción de B1 presupone el rebuild oficial sin datos útiles y no conserva
+receipts del write heredado. La durabilidad aplica a requests bajo el fingerprint
+central; no hay dual fingerprint, fallback ni backfill. Si aparecieran datos
+útiles antes del corte, se debe detener el rebuild y definir una migración
+específica.
 
 ## Entidades principales
 - usuario
@@ -71,7 +74,8 @@ frontera transaccional, rollback, error mapping y tests CORE-EF obligatorios.
 Permite registrar un nuevo usuario.
 
 ### Modificación
-Permite actualizar datos de un usuario.
+Modo conceptual todavía no implementado ni migrado por B1. Permitiría actualizar
+datos de un usuario en un incremento posterior.
 
 ### Baja lógica
 Permite invalidar un usuario.
@@ -81,11 +85,13 @@ Permite visualizar usuarios.
 
 ## Entradas conceptuales
 
-### Contexto técnico (write)
-- usuario_id
-- instalacion_id
+### Contexto central B1 (alta/baja)
+- principal autenticado
 - op_id
-- version_esperada cuando corresponda
+- version_esperada para baja
+
+La modificación conceptual no forma parte de B1 y este documento no fija todavía
+su metadata runtime.
 
 ### Datos de negocio
 - identificador de usuario
@@ -117,14 +123,17 @@ Permite visualizar usuarios.
 ## Flujo de alto nivel
 
 ### Alta
-1. validar contexto técnico e idempotencia
-2. validar datos de usuario
-3. registrar usuario
-4. persistir con metadatos transversales
-5. registrar outbox
-6. devolver resultado
+1. autenticar el principal
+2. autorizar D1 `GLOBAL` con `ADMIN.USUARIO.ADMINISTRAR`
+3. validar metadata central e intención idempotente
+4. ejecutar claim o devolver replay
+5. validar datos de usuario
+6. insertar usuario con provenance de instalación `NULL`
+7. completar el receipt central
+8. realizar el commit exterior
+9. devolver resultado
 
-### Modificación
+### Modificación (conceptual; fuera de B1)
 1. validar contexto técnico
 2. cargar usuario existente
 3. validar versión esperada
@@ -135,13 +144,16 @@ Permite visualizar usuarios.
 8. devolver resultado
 
 ### Baja lógica
-1. validar contexto técnico
-2. cargar usuario
-3. validar condiciones de baja
-4. aplicar invalidación
-5. persistir cambios
-6. registrar outbox
-7. devolver resultado
+1. autenticar el principal
+2. autorizar D1 `GLOBAL` con `ADMIN.USUARIO.ADMINISTRAR`
+3. validar metadata central
+4. resolver el usuario objetivo
+5. ejecutar claim o devolver replay
+6. validar CAS y lifecycle bajo la transacción vigente
+7. aplicar la baja lógica con provenance de instalación `NULL`
+8. completar el receipt central
+9. realizar el commit exterior
+10. devolver resultado
 
 ### Consulta
 1. validar parámetros
@@ -156,10 +168,14 @@ Permite visualizar usuarios.
 - idempotencia en alta
 
 ## Efectos transaccionales
-- alta o actualización de usuario
-- aplicación de borrado lógico
-- actualización de metadatos transversales
-- registro de outbox en operaciones sincronizables
+- en alta B1, inserción del usuario y completion del receipt central en una única
+  transacción;
+- en baja B1, baja lógica, actualización de versión y completion del receipt
+  central en una única transacción;
+- provenance de instalación `NULL` en ambas operaciones centrales;
+- alta y baja B1 no registran outbox Sync;
+- la modificación permanece conceptual y B1 no define sus efectos
+  transaccionales ni su eventual outbox.
 
 ## Errores
 - [[ERR-ADM]]

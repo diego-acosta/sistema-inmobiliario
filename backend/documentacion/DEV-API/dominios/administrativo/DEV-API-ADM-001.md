@@ -84,7 +84,7 @@ Criterios explícitos:
 
 ## 4. Usuarios del sistema
 
-### 4.0 Prerrequisitos D1 materializados; adopción runtime pendiente
+### 4.0 Lifecycle de usuario central (B1)
 
 Existen tres permisos activos con perfil D1 `GLOBAL` y grant inicial al rol
 canónico activo `ADMINISTRADOR_SISTEMA`:
@@ -94,31 +94,25 @@ canónico activo `ADMINISTRADOR_SISTEMA`:
 - `ADMIN.USUARIO_SUCURSAL.ADMINISTRAR`, para asignación de sucursales y
   capacidades operativas.
 
-El código del rol no es condición de autorización: el runtime futuro resolverá
-permisos efectivos. Este incremento no migra los cinco writes correspondientes;
-sus headers, identidad, idempotencia y outbox documentados en las secciones
-siguientes continúan describiendo el runtime legacy. Bearer/D1 productivo queda
-pendiente. La frontera Sync ya queda resuelta contractualmente: al migrar alta y
-baja en B1, los commands centrales no producirán `usuario_creado` ni
-`usuario_desactivado`; el producer heredado y el consumer portable actual
-permanecen sólo por compatibilidad transitoria. El consumer
+El código del rol no es condición de autorización. B1 migra exclusivamente alta
+y baja a Bearer, `AuthenticatedPrincipal` y D1 `GLOBAL` con
+`ADMIN.USUARIO.ADMINISTRAR`. Asignación/revocación de roles y asignación de
+sucursales siguen pendientes. Los commands centrales no producen
+`usuario_creado` ni `usuario_desactivado`; el consumer portable actual permanece
+por compatibilidad transitoria. El consumer
 `administrativo.usuario` usa el protocolo #510/#512, no el path técnico
 `LEGACY` payload-less.
 
-Decisiones de frontera ya cerradas para el futuro B1: identidad humana mediante
-`AuthenticatedPrincipal`; autorización D1 `GLOBAL` con
-`ADMIN.USUARIO.ADMINISTRAR`; `operacion_idempotente` como autoridad idempotente,
-sin depender de Sync, inbox u `op_id_alta`; procedencia de instalación `NULL`; y
-ausencia de producción central de `usuario_creado`/`usuario_desactivado`. No
-habrá instalación sintética, dual-write, bridge ni adaptación del envelope
-legacy. Las secciones 4.1 y 4.4 continúan documentando el runtime observable
-previo a B1 hasta que ese incremento migre los endpoints.
+`operacion_idempotente` es la única autoridad idempotente; la procedencia y el
+scope técnico del ledger son `NULL`. No hay instalación sintética, dual-write,
+bridge ni adaptación del envelope heredado.
 
-Este PR no define la decisión CORE-EF completa de B1. Antes de modificar runtime,
-B1 deberá cerrar headers exactos; mismo `op_id` con mismo payload; mismo `op_id`
-con payload distinto; retry post-error; locks;
-CAS/`version_registro`/`If-Match-Version`; outbox no relacionado con Sync;
-frontera transaccional; rollback; error mapping; y tests CORE-EF obligatorios.
+B1 se adopta sobre el rebuild oficial de transición y no preserva receipts
+pre-B1: no se soportan migración in-place, dual fingerprint, fallback ni backfill
+de `operacion_idempotente`. La durabilidad idempotente se garantiza entre
+requests bajo el contrato central una vez materializado B1. Si antes del corte
+aparecen datos útiles, debe detenerse el rebuild y diseñarse una migración
+específica.
 
 ### 4.1 `POST /api/v1/administrativo/usuarios`
 
@@ -126,21 +120,23 @@ frontera transaccional; rollback; error mapping; y tests CORE-EF obligatorios.
 - Clasificación CORE-EF: `COMMAND_WRITE_NEGOCIO`.
 - Objetivo funcional: crear un usuario administrativo del sistema.
 - Headers obligatorios:
+  - `Authorization: Bearer ...`
   - `X-Op-Id`
-  - `X-Usuario-Id`
-  - `X-Sucursal-Id`
-  - `X-Instalacion-Id`
+- Headers heredados `X-Usuario-Id`, `X-Sucursal-Id` y `X-Instalacion-Id`: no se
+  consumen; si llegan, se ignoran.
 - `If-Match-Version`: NO APLICA; es alta de entidad nueva.
 - Idempotencia: aplica por `X-Op-Id` mediante el claim/receipt global de `operacion_idempotente` (#469/#470); `op_id_alta` conserva provenance row-local, pero no es la autoridad concurrente.
   - mismo `X-Op-Id` + mismo payload: devuelve el mismo resultado sin duplicar usuario.
-  - mismo `X-Op-Id` + payload distinto: `409 IDEMPOTENT_DUPLICATE`.
-  - mismo `X-Op-Id` reutilizado por otro usuario o command incompatible: `409 IDEMPOTENT_DUPLICATE`.
+  - mismo `X-Op-Id` + `command_code` distinto: `409 IDEMPOTENCY_COMMAND_CONFLICT`.
+  - mismo `X-Op-Id` + target distinto: `409 IDEMPOTENCY_TARGET_CONFLICT`.
+  - mismo `X-Op-Id` + mismo command/target pero actor o payload distinto: `409 IDEMPOTENCY_PAYLOAD_CONFLICT`.
   - el claim usa la exclusión transaccional estable de #470 y precede cualquier mutación.
   - compatibilidad prospectiva: los writes nuevos completan receipt; la evidencia histórica por `op_id_alta` no repara outbox ni receipt ausentes.
 - Versionado: crea con `version_registro = 1`.
-- Outbox: APLICA; emite `usuario_creado` antes del mismo commit que persiste el usuario. El replay local compatible por el mismo `X-Op-Id` no emite un segundo evento.
+- Outbox: NO APLICA; no emite `usuario_creado`.
 - Lock lógico: aplica únicamente el lock transaccional estable del claim idempotente #470; no se agrega lock de negocio ni protocolo paralelo.
-- Frontera transaccional: inserción de `usuario`, metadatos CORE-EF, outbox y receipt global comparten transacción y commit. Un fallo al resolver provenance, persistir el outbox o completar el receipt revierte el alta completa.
+- Frontera transaccional: inserción y completion central comparten una sola
+  transacción y commit exterior; provenance de instalación y ledger quedan NULL.
 
 Request principal:
 
@@ -178,13 +174,16 @@ Response principal (`201`):
 
 Errores esperados:
 
-- `400 VALIDATION_ERROR`: headers CORE-EF faltantes/inválidos o validaciones manuales del handler.
+- `400 VALIDATION_ERROR`: `X-Op-Id` faltante/inválido.
+- `401`/`403`: autenticación o autorización D1 insuficiente.
 - `422 Unprocessable Entity`: request body/path/query inválido detectado automáticamente por FastAPI/Pydantic antes de entrar al handler.
-- `409 IDEMPOTENT_DUPLICATE`: mismo `X-Op-Id` con payload incompatible.
-- `409 TECHNICAL_INCONSISTENCY`: código o login duplicado, u otra inconsistencia técnica controlada.
+- `409 IDEMPOTENCY_COMMAND_CONFLICT`: `X-Op-Id` reutilizado por otro command.
+- `409 IDEMPOTENCY_TARGET_CONFLICT`: `X-Op-Id` reutilizado para otro target.
+- `409 IDEMPOTENCY_PAYLOAD_CONFLICT`: mismo command/target con actor o payload incompatible.
+- `409 DUPLICATE_USER`: código/login duplicado.
 - `500 TECHNICAL_INCONSISTENCY`: fallo técnico no controlado.
 
-Fuera de alcance del endpoint: autenticación real, password, login efectivo y autorización.
+Fuera de alcance: credenciales, password y modificación de usuario.
 
 ### 4.2 `GET /api/v1/administrativo/usuarios`
 
@@ -225,20 +224,22 @@ Errores esperados:
 - Clasificación CORE-EF: `COMMAND_WRITE_NEGOCIO`.
 - Objetivo funcional: dar de baja lógica a un usuario del sistema.
 - Headers obligatorios:
+  - `Authorization: Bearer ...`
   - `X-Op-Id`
-  - `X-Usuario-Id`
-  - `X-Sucursal-Id`
-  - `X-Instalacion-Id`
   - `If-Match-Version`
+- Headers heredados de usuario/sucursal/instalación: ignorados.
 - Idempotencia: aplica por `X-Op-Id` mediante el claim/receipt global de `operacion_idempotente`; `op_id_ultima_modificacion` conserva evidencia row-local.
   - mismo `X-Op-Id` sobre la misma baja ya persistida: devuelve el estado ya dado de baja sin incrementar dos veces `version_registro`.
-  - reutilización del `X-Op-Id` del alta, de otro usuario u otra operación incompatible: `409 IDEMPOTENT_DUPLICATE` antes de mutar o emitir outbox.
-  - versión distinta sin baja previa por ese `X-Op-Id`: `409 CONCURRENCY_ERROR`.
+  - mismo `X-Op-Id` con `command_code` distinto, incluido el de un alta: `409 IDEMPOTENCY_COMMAND_CONFLICT`.
+  - mismo `X-Op-Id` sobre otro usuario objetivo: `409 IDEMPOTENCY_TARGET_CONFLICT`.
+  - mismo `X-Op-Id` y target con actor o `If-Match-Version` distinto: `409 IDEMPOTENCY_PAYLOAD_CONFLICT`.
+  - versión distinta sin baja previa por ese `X-Op-Id`: `412 CONCURRENCY_ERROR`.
 - Versionado: requiere `If-Match-Version`; al aplicar baja incrementa `version_registro + 1`.
 - Baja lógica: establece `estado_usuario = INACTIVO`, `fecha_baja` y `deleted_at`.
-- Outbox: APLICA; emite `usuario_desactivado` antes del mismo commit que persiste la baja. El retry legítimo de esa misma baja no emite un segundo evento.
+- Outbox: NO APLICA; no emite `usuario_desactivado`.
 - Lock lógico: aplica únicamente el lock transaccional estable del claim idempotente #470; no se agrega lock de negocio ni protocolo paralelo.
-- Frontera transaccional: baja, incremento de versión, metadatos CORE-EF, outbox y receipt global comparten transacción y commit. Un fallo al resolver provenance, persistir el outbox o completar el receipt revierte la baja y la versión.
+- Frontera transaccional: baja, versión y completion central comparten una sola
+  transacción y commit exterior.
 
 Response principal (`200`): envelope `{ "ok": true, "data": UsuarioSistemaData }` con `fecha_baja`, `estado_usuario = INACTIVO`, `deleted_at` persistido y `version_registro` incrementado.
 
@@ -246,11 +247,14 @@ Errores esperados:
 
 - `400 VALIDATION_ERROR`: headers CORE-EF faltantes/inválidos o `If-Match-Version` faltante/inválido.
 - `404 NOT_FOUND`: usuario inexistente.
-- `409 IDEMPOTENT_DUPLICATE`: `X-Op-Id` reutilizado por una operación incompatible.
-- `409 CONCURRENCY_ERROR`: mismatch real de versión.
+- `409 IDEMPOTENCY_COMMAND_CONFLICT`: `X-Op-Id` reutilizado por otro command.
+- `409 IDEMPOTENCY_TARGET_CONFLICT`: `X-Op-Id` reutilizado para otro usuario objetivo.
+- `409 IDEMPOTENCY_PAYLOAD_CONFLICT`: mismo command/target con actor o payload incompatible.
+- `412 CONCURRENCY_ERROR`: mismatch real de versión.
 - `500 TECHNICAL_INCONSISTENCY`.
 
-Fuera de alcance del endpoint: autenticación real, password, login efectivo y autorización.
+La baja no elimina ni modifica credenciales; el próximo request autenticado del
+usuario queda bloqueado por su estado inactivo.
 
 ## 5. Roles de seguridad y permisos
 
