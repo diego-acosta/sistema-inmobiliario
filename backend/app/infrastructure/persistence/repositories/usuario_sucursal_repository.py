@@ -254,6 +254,19 @@ class UsuarioSucursalRepository(BaseRepository[Any]):
         ).mappings().one_or_none()
         return dict(row) if row is not None else None
 
+    def lock_usuarios_ordered(
+        self,
+        *,
+        id_usuario_actor: int,
+        id_usuario_target: int,
+    ) -> dict[int, dict[str, Any]]:
+        usuarios: dict[int, dict[str, Any]] = {}
+        for id_usuario in sorted({id_usuario_actor, id_usuario_target}):
+            usuario = self.lock_usuario(id_usuario)
+            if usuario is not None:
+                usuarios[id_usuario] = usuario
+        return usuarios
+
     def lock_sucursal(self, id_sucursal: int) -> dict[str, Any] | None:
         row = self.db.execute(
             text(
@@ -384,9 +397,16 @@ class UsuarioSucursalRepository(BaseRepository[Any]):
         id_usuario: int,
         payload: dict[str, Any],
         *,
+        id_usuario_actor: int,
         op_id: str,
     ) -> dict[str, Any]:
-        usuario = self.lock_usuario(id_usuario)
+        usuarios = self.lock_usuarios_ordered(
+            id_usuario_actor=id_usuario_actor,
+            id_usuario_target=id_usuario,
+        )
+        if id_usuario_actor not in usuarios:
+            raise UsuarioSucursalTechnicalError("actor no recuperable")
+        usuario = usuarios.get(id_usuario)
         if usuario is None:
             raise LookupError("usuario")
         if usuario["estado_usuario"] not in {"ACTIVO", "INACTIVO"}:
