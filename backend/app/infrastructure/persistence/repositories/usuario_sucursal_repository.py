@@ -7,6 +7,9 @@ from sqlalchemy.exc import IntegrityError
 from app.api.core_ef_headers import CoreEFHeaders
 from app.infrastructure.persistence.base_repository import BaseRepository
 from app.infrastructure.persistence.repositories.outbox_repository import OutboxRepository
+from app.infrastructure.persistence.repositories.usuario_locking import (
+    lock_usuarios_ordered,
+)
 
 
 class UsuarioSucursalIdempotencyConflictError(ValueError):
@@ -14,6 +17,14 @@ class UsuarioSucursalIdempotencyConflictError(ValueError):
 
 
 class UsuarioSucursalDuplicateActiveError(ValueError):
+    pass
+
+
+class UsuarioSucursalIneligibleTargetError(ValueError):
+    pass
+
+
+class UsuarioSucursalTechnicalError(RuntimeError):
     pass
 
 
@@ -132,6 +143,122 @@ class UsuarioSucursalRepository(BaseRepository[Any]):
         """), {"id_usuario": id_usuario}).mappings().one_or_none()
         return self._map(row) if row is not None else None
 
+    def get_current_effective_by_usuario_sucursal(
+        self,
+        id_usuario: int,
+        id_sucursal: int,
+        *,
+        fecha_desde: datetime,
+        fecha_hasta: datetime | None,
+    ) -> dict[str, Any] | None:
+        row = self.db.execute(
+            text(
+                f"""
+                WITH current_clock AS (
+                    SELECT clock_timestamp() AT TIME ZONE 'UTC' AS now_utc
+                )
+                SELECT {_COLUMNS}
+                FROM usuario_sucursal us
+                JOIN sucursal s ON s.id_sucursal = us.id_sucursal
+                CROSS JOIN current_clock ct
+                WHERE us.id_usuario = :id_usuario
+                  AND us.id_sucursal = :id_sucursal
+                  AND us.deleted_at IS NULL
+                  AND us.estado_vinculo = 'ACTIVO'
+                  AND us.fecha_desde <= ct.now_utc
+                  AND (
+                    us.fecha_hasta IS NULL
+                    OR us.fecha_hasta > ct.now_utc
+                  )
+                  AND :fecha_desde <= ct.now_utc
+                  AND (
+                    CAST(:fecha_hasta AS timestamp without time zone) IS NULL
+                    OR CAST(:fecha_hasta AS timestamp without time zone) > ct.now_utc
+                  )
+                LIMIT 1
+                """
+            ),
+            {
+                "id_usuario": id_usuario,
+                "id_sucursal": id_sucursal,
+                "fecha_desde": fecha_desde,
+                "fecha_hasta": fecha_hasta,
+            },
+        ).mappings().one_or_none()
+        return self._map(row) if row is not None else None
+
+    def get_current_effective_default_by_usuario(
+        self,
+        id_usuario: int,
+        *,
+        fecha_desde: datetime,
+        fecha_hasta: datetime | None,
+    ) -> dict[str, Any] | None:
+        row = self.db.execute(
+            text(
+                f"""
+                WITH current_clock AS (
+                    SELECT clock_timestamp() AT TIME ZONE 'UTC' AS now_utc
+                )
+                SELECT {_COLUMNS}
+                FROM usuario_sucursal us
+                JOIN sucursal s ON s.id_sucursal = us.id_sucursal
+                CROSS JOIN current_clock ct
+                WHERE us.id_usuario = :id_usuario
+                  AND us.es_sucursal_predeterminada = true
+                  AND us.deleted_at IS NULL
+                  AND us.estado_vinculo = 'ACTIVO'
+                  AND us.fecha_desde <= ct.now_utc
+                  AND (
+                    us.fecha_hasta IS NULL
+                    OR us.fecha_hasta > ct.now_utc
+                  )
+                  AND :fecha_desde <= ct.now_utc
+                  AND (
+                    CAST(:fecha_hasta AS timestamp without time zone) IS NULL
+                    OR CAST(:fecha_hasta AS timestamp without time zone) > ct.now_utc
+                  )
+                LIMIT 1
+                """
+            ),
+            {
+                "id_usuario": id_usuario,
+                "fecha_desde": fecha_desde,
+                "fecha_hasta": fecha_hasta,
+            },
+        ).mappings().one_or_none()
+        return self._map(row) if row is not None else None
+
+    def has_unknown_link_state(self, id_usuario: int) -> bool:
+        return bool(
+            self.db.execute(
+                text(
+                    """
+                    SELECT 1
+                    FROM usuario_sucursal
+                    WHERE id_usuario = :id_usuario
+                      AND estado_vinculo NOT IN ('ACTIVO', 'INACTIVO')
+                    LIMIT 1
+                    """
+                ),
+                {"id_usuario": id_usuario},
+            ).scalar()
+        )
+
+    def lock_sucursal(self, id_sucursal: int) -> dict[str, Any] | None:
+        row = self.db.execute(
+            text(
+                """
+                SELECT id_sucursal, estado_sucursal, fecha_baja, deleted_at
+                FROM sucursal
+                WHERE id_sucursal = :id_sucursal
+                FOR KEY SHARE
+                """
+            ),
+            {"id_sucursal": id_sucursal},
+        ).mappings().one_or_none()
+        return dict(row) if row is not None else None
+
     def list_by_usuario(self, id_usuario: int, *, incluir_bajas: bool = False) -> list[dict[str, Any]] | None:
         if not self.exists_usuario(id_usuario):
             return None
@@ -242,3 +369,101 @@ class UsuarioSucursalRepository(BaseRepository[Any]):
         except Exception:
             self.db.rollback()
             raise
+
+    def create_central(
+        self,
+        id_usuario: int,
+        payload: dict[str, Any],
+        *,
+        id_usuario_actor: int,
+        op_id: str,
+    ) -> dict[str, Any]:
+        usuarios = lock_usuarios_ordered(
+            self.db,
+            (id_usuario_actor, id_usuario),
+        )
+        if id_usuario_actor not in usuarios:
+            raise UsuarioSucursalTechnicalError("actor no recuperable")
+        usuario = usuarios.get(id_usuario)
+        if usuario is None:
+            raise LookupError("usuario")
+        if usuario["estado_usuario"] not in {"ACTIVO", "INACTIVO"}:
+            raise UsuarioSucursalTechnicalError("estado_usuario desconocido")
+        if (
+            usuario["estado_usuario"] != "ACTIVO"
+            or usuario["deleted_at"] is not None
+            or usuario["fecha_baja"] is not None
+        ):
+            raise UsuarioSucursalIneligibleTargetError("usuario")
+
+        id_sucursal = payload["id_sucursal"]
+        sucursal = self.lock_sucursal(id_sucursal)
+        if sucursal is None:
+            raise LookupError("sucursal")
+        if sucursal["estado_sucursal"] not in {
+            "ACTIVA",
+            "INACTIVA",
+            "DADA_DE_BAJA",
+        }:
+            raise UsuarioSucursalTechnicalError("estado_sucursal desconocido")
+        if (
+            sucursal["estado_sucursal"] != "ACTIVA"
+            or sucursal["deleted_at"] is not None
+            or sucursal["fecha_baja"] is not None
+        ):
+            raise UsuarioSucursalIneligibleTargetError("sucursal")
+
+        if self.has_unknown_link_state(id_usuario):
+            raise UsuarioSucursalTechnicalError("estado_vinculo desconocido")
+
+        if (
+            self.get_active_by_usuario_sucursal(id_usuario, id_sucursal) is not None
+            or self.get_current_effective_by_usuario_sucursal(
+                id_usuario,
+                id_sucursal,
+                fecha_desde=payload["fecha_desde"],
+                fecha_hasta=payload["fecha_hasta"],
+            )
+            is not None
+        ):
+            raise UsuarioSucursalDuplicateActiveError
+        if (
+            payload["es_sucursal_predeterminada"]
+            and (
+                self.get_active_default_by_usuario(id_usuario) is not None
+                or self.get_current_effective_default_by_usuario(
+                    id_usuario,
+                    fecha_desde=payload["fecha_desde"],
+                    fecha_hasta=payload["fecha_hasta"],
+                )
+                is not None
+            )
+        ):
+            raise UsuarioSucursalDuplicateActiveError
+
+        row = self.db.execute(
+            text(
+                """
+                INSERT INTO usuario_sucursal (
+                    id_usuario, id_sucursal, tipo_habilitacion_sucursal,
+                    es_sucursal_predeterminada, puede_operar, puede_consultar,
+                    puede_administrar, fecha_desde, fecha_hasta, estado_vinculo,
+                    observaciones, version_registro, id_instalacion_origen,
+                    id_instalacion_ultima_modificacion, op_id_alta,
+                    op_id_ultima_modificacion
+                ) VALUES (
+                    :id_usuario, :id_sucursal, :tipo_habilitacion_sucursal,
+                    :es_sucursal_predeterminada, :puede_operar,
+                    :puede_consultar, :puede_administrar, :fecha_desde,
+                    :fecha_hasta, 'ACTIVO', :observaciones, 1,
+                    NULL, NULL, :op_id, :op_id
+                )
+                RETURNING id_usuario_sucursal
+                """
+            ),
+            {"id_usuario": id_usuario, "op_id": op_id, **payload},
+        ).mappings().one()
+        created = self.get(row["id_usuario_sucursal"])
+        if created is None:
+            raise UsuarioSucursalTechnicalError("vínculo no recuperable")
+        return created

@@ -563,7 +563,7 @@ Toda issue o PR futuro del dominio Administrativo debe cumplir:
 - Clasificación: soporte administrativo-operativo para habilitación contextual básica de usuarios por sucursal.
 - Dominio API: `administrativo`, porque el vínculo pertenece a administración/seguridad de usuarios.
 - Relación con operativo: consume `sucursal` existente sin redefinirla ni crear asignación directa a instalación.
-- Fuera de alcance: autorización efectiva por permiso, middleware de seguridad, login, menú dinámico, permisos complejos, `usuario_instalacion`, edición/baja del alcance y reglas por dominio.
+- Fuera de alcance: menú dinámico, permisos complejos, `usuario_instalacion`, edición/baja del alcance y reglas por dominio.
 
 ### 7.2 `GET /api/v1/administrativo/usuarios/{id_usuario}/alcance-operativo`
 
@@ -591,20 +591,23 @@ Lista read-like de sucursales asignadas a un usuario.
 
 Asigna alcance operativo básico de un usuario a una sucursal existente.
 
-- Clasificación CORE-EF: `COMMAND_WRITE_NEGOCIO` sincronizable.
-- Headers obligatorios: `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id` mediante helper común CORE-EF.
+- Clasificación CORE-EF: `COMMAND_WRITE_NEGOCIO` central; outbox/Sync no aplican.
+- Identidad y autorización: Bearer, `AuthenticatedPrincipal` y D1 `GLOBAL` con `ADMIN.USUARIO_SUCURSAL.ADMINISTRAR`, siempre antes de claim/replay. La sucursal del body es target funcional, no scope autorizante.
+- Header obligatorio: `X-Op-Id`. `X-Usuario-Id`, `X-Sucursal-Id` y `X-Instalacion-Id` no se consumen; si llegan como extras se ignoran.
 - `If-Match-Version`: NO APLICA, porque crea un vínculo nuevo y no modifica entidad versionada existente.
 - Payload: `id_sucursal`, `tipo_habilitacion_sucursal`, `es_sucursal_predeterminada`, `puede_operar`, `puede_consultar`, `puede_administrar`, `fecha_desde` (obligatoria), `fecha_hasta`, `observaciones`. Toda frontera informada exige offset explícito, se convierte a UTC y se entrega a persistencia como UTC-naive; una entrada naïve o la ausencia de `fecha_desde` devuelve `422 VALIDATION_ERROR` estándar.
-- Persistencia CORE-EF: `uid_global`, `version_registro = 1`, `created_at`, `updated_at`, `deleted_at = NULL`, `id_instalacion_origen`, `id_instalacion_ultima_modificacion`, `op_id_alta`, `op_id_ultima_modificacion`.
-- Idempotencia: aplica por `op_id_alta` (`ux_usuario_sucursal_op_id_alta`). Mismo `X-Op-Id` + payload compatible devuelve el vínculo existente sin duplicar outbox; mismo `X-Op-Id` + payload distinto devuelve `409 IDEMPOTENT_DUPLICATE`.
-- Duplicado activo: no permite dos vínculos activos para `(id_usuario, id_sucursal)`; devuelve `409 TECHNICAL_INCONSISTENCY`.
-- Sucursal predeterminada: el POST es create-only y no desmarca automáticamente una predeterminada anterior. Si `es_sucursal_predeterminada = true` y ya existe otra predeterminada activa para el usuario, devuelve `409 TECHNICAL_INCONSISTENCY`. El cambio de predeterminada queda fuera de alcance de #262 y deberá nacer como endpoint versionado con `If-Match-Version` y outbox propio.
-- Outbox: aplica; usa evento formal `usuario_asociado_a_sucursal` (`EVT-ADM-008`) en la misma transacción que el alta real. El replay idempotente compatible no duplica outbox.
-- Lock lógico: NO APLICA en esta primera versión acotada; la consistencia se apoya en transacción e índices únicos parciales.
+- Persistencia CORE-EF: `uid_global` continúa como carrier físico, `version_registro = 1`, `created_at`, `updated_at`, `deleted_at = NULL` y provenance de instalación `NULL/NULL`. `uid_global` no integra target ni fingerprint.
+- Idempotencia: `operacion_idempotente` es la única autoridad. Target `USUARIO_SUCURSAL` con key `usuario:{id_usuario}:sucursal:{id_sucursal}`; receipt con actor humano y scope `NULL/NULL`. Rigen conflictos `COMMAND`, `TARGET`, `PAYLOAD` y replay durable central.
+- Fingerprint: `actor = {type: HUMAN, id_usuario}`, `scope = {mode: GLOBAL, id_sucursal: null}` y payload con usuario target, sucursal target, habilitación, predeterminada, capacidades, fechas UTC canónicas y observaciones. No incluye instalación, token, sesión ni `uid_global`.
+- Duplicado activo: no permite dos vínculos activos para `(id_usuario, id_sucursal)`; devuelve `409 DUPLICATE_ACTIVE_SCOPE`.
+- Sucursal predeterminada: el POST es create-only y no desmarca automáticamente una predeterminada anterior. Si ya existe otra predeterminada activa para el usuario devuelve `409 DUPLICATE_ACTIVE_SCOPE`.
+- Outbox: NO APLICA. B3 no produce `usuario_asociado_a_sucursal`; el registro histórico del evento no obliga al command central.
+- Lock lógico: aplica sobre la fila de usuario y la sucursal objetivo. Serializa altas del mismo usuario, incluidos duplicado usuario+sucursal y dos predeterminadas concurrentes, sin bloquear globalmente usuarios distintos.
 - Versionado: `usuario_sucursal.version_registro` nace en `1`; no se modifican vínculos existentes en este endpoint create-only.
-- Rollback/transacción: la validación de duplicado/predeterminada activa, alta de vínculo y outbox comparten la misma transacción.
-- Validaciones: usuario activo/no dado de baja, sucursal activa/no dada de baja, normalización temporal previa al rango (`fecha_hasta >= fecha_desde`) y no duplicado activo.
-- Errores: `400 VALIDATION_ERROR` para headers CORE-EF o validaciones manuales, `404 NOT_FOUND`, `409 IDEMPOTENT_DUPLICATE`, `409 TECHNICAL_INCONSISTENCY`, `422` para validación automática FastAPI/Pydantic.
+- Rollback/transacción: claim, locks, validaciones, alta y completion comparten la transacción y un único commit exterior.
+- Validaciones: usuario `ACTIVO`, sucursal `ACTIVA`, estados conocidos, normalización temporal previa al rango (`fecha_hasta >= fecha_desde`), no duplicado activo y predeterminada única. Estados conocidos no elegibles devuelven `409`; estados desconocidos son inconsistencia técnica.
+- Temporalidad: se preserva el contrato vigente; la regla general de solapamientos entre intervalos acotados continúa pendiente y no se amplía en B3.
+- Errores: `400 VALIDATION_ERROR`, `401`, `403`, `404 NOT_FOUND`, conflictos idempotentes `409`, `409 DUPLICATE_ACTIVE_SCOPE`, `409 INELIGIBLE_TARGET`, `422` y `500` sanitizado. No aplica `412`.
 
 ### 7.5 SQL asociado
 

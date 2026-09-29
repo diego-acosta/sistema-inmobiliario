@@ -170,6 +170,7 @@ class UsuariosCentralCommandService:
             status=200,
             execute=lambda: repo.deactivate_central(
                 id_usuario,
+                id_usuario_actor=id_usuario_actor,
                 op_id=str(metadata.op_id),
                 expected_version=metadata.expected_version,
             ),

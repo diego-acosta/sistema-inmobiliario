@@ -121,6 +121,10 @@ from app.application.administrativo.services.usuario_rol_seguridad_central_comma
     UsuarioRolSeguridadCentralCommandService,
     UsuarioRolSeguridadCommandError,
 )
+from app.application.administrativo.services.usuario_sucursal_central_command_service import (
+    UsuarioSucursalCentralCommandService,
+    UsuarioSucursalCommandError,
+)
 from app.application.administrativo.services.catalogos_central_command_service import (
     CatalogosCentralCommandService,
     CatalogosCommandError,
@@ -155,8 +159,6 @@ from app.infrastructure.persistence.repositories.usuario_sistema_repository impo
     UsuarioSistemaRepository,
 )
 from app.infrastructure.persistence.repositories.usuario_sucursal_repository import (
-    UsuarioSucursalDuplicateActiveError,
-    UsuarioSucursalIdempotencyConflictError,
     UsuarioSucursalRepository,
 )
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
@@ -238,6 +240,17 @@ _USUARIO_ROL_REVOKE_HEADERS_OPENAPI = {
     ]
 }
 
+_USUARIO_SUCURSAL_ASSIGN_HEADERS_OPENAPI = {
+    "parameters": [
+        {
+            "name": "X-Op-Id",
+            "in": "header",
+            "required": True,
+            "schema": {"type": "string"},
+        }
+    ]
+}
+
 
 def _usuario_command_error(exc: UsuariosCommandError) -> JSONResponse:
     messages = {
@@ -265,6 +278,24 @@ def _usuario_rol_command_error(
         exc.status,
         exc.code,
         messages.get(exc.code, "No se pudo ejecutar el command de grants."),
+    )
+
+
+def _usuario_sucursal_command_error(
+    exc: UsuarioSucursalCommandError,
+) -> JSONResponse:
+    messages = {
+        "NOT_FOUND": "Usuario o sucursal no encontrado.",
+        "DUPLICATE_ACTIVE_SCOPE": (
+            "Ya existe un vínculo activo o una sucursal predeterminada "
+            "incompatible para el usuario."
+        ),
+        "INELIGIBLE_TARGET": "El usuario o la sucursal no es elegible.",
+    }
+    return _error(
+        exc.status,
+        exc.code,
+        messages.get(exc.code, "No se pudo asignar la sucursal al usuario."),
     )
 
 
@@ -1649,51 +1680,54 @@ def get_alcance_operativo_usuario(
     response_model=UsuarioSucursalCreateResponse,
     responses={
         400: {"model": ErrorResponse},
+        401: {"model": ErrorResponse},
+        403: {"model": ErrorResponse},
         422: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
         500: {"model": ErrorResponse},
     },
+    openapi_extra=_USUARIO_SUCURSAL_ASSIGN_HEADERS_OPENAPI,
 )
 def assign_sucursal_to_usuario(
     id_usuario: int,
     request: UsuarioSucursalCreateRequest,
+    principal: Annotated[AuthenticatedPrincipal, Depends(
+        require_administrative_permission("ADMIN.USUARIO_SUCURSAL.ADMINISTRAR")
+    )],
     db: Session = Depends(get_db),
-    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
-    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
-    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
-    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    x_op_id: str | None = Header(
+        default=None, alias="X-Op-Id", include_in_schema=False
+    ),
 ) -> UsuarioSucursalCreateResponse | JSONResponse:
-    core = _parse_core_or_error(
-        x_op_id=x_op_id,
-        x_usuario_id=x_usuario_id,
-        x_sucursal_id=x_sucursal_id,
-        x_instalacion_id=x_instalacion_id,
-    )
-    if isinstance(core, JSONResponse):
-        return core
-    payload = request.model_dump()
-    repo = UsuarioSucursalRepository(db)
     try:
-        if not repo.exists_usuario(id_usuario):
-            return _error(404, "NOT_FOUND", "Usuario del sistema no encontrado.")
-        if not repo.exists_sucursal(request.id_sucursal):
-            return _error(404, "NOT_FOUND", "Sucursal no encontrada.")
-        vinculo = repo.create(id_usuario, payload, core)
-    except UsuarioSucursalIdempotencyConflictError as exc:
-        return _error(409, "IDEMPOTENT_DUPLICATE", str(exc))
-    except UsuarioSucursalDuplicateActiveError as exc:
-        return _error(409, "TECHNICAL_INCONSISTENCY", str(exc))
-    except Exception as exc:
+        metadata = parse_central_command_metadata(x_op_id)
+        snapshot = UsuarioSucursalCentralCommandService(db).assign(
+            id_usuario=id_usuario,
+            payload=request.model_dump(),
+            metadata=metadata,
+            id_usuario_actor=principal.id_usuario,
+        )
+        db.commit()
+        return UsuarioSucursalCreateResponse.model_validate(snapshot)
+    except CoreEFHeaderValidationError as exc:
+        db.rollback()
+        return _error(
+            400,
+            "VALIDATION_ERROR",
+            exc.message,
+            {"header": exc.header_name, "reason": exc.reason},
+        )
+    except UsuarioSucursalCommandError as exc:
+        db.rollback()
+        return _usuario_sucursal_command_error(exc)
+    except Exception:
+        db.rollback()
         return _error(
             500,
             "TECHNICAL_INCONSISTENCY",
             "No se pudo asignar sucursal al usuario.",
-            {"error": str(exc)},
         )
-    if vinculo is None:
-        return _error(404, "NOT_FOUND", "Usuario o sucursal no encontrado.")
-    return UsuarioSucursalCreateResponse(data=UsuarioSucursalData(**vinculo))
 
 
 @router.get(

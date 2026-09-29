@@ -170,6 +170,7 @@ class UsuarioRolSeguridadCentralCommandService:
             ).create_central(
                 id_usuario,
                 id_rol_seguridad,
+                id_usuario_actor=id_usuario_actor,
                 op_id=str(metadata.op_id),
             ),
         )

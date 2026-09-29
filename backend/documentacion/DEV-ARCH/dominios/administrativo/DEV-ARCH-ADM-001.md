@@ -160,10 +160,12 @@ Sync de usuario.
 
 Alta y baja de usuario adoptaron Bearer y D1 `GLOBAL` en B1. Asignar y revocar
 roles adoptan en B2 Bearer, D1 `GLOBAL`, ledger central y el permiso
-`ADMIN.SEGURIDAD.GRANTS.ADMINISTRAR`. La asignación de `usuario_sucursal`
-conserva su contrato heredado hasta B3. Sucursal continúa siendo un concepto
-funcional dentro de la única base central; instalación y portabilidad entre
-bases no participan en los commands B2.
+`ADMIN.SEGURIDAD.GRANTS.ADMINISTRAR`. B3 migra la asignación de
+`usuario_sucursal` a Bearer, D1 `GLOBAL`, ledger central y
+`ADMIN.USUARIO_SUCURSAL.ADMINISTRAR`. La sucursal del vínculo es el target
+funcional y no el scope autorizante ni el scope del receipt. Sucursal continúa
+siendo un concepto funcional dentro de la única base central; instalación,
+portabilidad entre bases y Sync no participan en B3.
 
 ## 3. Modelo canónico
 

@@ -16,6 +16,9 @@ from app.infrastructure.persistence.base_repository import BaseRepository
 from app.infrastructure.persistence.repositories.outbox_repository import (
     OutboxRepository,
 )
+from app.infrastructure.persistence.repositories.usuario_locking import (
+    lock_usuarios_ordered,
+)
 from sqlalchemy import text
 
 
@@ -426,10 +429,23 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
         return self._map(row)
 
     def deactivate_central(
-        self, id_usuario: int, *, op_id: str, expected_version: int
+        self,
+        id_usuario: int,
+        *,
+        id_usuario_actor: int,
+        op_id: str,
+        expected_version: int,
     ) -> dict[str, Any] | None:
         """Aplica la baja central bajo lock/CAS, sin commit, replay ni outbox."""
-        actual = self.get_for_update(id_usuario)
+        usuarios = lock_usuarios_ordered(
+            self.db,
+            (id_usuario_actor, id_usuario),
+        )
+        if id_usuario_actor not in usuarios:
+            raise RuntimeError("actor no recuperable")
+        if id_usuario not in usuarios:
+            return None
+        actual = self.get(id_usuario)
         if actual is None:
             return None
         if actual["version_registro"] != expected_version:
