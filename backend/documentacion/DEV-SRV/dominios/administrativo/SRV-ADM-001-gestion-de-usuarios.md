@@ -35,8 +35,20 @@ alcance de usuarios por sucursal`) es una capacidad D1 `GLOBAL` para asignar
 sucursales y capacidades operativas a usuarios. La sucursal asignada es dato
 funcional del vínculo y no convierte el command administrativo en autorización
 contextual. También recibe grant inicial el rol activo
-`ADMINISTRADOR_SISTEMA`; el endpoint productivo conserva por ahora su contrato
-legacy.
+`ADMINISTRADOR_SISTEMA`. B3 adopta este permiso en el endpoint productivo con
+Bearer, ledger central y scope autorizante `GLOBAL`; la sucursal informada es el
+target funcional del vínculo.
+
+### Asignación central de alcance usuario-sucursal (B3)
+
+El command exige `X-Op-Id` y no consume headers heredados de usuario, sucursal o
+instalación. D1 se evalúa antes de claim/replay. El servicio central construye el
+fingerprint con actor humano, scope `GLOBAL` nulo y los datos funcionales del
+vínculo; luego serializa por usuario, bloquea y valida la sucursal, comprueba
+duplicado/predeterminada, inserta el vínculo y completa el receipt en una única
+transacción exterior. La provenance de instalación queda `NULL/NULL` y no se
+produce `usuario_asociado_a_sucursal`. No se redefine aquí una prohibición
+general de solapamientos temporales entre intervalos acotados.
 
 ### Transición del lifecycle de usuario a autoridad central
 
