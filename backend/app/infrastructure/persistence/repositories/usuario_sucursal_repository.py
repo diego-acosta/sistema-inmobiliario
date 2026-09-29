@@ -169,8 +169,8 @@ class UsuarioSucursalRepository(BaseRepository[Any]):
                   )
                   AND :fecha_desde <= ct.now_utc
                   AND (
-                    :fecha_hasta IS NULL
-                    OR :fecha_hasta > ct.now_utc
+                    CAST(:fecha_hasta AS timestamp without time zone) IS NULL
+                    OR CAST(:fecha_hasta AS timestamp without time zone) > ct.now_utc
                   )
                 """
             ),
@@ -211,8 +211,8 @@ class UsuarioSucursalRepository(BaseRepository[Any]):
                   )
                   AND :fecha_desde <= ct.now_utc
                   AND (
-                    :fecha_hasta IS NULL
-                    OR :fecha_hasta > ct.now_utc
+                    CAST(:fecha_hasta AS timestamp without time zone) IS NULL
+                    OR CAST(:fecha_hasta AS timestamp without time zone) > ct.now_utc
                   )
                 """
             ),
