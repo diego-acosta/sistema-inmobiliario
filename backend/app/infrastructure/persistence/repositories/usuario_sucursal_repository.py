@@ -7,6 +7,9 @@ from sqlalchemy.exc import IntegrityError
 from app.api.core_ef_headers import CoreEFHeaders
 from app.infrastructure.persistence.base_repository import BaseRepository
 from app.infrastructure.persistence.repositories.outbox_repository import OutboxRepository
+from app.infrastructure.persistence.repositories.usuario_locking import (
+    lock_usuarios_ordered,
+)
 
 
 class UsuarioSucursalIdempotencyConflictError(ValueError):
@@ -172,6 +175,7 @@ class UsuarioSucursalRepository(BaseRepository[Any]):
                     CAST(:fecha_hasta AS timestamp without time zone) IS NULL
                     OR CAST(:fecha_hasta AS timestamp without time zone) > ct.now_utc
                   )
+                LIMIT 1
                 """
             ),
             {
@@ -214,6 +218,7 @@ class UsuarioSucursalRepository(BaseRepository[Any]):
                     CAST(:fecha_hasta AS timestamp without time zone) IS NULL
                     OR CAST(:fecha_hasta AS timestamp without time zone) > ct.now_utc
                   )
+                LIMIT 1
                 """
             ),
             {
@@ -239,33 +244,6 @@ class UsuarioSucursalRepository(BaseRepository[Any]):
                 {"id_usuario": id_usuario},
             ).scalar()
         )
-
-    def lock_usuario(self, id_usuario: int) -> dict[str, Any] | None:
-        row = self.db.execute(
-            text(
-                """
-                SELECT id_usuario, estado_usuario, fecha_baja, deleted_at
-                FROM usuario
-                WHERE id_usuario = :id_usuario
-                FOR UPDATE
-                """
-            ),
-            {"id_usuario": id_usuario},
-        ).mappings().one_or_none()
-        return dict(row) if row is not None else None
-
-    def lock_usuarios_ordered(
-        self,
-        *,
-        id_usuario_actor: int,
-        id_usuario_target: int,
-    ) -> dict[int, dict[str, Any]]:
-        usuarios: dict[int, dict[str, Any]] = {}
-        for id_usuario in sorted({id_usuario_actor, id_usuario_target}):
-            usuario = self.lock_usuario(id_usuario)
-            if usuario is not None:
-                usuarios[id_usuario] = usuario
-        return usuarios
 
     def lock_sucursal(self, id_sucursal: int) -> dict[str, Any] | None:
         row = self.db.execute(
@@ -400,9 +378,9 @@ class UsuarioSucursalRepository(BaseRepository[Any]):
         id_usuario_actor: int,
         op_id: str,
     ) -> dict[str, Any]:
-        usuarios = self.lock_usuarios_ordered(
-            id_usuario_actor=id_usuario_actor,
-            id_usuario_target=id_usuario,
+        usuarios = lock_usuarios_ordered(
+            self.db,
+            (id_usuario_actor, id_usuario),
         )
         if id_usuario_actor not in usuarios:
             raise UsuarioSucursalTechnicalError("actor no recuperable")
