@@ -122,6 +122,7 @@ class UsuarioSucursalCentralCommandService:
             row = UsuarioSucursalRepository(self.session).create_central(
                 id_usuario,
                 payload,
+                id_usuario_actor=id_usuario_actor,
                 op_id=str(metadata.op_id),
             )
         except UsuarioSucursalDuplicateActiveError as exc:
