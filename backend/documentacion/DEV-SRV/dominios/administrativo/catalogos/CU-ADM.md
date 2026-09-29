@@ -87,16 +87,16 @@ Este dominio cubre gestión de usuarios y acceso, seguridad y autorización, aud
 
 ### CU-ADM-006 — Gestión de habilitación de usuario por sucursal
 - servicio_origen: SRV-ADM-001
-- permiso_contractual: ADMIN.USUARIO_SUCURSAL.ADMINISTRAR (GLOBAL; adopción runtime pendiente)
+- permiso_contractual: ADMIN.USUARIO_SUCURSAL.ADMINISTRAR (GLOBAL; adoptado en B3)
 - tipo: write
 - objetivo: administrar la habilitación operativa de un usuario en una o más sucursales.
 - entidades: usuario, sucursal, usuario_sucursal
 - criticidad: alta
-- sincronizable: sí
+- sincronizable: no; command central autoritativo
 - requiere_versionado: sí
-- requiere_lock: no
+- requiere_lock: sí; serialización por usuario
 - genera_op_id: sí
-- genera_outbox: sí
+- genera_outbox: no
 - puede_entrar_en_conflicto: sí
 
 ### CU-ADM-007 — Alta o gestión de credencial de usuario

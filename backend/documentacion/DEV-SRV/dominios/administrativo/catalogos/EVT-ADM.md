@@ -82,10 +82,11 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 ### EVT-ADM-008 — Usuario asociado a sucursal
 - codigo: usuario_asociado_a_sucursal
 - descripcion: se habilitó o vinculó un usuario a una sucursal operativa.
+- estado_runtime: histórico; el command central B3 no lo produce y no existe consumer runtime real.
 - origen_principal: SRV-ADM-001
 - entidad_principal: usuario_sucursal
 - tipo_evento: negocio
-- sincronizable: sí
+- sincronizable: sólo como contrato histórico; fuera del path central B3
 - genera_trazabilidad_administrativa: sí
 
 ### EVT-ADM-009 — Credencial creada
