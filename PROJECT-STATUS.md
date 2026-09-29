@@ -18,14 +18,24 @@ CAS 412; provenance de instalación queda NULL y no se producen
 `usuario_creado`/`usuario_desactivado`. El consumer portable se conserva por
 compatibilidad transitoria; roles y usuario-sucursal siguen pendientes.
 
+## Grants globales de roles B2 (2026-09-29)
+
+La asignación y revocación de `usuario_rol_seguridad` usan Bearer, D1 `GLOBAL`
+`ADMIN.SEGURIDAD.GRANTS.ADMINISTRAR`, metadata y ledger central NULL/NULL. El
+target idempotente estable es usuario+rol sin `uid_global`; la revocación usa
+CAS 412 y lock físico. La provenance de instalación queda NULL y los commands
+centrales no producen `rol_asignado_a_usuario` ni
+`rol_revocado_de_usuario`. Los reads no cambian y `usuario_sucursal` continúa
+pendiente de B3.
+
 ## Permisos centrales de usuarios y seguridad (2026-09-26)
 
 Quedan materializados como prerrequisito los permisos D1 `GLOBAL`
 `ADMIN.USUARIO.ADMINISTRAR`, `ADMIN.SEGURIDAD.GRANTS.ADMINISTRAR` y
 `ADMIN.USUARIO_SUCURSAL.ADMINISTRAR`, con grant inicial al rol activo
-`ADMINISTRADOR_SISTEMA`. Alta y baja de usuario ya fueron migradas en B1; los
-tres endpoints de asignación/revocación de roles y asignación de alcance por
-sucursal conservan su runtime heredado hasta B2/B3. La
+`ADMINISTRADOR_SISTEMA`. Alta y baja de usuario fueron migradas en B1; asignar y
+revocar roles fueron migrados en B2. La asignación de alcance por sucursal
+conserva su runtime heredado hasta B3. La
 frontera Sync de `usuario_creado`/`usuario_desactivado` queda cerrada
 contractualmente para B1: los commands centrales no producen esos
 eventos. El producer heredado y el consumer portable real permanecen por ahora

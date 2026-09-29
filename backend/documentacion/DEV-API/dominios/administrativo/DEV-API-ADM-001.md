@@ -331,11 +331,11 @@ Modelos de lectura:
 
 - Tabla física: `usuario_rol_seguridad`.
 - Unicidad activa: no puede existir más de una asignación activa para `(id_usuario, id_rol_seguridad)` con `deleted_at IS NULL` y `fecha_hasta IS NULL`.
-- Duplicado activo con otro `X-Op-Id`: rechaza con HTTP `409` y error de inconsistencia técnica controlada.
-- Eventos outbox sincronizables implementados:
-  - `rol_asignado_a_usuario`
-  - `rol_revocado_de_usuario`
-- Aggregate outbox: `usuario_rol_seguridad`.
+- Duplicado activo con otro `X-Op-Id`: rechaza con HTTP `409
+  DUPLICATE_ACTIVE_GRANT`.
+- Los commands centrales B2 no producen outbox. Los nombres históricos
+  `rol_asignado_a_usuario` y `rol_revocado_de_usuario` no forman parte del
+  contrato de escritura central.
 
 ### 6.1 `GET /api/v1/administrativo/usuarios/{id_usuario}/roles-seguridad`
 
@@ -357,20 +357,31 @@ Errores esperados: `404 NOT_FOUND`, `500 TECHNICAL_INCONSISTENCY`.
 - Clasificación CORE-EF: `COMMAND_WRITE_NEGOCIO`.
 - Objetivo funcional: asignar un rol de seguridad existente a un usuario existente.
 - Headers obligatorios:
+  - `Authorization: Bearer ...`
   - `X-Op-Id`
-  - `X-Usuario-Id`
-  - `X-Sucursal-Id`
-  - `X-Instalacion-Id`
+- Headers heredados `X-Usuario-Id`, `X-Sucursal-Id` y `X-Instalacion-Id`: no
+  requeridos ni consumidos; si llegan, no afectan autorización, fingerprint,
+  ledger, provenance ni negocio.
+- Autorización: D1 `GLOBAL` con
+  `ADMIN.SEGURIDAD.GRANTS.ADMINISTRAR`, antes de claim/replay.
 - `If-Match-Version`: NO APLICA; es alta de asignación nueva.
-- Idempotencia: aplica por `op_id_alta`.
-  - mismo `X-Op-Id` + mismo `id_usuario`/`id_rol_seguridad`: devuelve la misma asignación.
-  - mismo `X-Op-Id` + rol o usuario distinto: `409 IDEMPOTENT_DUPLICATE`.
-  - retry idempotente de alta no duplica asignación ni outbox.
+- Idempotencia: ledger central `operacion_idempotente`, con actor
+  `AuthenticatedPrincipal.id_usuario`, scope `GLOBAL`/`id_sucursal = null` y
+  payload `{id_usuario, id_rol_seguridad}`. El target estable es
+  `usuario:{id_usuario}:rol:{id_rol_seguridad}`.
+  - mismo command/target/fingerprint: replay durable;
+  - command, target o payload incompatible: conflicto `409` específico;
+  - el actor y el usuario target son identidades distintas.
+- Fingerprint exacto: `actor = {type: "HUMAN", id_usuario: <principal>}`,
+  `scope = {mode: "GLOBAL", id_sucursal: null}` y
+  `payload = {id_usuario, id_rol_seguridad}`.
 - Versionado: crea la asignación con `version_registro = 1`.
 - Baja lógica: NO APLICA en alta.
-- Outbox: aplica, registra `rol_asignado_a_usuario` en la misma transacción que el alta.
-- Lock lógico: NO APLICA; no hay lock lógico implementado.
-- Frontera transaccional: inserción de `usuario_rol_seguridad` + evento outbox; si falla outbox, se revierte la asignación.
+- Provenance: `id_instalacion_origen = NULL` e
+  `id_instalacion_ultima_modificacion = NULL`.
+- Outbox: NO APLICA.
+- Frontera transaccional: claim + asignación + completion, con un único commit
+  exterior; un fallo revierte mutación y receipt.
 
 Request principal:
 
@@ -392,8 +403,8 @@ Response principal (`201`):
     "version_registro": 1,
     "updated_at": "2026-01-01T00:00:00",
     "deleted_at": null,
-    "id_instalacion_origen": 1,
-    "id_instalacion_ultima_modificacion": 1,
+    "id_instalacion_origen": null,
+    "id_instalacion_ultima_modificacion": null,
     "op_id_alta": "...",
     "op_id_ultima_modificacion": "...",
     "codigo_rol": "ADMIN",
@@ -406,12 +417,17 @@ Response principal (`201`):
 
 Errores esperados:
 
-- `400 VALIDATION_ERROR`: headers CORE-EF faltantes/inválidos o validaciones manuales del handler.
+- `400 VALIDATION_ERROR`: `X-Op-Id` faltante o inválido.
+- `401`: principal Bearer ausente o inválido.
+- `403`: autorización D1 insuficiente.
 - `422 Unprocessable Entity`: request body/path/query inválido detectado automáticamente por FastAPI/Pydantic antes de entrar al handler.
 - `404 NOT_FOUND`: usuario o rol inexistente.
-- `409 IDEMPOTENT_DUPLICATE`: mismo `X-Op-Id` con payload incompatible.
-- `409 TECHNICAL_INCONSISTENCY`: duplicado activo de `(id_usuario, id_rol_seguridad)` u otra inconsistencia técnica controlada.
-- `500 TECHNICAL_INCONSISTENCY`: fallo técnico; si ocurre durante outbox, la asignación debe quedar revertida.
+- `409 IDEMPOTENCY_COMMAND_CONFLICT`, `IDEMPOTENCY_TARGET_CONFLICT` o
+  `IDEMPOTENCY_PAYLOAD_CONFLICT`: reutilización incompatible del `X-Op-Id`.
+- `409 DUPLICATE_ACTIVE_GRANT`: duplicado activo de
+  `(id_usuario, id_rol_seguridad)`.
+- `409 INELIGIBLE_TARGET`: usuario o rol existente pero no elegible.
+- `500 TECHNICAL_INCONSISTENCY`: inconsistencia técnica sanitizada.
 
 ### 6.3 `PATCH /api/v1/administrativo/usuarios/{id_usuario}/roles-seguridad/{id_asignacion}/baja`
 
@@ -419,28 +435,35 @@ Errores esperados:
 - Clasificación CORE-EF: `COMMAND_WRITE_NEGOCIO`.
 - Objetivo funcional: revocar/dar de baja lógica una asignación de rol de seguridad de un usuario.
 - Headers obligatorios:
+  - `Authorization: Bearer ...`
   - `X-Op-Id`
-  - `X-Usuario-Id`
-  - `X-Sucursal-Id`
-  - `X-Instalacion-Id`
   - `If-Match-Version`
-- Idempotencia: aplica por `op_id_ultima_modificacion` para retry de baja ya aplicada.
-  - retry idempotente de baja no duplica outbox ni incrementa versión dos veces.
-  - mismatch real de versión: `409 CONCURRENCY_ERROR`.
+- Headers heredados de usuario/sucursal/instalación: ignorados.
+- Autorización: D1 `GLOBAL` con
+  `ADMIN.SEGURIDAD.GRANTS.ADMINISTRAR`, antes de replay.
+- Idempotencia: ledger central con el mismo actor, scope y target usuario+rol;
+  el payload incluye `{id_usuario, id_asignacion, id_rol_seguridad,
+  if_match_version}`. El replay no reejecuta CAS.
+- Fingerprint exacto: `actor = {type: "HUMAN", id_usuario: <principal>}`,
+  `scope = {mode: "GLOBAL", id_sucursal: null}` y el payload indicado arriba.
 - Versionado: requiere `If-Match-Version`; al aplicar baja usa `version_registro + 1`.
-- Baja lógica: establece `fecha_hasta`, `deleted_at`, `updated_at`, `id_instalacion_ultima_modificacion` y `op_id_ultima_modificacion`.
-- Outbox: aplica, registra `rol_revocado_de_usuario` en la misma transacción que la baja.
-- Lock lógico: NO APLICA; no hay lock lógico implementado.
-- Frontera transaccional: actualización de `usuario_rol_seguridad` + evento outbox; si falla outbox, se revierte la baja.
+- Baja lógica: bajo `FOR UPDATE`, valida primero versión y luego lifecycle;
+  establece `fecha_hasta`, `deleted_at`, `updated_at`, conserva provenance de
+  instalación `NULL` e incrementa versión.
+- Outbox: NO APLICA.
+- Frontera transaccional: claim + baja + completion, con commit exterior único.
 
 Response principal (`200`): `{ "ok": true, "data": UsuarioRolSeguridadData }` con `fecha_hasta`, `deleted_at` y versión incrementada.
 
 Errores esperados:
 
-- `400 VALIDATION_ERROR`: headers CORE-EF faltantes/inválidos o `If-Match-Version` faltante/inválido.
+- `400 VALIDATION_ERROR`: metadata central faltante o inválida.
+- `401`: principal Bearer ausente o inválido.
+- `403`: autorización D1 insuficiente.
 - `404 NOT_FOUND`: asignación inexistente o no perteneciente al usuario indicado.
-- `409 CONCURRENCY_ERROR`: mismatch real de versión.
-- `500 TECHNICAL_INCONSISTENCY`: fallo técnico; si ocurre durante outbox, la baja debe quedar revertida.
+- `409`: conflicto idempotente incompatible.
+- `412 CONCURRENCY_ERROR`: mismatch real de versión.
+- `500 TECHNICAL_INCONSISTENCY`: inconsistencia técnica sanitizada.
 
 ### 6.4 `GET /api/v1/administrativo/roles-seguridad/{id_rol_seguridad}/usuarios`
 
@@ -458,7 +481,6 @@ Errores esperados: `404 NOT_FOUND`, `500 TECHNICAL_INCONSISTENCY`.
 
 Fuera de alcance de asignaciones:
 
-- autorización real;
 - permisos efectivos;
 - alcance por sucursal;
 - UI/menú dinámico.
@@ -473,6 +495,11 @@ Fuera de alcance de asignaciones:
 | `IDEMPOTENT_DUPLICATE` | 409 | Reuso de `X-Op-Id` con payload incompatible. |
 | `CONCURRENCY_ERROR` | 409 | `If-Match-Version` no coincide con `version_registro` vigente. |
 | `TECHNICAL_INCONSISTENCY` | 409/500 | Duplicados activos, inconsistencias controladas o fallos técnicos. |
+
+Para los commands centrales B2 prevalecen los códigos específicos
+`IDEMPOTENCY_COMMAND_CONFLICT`, `IDEMPOTENCY_TARGET_CONFLICT` e
+`IDEMPOTENCY_PAYLOAD_CONFLICT` (`409`), y `CONCURRENCY_ERROR` usa `412`.
+Las filas heredadas de la tabla continúan describiendo endpoints no migrados.
 
 Formato estándar:
 

@@ -20,6 +20,14 @@ class UsuarioRolSeguridadDuplicateActiveError(ValueError):
     pass
 
 
+class UsuarioRolSeguridadIneligibleTargetError(ValueError):
+    pass
+
+
+class UsuarioRolSeguridadTechnicalError(RuntimeError):
+    pass
+
+
 _COLUMNS = """
     urs.id_usuario_rol_seguridad,
     urs.id_usuario,
@@ -90,6 +98,47 @@ class UsuarioRolSeguridadRepository(BaseRepository[Any]):
                 FROM usuario_rol_seguridad urs
                 JOIN rol_seguridad r ON r.id_rol_seguridad = urs.id_rol_seguridad
                 WHERE urs.id_usuario_rol_seguridad = :id_asignacion
+                """
+            ),
+            {"id_asignacion": id_asignacion},
+        ).mappings().one_or_none()
+        return self._map(row) if row is not None else None
+
+    def get_usuario_state(self, id_usuario: int) -> dict[str, Any] | None:
+        row = self.db.execute(
+            text(
+                """
+                SELECT id_usuario, estado_usuario, fecha_baja, deleted_at
+                FROM usuario
+                WHERE id_usuario = :id_usuario
+                """
+            ),
+            {"id_usuario": id_usuario},
+        ).mappings().one_or_none()
+        return dict(row) if row is not None else None
+
+    def get_rol_state(self, id_rol_seguridad: int) -> dict[str, Any] | None:
+        row = self.db.execute(
+            text(
+                """
+                SELECT id_rol_seguridad, estado_rol
+                FROM rol_seguridad
+                WHERE id_rol_seguridad = :id_rol_seguridad
+                """
+            ),
+            {"id_rol_seguridad": id_rol_seguridad},
+        ).mappings().one_or_none()
+        return dict(row) if row is not None else None
+
+    def get_for_update(self, id_asignacion: int) -> dict[str, Any] | None:
+        row = self.db.execute(
+            text(
+                f"""
+                SELECT {_COLUMNS}
+                FROM usuario_rol_seguridad urs
+                JOIN rol_seguridad r ON r.id_rol_seguridad = urs.id_rol_seguridad
+                WHERE urs.id_usuario_rol_seguridad = :id_asignacion
+                FOR UPDATE OF urs
                 """
             ),
             {"id_asignacion": id_asignacion},
@@ -357,3 +406,111 @@ class UsuarioRolSeguridadRepository(BaseRepository[Any]):
         except Exception:
             self.db.rollback()
             raise
+
+    def create_central(
+        self, id_usuario: int, id_rol_seguridad: int, *, op_id: str
+    ) -> dict[str, Any]:
+        usuario = self.get_usuario_state(id_usuario)
+        if usuario is None:
+            raise LookupError("usuario")
+        if usuario["estado_usuario"] not in {"ACTIVO", "INACTIVO"}:
+            raise UsuarioRolSeguridadTechnicalError("estado_usuario desconocido")
+        if (
+            usuario["estado_usuario"] != "ACTIVO"
+            or usuario["deleted_at"] is not None
+            or usuario["fecha_baja"] is not None
+        ):
+            raise UsuarioRolSeguridadIneligibleTargetError("usuario")
+
+        rol = self.get_rol_state(id_rol_seguridad)
+        if rol is None:
+            raise LookupError("rol")
+        if rol["estado_rol"] not in {"ACTIVO", "INACTIVO"}:
+            raise UsuarioRolSeguridadTechnicalError("estado_rol desconocido")
+        if rol["estado_rol"] != "ACTIVO":
+            raise UsuarioRolSeguridadIneligibleTargetError("rol")
+
+        if self.get_active_by_usuario_rol(id_usuario, id_rol_seguridad) is not None:
+            raise UsuarioRolSeguridadDuplicateActiveError
+
+        row = self.db.execute(
+            text(
+                """
+                INSERT INTO usuario_rol_seguridad (
+                    id_usuario, id_rol_seguridad, fecha_desde,
+                    version_registro, updated_at,
+                    id_instalacion_origen,
+                    id_instalacion_ultima_modificacion,
+                    op_id_alta, op_id_ultima_modificacion
+                ) VALUES (
+                    :id_usuario, :id_rol_seguridad,
+                    clock_timestamp() AT TIME ZONE 'UTC',
+                    1, clock_timestamp() AT TIME ZONE 'UTC',
+                    NULL, NULL, :op_id, :op_id
+                )
+                RETURNING id_usuario_rol_seguridad
+                """
+            ),
+            {
+                "id_usuario": id_usuario,
+                "id_rol_seguridad": id_rol_seguridad,
+                "op_id": op_id,
+            },
+        ).mappings().one()
+        created = self.get(row["id_usuario_rol_seguridad"])
+        if created is None:
+            raise UsuarioRolSeguridadTechnicalError("asignación no recuperable")
+        return created
+
+    def revoke_central(
+        self,
+        id_usuario: int,
+        id_asignacion: int,
+        *,
+        op_id: str,
+        expected_version: int,
+    ) -> dict[str, Any] | None:
+        actual = self.get_for_update(id_asignacion)
+        if actual is None or actual["id_usuario"] != id_usuario:
+            return None
+        if actual["version_registro"] != expected_version:
+            raise UsuarioRolSeguridadConcurrencyError
+
+        deleted = actual["deleted_at"] is not None
+        ended = actual["fecha_hasta"] is not None
+        if deleted != ended:
+            raise UsuarioRolSeguridadTechnicalError("lifecycle incoherente")
+        if deleted:
+            return None
+
+        row = self.db.execute(
+            text(
+                """
+                UPDATE usuario_rol_seguridad
+                SET fecha_hasta = clock_timestamp() AT TIME ZONE 'UTC',
+                    deleted_at = clock_timestamp() AT TIME ZONE 'UTC',
+                    updated_at = clock_timestamp() AT TIME ZONE 'UTC',
+                    id_instalacion_ultima_modificacion = NULL,
+                    op_id_ultima_modificacion = :op_id,
+                    version_registro = version_registro + 1
+                WHERE id_usuario_rol_seguridad = :id_asignacion
+                  AND id_usuario = :id_usuario
+                  AND version_registro = :expected_version
+                  AND deleted_at IS NULL
+                  AND fecha_hasta IS NULL
+                RETURNING id_usuario_rol_seguridad
+                """
+            ),
+            {
+                "id_asignacion": id_asignacion,
+                "id_usuario": id_usuario,
+                "expected_version": expected_version,
+                "op_id": op_id,
+            },
+        ).mappings().one_or_none()
+        if row is None:
+            raise UsuarioRolSeguridadConcurrencyError
+        updated = self.get(row["id_usuario_rol_seguridad"])
+        if updated is None:
+            raise UsuarioRolSeguridadTechnicalError("asignación no recuperable")
+        return updated

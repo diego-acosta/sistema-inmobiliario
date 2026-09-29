@@ -117,6 +117,10 @@ from app.application.administrativo.services.usuarios_central_command_service im
     UsuariosCentralCommandService,
     UsuariosCommandError,
 )
+from app.application.administrativo.services.usuario_rol_seguridad_central_command_service import (
+    UsuarioRolSeguridadCentralCommandService,
+    UsuarioRolSeguridadCommandError,
+)
 from app.application.administrativo.services.catalogos_central_command_service import (
     CatalogosCentralCommandService,
     CatalogosCommandError,
@@ -145,9 +149,6 @@ from app.infrastructure.persistence.repositories.rol_seguridad_repository import
     RolSeguridadRepository,
 )
 from app.infrastructure.persistence.repositories.usuario_rol_seguridad_repository import (
-    UsuarioRolSeguridadConcurrencyError,
-    UsuarioRolSeguridadDuplicateActiveError,
-    UsuarioRolSeguridadIdempotencyConflictError,
     UsuarioRolSeguridadRepository,
 )
 from app.infrastructure.persistence.repositories.usuario_sistema_repository import (
@@ -223,6 +224,20 @@ _USUARIO_DEACTIVATE_HEADERS_OPENAPI = {
     ]
 }
 
+_USUARIO_ROL_ASSIGN_HEADERS_OPENAPI = {
+    "parameters": [
+        {"name": "X-Op-Id", "in": "header", "required": True,
+         "schema": {"type": "string"}}
+    ]
+}
+_USUARIO_ROL_REVOKE_HEADERS_OPENAPI = {
+    "parameters": [
+        {"name": name, "in": "header", "required": True,
+         "schema": {"type": "string"}}
+        for name in ("X-Op-Id", "If-Match-Version")
+    ]
+}
+
 
 def _usuario_command_error(exc: UsuariosCommandError) -> JSONResponse:
     messages = {
@@ -234,6 +249,22 @@ def _usuario_command_error(exc: UsuariosCommandError) -> JSONResponse:
         exc.status,
         exc.code,
         messages.get(exc.code, "No se pudo ejecutar el command de usuario."),
+    )
+
+
+def _usuario_rol_command_error(
+    exc: UsuarioRolSeguridadCommandError,
+) -> JSONResponse:
+    messages = {
+        "NOT_FOUND": "Usuario, rol o asignación de seguridad no encontrado.",
+        "DUPLICATE_ACTIVE_GRANT": "Ya existe una asignación activa.",
+        "INELIGIBLE_TARGET": "El usuario o rol no es elegible para la asignación.",
+        "CONCURRENCY_ERROR": "La versión informada no coincide con la vigente.",
+    }
+    return _error(
+        exc.status,
+        exc.code,
+        messages.get(exc.code, "No se pudo ejecutar el command de grants."),
     )
 
 
@@ -1447,48 +1478,46 @@ def list_roles_seguridad_by_usuario(
     response_model=UsuarioRolSeguridadCreateResponse,
     responses={
         400: {"model": ErrorResponse},
+        401: {"model": ErrorResponse},
+        403: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
         500: {"model": ErrorResponse},
     },
+    openapi_extra=_USUARIO_ROL_ASSIGN_HEADERS_OPENAPI,
 )
 def assign_rol_seguridad_to_usuario(
     id_usuario: int,
     request: UsuarioRolSeguridadCreateRequest,
+    principal: Annotated[AuthenticatedPrincipal, Depends(
+        require_administrative_permission("ADMIN.SEGURIDAD.GRANTS.ADMINISTRAR")
+    )],
     db: Session = Depends(get_db),
-    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
-    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
-    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
-    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    x_op_id: str | None = Header(
+        default=None, alias="X-Op-Id", include_in_schema=False
+    ),
 ) -> UsuarioRolSeguridadCreateResponse | JSONResponse:
-    core = _parse_core_or_error(
-        x_op_id=x_op_id,
-        x_usuario_id=x_usuario_id,
-        x_sucursal_id=x_sucursal_id,
-        x_instalacion_id=x_instalacion_id,
-    )
-    if isinstance(core, JSONResponse):
-        return core
-
-    repo = UsuarioRolSeguridadRepository(db)
     try:
-        if not repo.exists_usuario(id_usuario):
-            return _error(404, "NOT_FOUND", "Usuario del sistema no encontrado.")
-        if not repo.exists_rol_seguridad(request.id_rol_seguridad):
-            return _error(404, "NOT_FOUND", "Rol de seguridad no encontrado.")
-        asignacion = repo.create(id_usuario, request.model_dump(), core)
-    except UsuarioRolSeguridadIdempotencyConflictError as exc:
-        return _error(409, "IDEMPOTENT_DUPLICATE", str(exc))
-    except UsuarioRolSeguridadDuplicateActiveError as exc:
-        return _error(409, "TECHNICAL_INCONSISTENCY", str(exc))
-    except Exception as exc:
-        return _error(
-            500,
-            "TECHNICAL_INCONSISTENCY",
-            "No se pudo asignar el rol de seguridad al usuario.",
-            {"error": str(exc)},
+        metadata = parse_central_command_metadata(x_op_id)
+        snapshot = UsuarioRolSeguridadCentralCommandService(db).assign(
+            id_usuario=id_usuario,
+            id_rol_seguridad=request.id_rol_seguridad,
+            metadata=metadata,
+            id_usuario_actor=principal.id_usuario,
         )
-    return UsuarioRolSeguridadCreateResponse(data=UsuarioRolSeguridadData(**asignacion))
+        db.commit()
+        return UsuarioRolSeguridadCreateResponse.model_validate(snapshot)
+    except CoreEFHeaderValidationError as exc:
+        db.rollback()
+        return _error(400, "VALIDATION_ERROR", exc.message,
+                      {"header": exc.header_name, "reason": exc.reason})
+    except UsuarioRolSeguridadCommandError as exc:
+        db.rollback()
+        return _usuario_rol_command_error(exc)
+    except Exception:
+        db.rollback()
+        return _error(500, "TECHNICAL_INCONSISTENCY",
+                      "No se pudo asignar el rol de seguridad al usuario.")
 
 
 @router.patch(
@@ -1496,31 +1525,45 @@ def assign_rol_seguridad_to_usuario(
     response_model=UsuarioRolSeguridadBajaResponse,
     responses={
         400: {"model": ErrorResponse},
+        401: {"model": ErrorResponse},
+        403: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
+        412: {"model": ErrorResponse},
         500: {"model": ErrorResponse},
     },
+    openapi_extra=_USUARIO_ROL_REVOKE_HEADERS_OPENAPI,
 )
 def baja_rol_seguridad_usuario(
     id_usuario: int,
     id_asignacion: int,
+    principal: Annotated[AuthenticatedPrincipal, Depends(
+        require_administrative_permission("ADMIN.SEGURIDAD.GRANTS.ADMINISTRAR")
+    )],
     db: Session = Depends(get_db),
-    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
-    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
-    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
-    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
-    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
+    x_op_id: str | None = Header(
+        default=None, alias="X-Op-Id", include_in_schema=False
+    ),
+    if_match_version: str | None = Header(
+        default=None, alias="If-Match-Version", include_in_schema=False
+    ),
 ) -> UsuarioRolSeguridadBajaResponse | JSONResponse:
     try:
-        core = parse_core_ef_headers(
-            x_op_id=x_op_id,
-            x_usuario_id=x_usuario_id,
-            x_sucursal_id=x_sucursal_id,
-            x_instalacion_id=x_instalacion_id,
+        metadata = parse_central_command_metadata(
+            x_op_id,
             if_match_version=if_match_version,
             require_if_match_version=True,
         )
+        snapshot = UsuarioRolSeguridadCentralCommandService(db).revoke(
+            id_usuario=id_usuario,
+            id_asignacion=id_asignacion,
+            metadata=metadata,
+            id_usuario_actor=principal.id_usuario,
+        )
+        db.commit()
+        return UsuarioRolSeguridadBajaResponse.model_validate(snapshot)
     except CoreEFHeaderValidationError as exc:
+        db.rollback()
         return _error(
             400,
             "VALIDATION_ERROR",
@@ -1528,25 +1571,13 @@ def baja_rol_seguridad_usuario(
             {"header": exc.header_name, "reason": exc.reason},
         )
 
-    try:
-        asignacion = UsuarioRolSeguridadRepository(db).baja_logica(
-            id_usuario,
-            id_asignacion,
-            core=core,
-            if_match_version=core.if_match_version or 0,
-        )
-    except UsuarioRolSeguridadConcurrencyError as exc:
-        return _error(409, "CONCURRENCY_ERROR", str(exc))
-    except Exception as exc:
-        return _error(
-            500,
-            "TECHNICAL_INCONSISTENCY",
-            "No se pudo dar de baja la asignación de rol de seguridad.",
-            {"error": str(exc)},
-        )
-    if asignacion is None:
-        return _error(404, "NOT_FOUND", "Asignación de rol de seguridad no encontrada.")
-    return UsuarioRolSeguridadBajaResponse(data=UsuarioRolSeguridadData(**asignacion))
+    except UsuarioRolSeguridadCommandError as exc:
+        db.rollback()
+        return _usuario_rol_command_error(exc)
+    except Exception:
+        db.rollback()
+        return _error(500, "TECHNICAL_INCONSISTENCY",
+                      "No se pudo dar de baja la asignación de rol de seguridad.")
 
 
 @router.get(

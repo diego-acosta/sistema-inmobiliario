@@ -27,7 +27,7 @@ No cubre:
 - auditoría administrativa
 - configuración global del sistema
 
-## Prerrequisito de autorización central para grants
+## Autorización y ejecución central de grants
 
 El permiso activo `ADMIN.SEGURIDAD.GRANTS.ADMINISTRAR` (`Administrar grants de
 seguridad`) es una capacidad D1 `GLOBAL` para asignar y revocar roles de
@@ -35,9 +35,20 @@ seguridad de usuarios. Su receptor canónico inicial es el rol activo
 `ADMINISTRADOR_SISTEMA`; D1 seguirá autorizando por permiso efectivo y no por el
 código del rol.
 
-La materialización no migra los dos endpoints productivos, no agrega
-`uid_global` a `usuario_rol_seguridad` y no define todavía su target idempotente
-central.
+Los endpoints productivos de asignación y revocación usan Bearer,
+`AuthenticatedPrincipal`, D1 `GLOBAL`, `CentralCommandMetadata` y el ledger
+central. El actor es el principal y el usuario del path es el target. La clave
+estable del target combina `id_usuario` e `id_rol_seguridad`; no requiere
+`uid_global`. El receipt persiste `id_sucursal = NULL` e
+`id_instalacion = NULL`.
+
+La asignación exige `X-Op-Id`; la revocación exige además
+`If-Match-Version`. El flujo es D1, claim/replay, validación bajo lock cuando
+corresponde, mutación, completion y commit exterior. La revocación valida la
+versión antes del lifecycle y responde `412` ante CAS stale. Los commands B2 no
+producen `rol_asignado_a_usuario` ni `rol_revocado_de_usuario`; esos nombres se
+conservan sólo como catálogo histórico. La asignación de `usuario_sucursal`
+permanece pendiente de B3.
 
 ## Entidades principales
 - rol_administrativo
