@@ -151,13 +151,13 @@ class UsuarioSucursalRepository(BaseRepository[Any]):
         row = self.db.execute(
             text(
                 f"""
-                WITH current_time AS (
+                WITH current_clock AS (
                     SELECT clock_timestamp() AT TIME ZONE 'UTC' AS now_utc
                 )
                 SELECT {_COLUMNS}
                 FROM usuario_sucursal us
                 JOIN sucursal s ON s.id_sucursal = us.id_sucursal
-                CROSS JOIN current_time ct
+                CROSS JOIN current_clock ct
                 WHERE us.id_usuario = :id_usuario
                   AND us.id_sucursal = :id_sucursal
                   AND us.deleted_at IS NULL
@@ -193,13 +193,13 @@ class UsuarioSucursalRepository(BaseRepository[Any]):
         row = self.db.execute(
             text(
                 f"""
-                WITH current_time AS (
+                WITH current_clock AS (
                     SELECT clock_timestamp() AT TIME ZONE 'UTC' AS now_utc
                 )
                 SELECT {_COLUMNS}
                 FROM usuario_sucursal us
                 JOIN sucursal s ON s.id_sucursal = us.id_sucursal
-                CROSS JOIN current_time ct
+                CROSS JOIN current_clock ct
                 WHERE us.id_usuario = :id_usuario
                   AND us.es_sucursal_predeterminada = true
                   AND us.deleted_at IS NULL
